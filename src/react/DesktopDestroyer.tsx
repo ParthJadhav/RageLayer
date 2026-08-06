@@ -1,20 +1,28 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DestroyerEngine } from "../engine";
+import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "../share";
 import { defaultTools } from "../tools";
-import type { CaptureStatus, DestroyerOptions, Tool } from "../types";
+import { toolIconDataUrl } from "../toolart";
+import type { CaptureStatus, DestroyerOptions, Tool, ToolStyle } from "../types";
 
 export interface DesktopDestroyerProps {
   /** Called when the user closes the toolbar. */
   onClose?: () => void;
   /** Extra or replacement tools. Defaults to the full built-in set. */
   tools?: Tool[];
-  /** Engine options (zIndex, caps, target element). */
+  /** Engine options (zIndex, caps, physics, post-FX, target element). */
   engineOptions?: DestroyerOptions;
   /** Start with sound on. Default false — visitors get to opt in. */
   soundDefault?: boolean;
+  /**
+   * `"3d"` (default): drawn tool art at the pointer, toolbar icons baked from
+   * it. `"emoji"`: the classic emoji cursors and emoji toolbar icons.
+   * `engineOptions.toolStyle`, if set, wins.
+   */
+  toolStyle?: ToolStyle;
 }
 
 const barStyle: React.CSSProperties = {
@@ -28,8 +36,8 @@ const barStyle: React.CSSProperties = {
   zIndex: 2147483001,
   display: "flex",
   alignItems: "center",
-  gap: 4,
-  padding: "8px 10px",
+  gap: 3,
+  padding: "7px 9px",
   borderRadius: 18,
   background: "rgba(18, 17, 16, 0.82)",
   backdropFilter: "blur(14px)",
@@ -48,9 +56,9 @@ const buttonBase: React.CSSProperties = {
   border: "1px solid transparent",
   background: "transparent",
   borderRadius: 12,
-  width: 46,
-  height: 46,
-  fontSize: 24,
+  width: 42,
+  height: 42,
+  fontSize: 22,
   lineHeight: 1,
   cursor: "pointer",
   display: "flex",
@@ -71,7 +79,7 @@ const chipStyle: React.CSSProperties = {
   visibility: "visible",
   position: "fixed",
   left: "50%",
-  bottom: 76,
+  bottom: 72,
   transform: "translateX(-50%)",
   zIndex: 2147483001,
   display: "flex",
@@ -134,9 +142,9 @@ function chipFor(status: CaptureStatus, liveUnavailable: boolean) {
 
 const dividerStyle: React.CSSProperties = {
   width: 1,
-  height: 30,
+  height: 28,
   background: "rgba(255,255,255,0.15)",
-  margin: "0 4px",
+  margin: "0 3px",
   flexShrink: 0,
 };
 
@@ -165,8 +173,8 @@ const KEYFRAMES = `
 .dd-hint {
   visibility: visible;
   position: absolute;
-  /* Clears the capture-status chip, which sits at 76px. */
-  bottom: 110px;
+  /* Clears the capture-status chip, which sits at 72px. */
+  bottom: 106px;
   left: 50%;
   transform: translateX(-50%);
   padding: 5px 12px;
@@ -186,7 +194,13 @@ const KEYFRAMES = `
  * toolbar, and cleans everything up on unmount. Purely additive to the host
  * page — no styles leak in or out.
  */
-export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault = false }: DesktopDestroyerProps) {
+export function DesktopDestroyer({
+  onClose,
+  tools,
+  engineOptions,
+  soundDefault = false,
+  toolStyle = "3d",
+}: DesktopDestroyerProps) {
   const engineRef = useRef<DestroyerEngine | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
   const [sound, setSound] = useState(soundDefault);
@@ -194,14 +208,38 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
     status: "idle",
     liveUnavailable: false,
   });
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
   const toolset = useMemo(() => tools ?? defaultTools, [tools]);
+  // One resolved style drives both the engine (pointer art) and the toolbar
+  // (icon source), so the two can never disagree.
+  const resolvedToolStyle = engineOptions?.toolStyle ?? toolStyle;
+
+  // Toolbar icons baked from each tool's drawn art — the buttons show the
+  // actual hammer/saw/raygun rather than an emoji stand-in. Once per toolset;
+  // skipped entirely in the classic emoji style.
+  const artIcons = useMemo(() => {
+    const icons: Record<string, string> = {};
+    if (resolvedToolStyle === "emoji" || typeof document === "undefined") return icons;
+    for (const tool of toolset) {
+      if (!tool.art) continue;
+      const url = toolIconDataUrl(tool.art, 30);
+      if (url) icons[tool.id] = url;
+    }
+    return icons;
+  }, [toolset, resolvedToolStyle]);
 
   useEffect(() => {
-    const engine = new DestroyerEngine({ soundEnabled: soundDefault, ...engineOptions });
+    const engine = new DestroyerEngine({
+      soundEnabled: soundDefault,
+      ...engineOptions,
+      toolStyle: resolvedToolStyle,
+    });
     for (const tool of toolset) engine.registerTool(tool);
     engineRef.current = engine;
     // Debug/testing handle — lets host pages and E2E tests poke the engine.
-    (window as unknown as { __desktopDestroyer?: DestroyerEngine }).__desktopDestroyer = engine;
+    const debugWindow = window as unknown as { __desktopDestroyer?: DestroyerEngine };
+    debugWindow.__desktopDestroyer = engine;
     // The engine starts capturing inside its own constructor, so seed from it
     // rather than waiting for the first event.
     const sync = () =>
@@ -211,6 +249,11 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
     return () => {
       off();
       engine.dispose();
+      if (debugWindow.__desktopDestroyer === engine) delete debugWindow.__desktopDestroyer;
+      if (flashTimerRef.current !== null) {
+        window.clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = null;
+      }
       engineRef.current = null;
     };
     // The engine intentionally mounts once; tool/option changes need a remount.
@@ -221,26 +264,69 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
     engineRef.current?.setSound(sound);
   }, [sound]);
 
-  const selectTool = (id: string | null) => {
-    const next = id === activeToolId ? null : id;
-    engineRef.current?.setTool(next);
-    setActiveToolId(next);
-  };
+  const selectTool = useCallback(
+    (id: string | null) => {
+      setActiveToolId((current) => {
+        const next = id === current ? null : id;
+        engineRef.current?.setTool(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  /** Flatten the wreckage to PNG: clipboard if the browser allows, else a download. */
+  const saveSnapshot = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const blob = await engine.snapshot();
+    if (!blob) return;
+    if (await copyBlobToClipboard(blob)) {
+      setFlash("Copied to clipboard");
+    } else {
+      downloadBlob(blob, snapshotFilename());
+      setFlash("Saved");
+    }
+    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => {
+      flashTimerRef.current = null;
+      setFlash(null);
+    }, 1800);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "Escape") {
         if (activeToolId) selectTool(null);
         else onClose?.();
+        return;
       }
-      // 1-9 select tools.
-      const n = Number(e.key);
-      if (n >= 1 && n <= toolset.length) selectTool(toolset[n - 1].id);
+      // Digits pick tools: 1–9 then 0 for the tenth, then the remainder is out
+      // of reach by keyboard, which is fine — those are the exotic ones.
+      const slot = e.key === "0" ? 10 : Number(e.key);
+      if (slot >= 1 && slot <= Math.min(10, toolset.length)) {
+        selectTool(toolset[slot - 1].id);
+        return;
+      }
+      switch (e.key.toLowerCase()) {
+        case "x":
+          engineRef.current?.collapse();
+          break;
+        case "p":
+          void saveSnapshot();
+          break;
+        case "r":
+          engineRef.current?.clear();
+          break;
+        case "m":
+          setSound((s) => !s);
+          break;
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeToolId, toolset]);
+  }, [activeToolId, toolset, selectTool, onClose, saveSnapshot]);
 
   const activeTool = toolset.find((t) => t.id === activeToolId);
   const chip = chipFor(capture.status, capture.liveUnavailable);
@@ -255,6 +341,7 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
           {activeTool.name} — {activeTool.hint}
         </div>
       )}
+
       {chip && (
         <div
           style={chipStyle}
@@ -269,29 +356,58 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
           ) : (
             <span style={{ ...dotStyle, background: chip.color }} />
           )}
-          {chip.label}
+          {flash ?? chip.label}
         </div>
       )}
+
       <div style={barStyle} role="toolbar" aria-label="Desktop Destroyer tools" data-dd-ignore="">
-        {toolset.map((tool) => (
+        {toolset.map((tool, i) => (
           <button
             key={tool.id}
             className="dd-tool"
             style={buttonBase}
             data-active={tool.id === activeToolId}
-            title={`${tool.name} — ${tool.hint}`}
+            title={`${tool.name} — ${tool.hint}${i < 10 ? ` (${(i + 1) % 10})` : ""}`}
             aria-label={tool.name}
             aria-pressed={tool.id === activeToolId}
             onClick={() => selectTool(tool.id)}
           >
-            {tool.icon}
+            {artIcons[tool.id] ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={artIcons[tool.id]}
+                alt=""
+                draggable={false}
+                style={{ width: 30, height: 30, pointerEvents: "none" }}
+              />
+            ) : (
+              tool.icon
+            )}
           </button>
         ))}
         <div style={dividerStyle} />
         <button
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 19 }}
-          title={sound ? "Mute sound" : "Enable sound"}
+          title="Collapse the whole page (X)"
+          aria-label="Collapse the whole page"
+          onClick={() => engineRef.current?.collapse()}
+        >
+          💥
+        </button>
+        <button
+          className="dd-tool"
+          style={{ ...buttonBase, fontSize: 18 }}
+          title="Save a picture of the wreckage (P)"
+          aria-label="Save a picture of the wreckage"
+          onClick={() => void saveSnapshot()}
+        >
+          📸
+        </button>
+        <button
+          className="dd-tool"
+          style={{ ...buttonBase, fontSize: 18 }}
+          title={sound ? "Mute sound (M)" : "Enable sound (M)"}
           aria-label={sound ? "Mute sound" : "Enable sound"}
           onClick={() => setSound((s) => !s)}
         >
@@ -299,8 +415,8 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
         </button>
         <button
           className="dd-tool"
-          style={{ ...buttonBase, fontSize: 19 }}
-          title="Repair everything"
+          style={{ ...buttonBase, fontSize: 18 }}
+          title="Repair everything (R)"
           aria-label="Repair everything"
           onClick={() => engineRef.current?.clear()}
         >
@@ -308,7 +424,7 @@ export function DesktopDestroyer({ onClose, tools, engineOptions, soundDefault =
         </button>
         <button
           className="dd-tool"
-          style={{ ...buttonBase, fontSize: 17, color: "rgba(255,255,255,0.8)" }}
+          style={{ ...buttonBase, fontSize: 16, color: "rgba(255,255,255,0.8)" }}
           title="Close (Esc)"
           aria-label="Close Desktop Destroyer"
           onClick={() => {

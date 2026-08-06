@@ -117,6 +117,12 @@ export interface Sprites {
   dust: HTMLCanvasElement;
   mist: HTMLCanvasElement;
   sparkle: HTMLCanvasElement;
+  /** Milky rime bloom under the frost needles. */
+  frost: HTMLCanvasElement;
+  /** Opaque core of a singularity — it occludes, so it is drawn normally. */
+  singularity: HTMLCanvasElement;
+  /** Hot violet/amber accretion band around a black hole (hollow, like heatRing). */
+  accretion: HTMLCanvasElement;
   /** Persistent damage. */
   char: HTMLCanvasElement;
   scorch: HTMLCanvasElement;
@@ -216,6 +222,27 @@ export function sprites(): Sprites {
       [1, "rgba(180, 210, 245, 0)"],
     ]),
     sparkle: twinkle(24),
+    frost: radial(96, [
+      [0, "rgba(226, 246, 255, 1)"],
+      [0.45, "rgba(186, 224, 250, 0.6)"],
+      [1, "rgba(160, 205, 240, 0)"],
+    ]),
+    // Hard-edged at the horizon and only feathered over the last few percent:
+    // a black hole's edge is the one part of it that is genuinely sharp.
+    singularity: radial(96, [
+      [0, "rgba(0, 0, 0, 1)"],
+      [0.86, "rgba(0, 0, 0, 1)"],
+      [0.94, "rgba(6, 2, 12, 0.75)"],
+      [1, "rgba(10, 4, 18, 0)"],
+    ]),
+    accretion: radial(96, [
+      [0, "rgba(150, 60, 255, 0)"],
+      [0.62, "rgba(150, 60, 255, 0)"],
+      [0.79, "rgba(196, 108, 255, 0.55)"],
+      [0.89, "rgba(255, 168, 90, 1)"],
+      [0.96, "rgba(255, 236, 200, 0.5)"],
+      [1, "rgba(255, 200, 140, 0)"],
+    ]),
     char: radial(96, [
       [0, "rgba(15, 9, 5, 1)"],
       [0.6, "rgba(25, 14, 7, 0.5)"],

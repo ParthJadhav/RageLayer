@@ -33,11 +33,19 @@ export class SoundEngine implements SoundApi {
   }
 
   /** Short filtered noise burst — the workhorse for impacts. */
-  private burst(opts: { duration: number; gain: number; filterFrom: number; filterTo: number; type?: BiquadFilterType }) {
+  private burst(opts: {
+    duration: number;
+    gain: number;
+    filterFrom: number;
+    filterTo: number;
+    type?: BiquadFilterType;
+    /** Seconds after "now" to start — lets one call schedule a rhythm. */
+    delay?: number;
+  }) {
     if (!this.enabled) return;
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + (opts.delay ?? 0);
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuffer;
     src.playbackRate.value = 0.8 + Math.random() * 0.4;
@@ -74,6 +82,54 @@ export class SoundEngine implements SoundApi {
 
   thunk() {
     this.burst({ duration: 0.12, gain: 0.7, filterFrom: 900, filterTo: 80 });
+  }
+
+  /**
+   * A hammer blow, distinct from the generic `thunk`.
+   *
+   * Four layers, each doing one job: a near-instant contact transient (the
+   * head meeting the surface), a woody mid knock (the blow itself), a twin
+   * sub-bass thump (the mass behind it — two detuned sines drop far harder
+   * than one, which reads as a kick drum), and a delayed crumble tail
+   * (plaster and grit sifting down after). Pitch and decay jitter per call so
+   * repeated strikes read as effort, not a sample loop. `weight` (0..1)
+   * scales the low end and the crumble — the final, breaking blow passes 1.
+   */
+  hammer(weight = 0.6) {
+    // Contact transient: nearly all attack, no tail.
+    this.burst({ duration: 0.03, gain: 0.8, filterFrom: 5200, filterTo: 2000, type: "bandpass" });
+    // Knock body — the woody mid punch.
+    this.burst({ duration: 0.1 + Math.random() * 0.04, gain: 0.9, filterFrom: 520 + Math.random() * 140, filterTo: 70 });
+    // Crumble tail, a hair behind the hit: debris sifting out of the wound.
+    this.burst({
+      duration: 0.22,
+      gain: 0.14 + weight * 0.16,
+      filterFrom: 1400,
+      filterTo: 300,
+      type: "bandpass",
+      delay: 0.035,
+    });
+    if (!this.enabled) return;
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    // Twin sub thump: fundamental plus a quieter fifth above it.
+    for (const [mult, gain] of [
+      [1, 0.45 + weight * 0.5],
+      [1.5, 0.16],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = "sine";
+      const f0 = (95 + Math.random() * 25) * mult;
+      osc.frequency.setValueAtTime(f0, t);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(28, f0 * 0.28), t + 0.16);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18 + weight * 0.08);
+      osc.connect(g).connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    }
   }
 
   /**
@@ -114,7 +170,11 @@ export class SoundEngine implements SoundApi {
   }
 
   sweep() {
-    this.burst({ duration: 0.22, gain: 0.14, filterFrom: 1200, filterTo: 4500, type: "highpass" });
+    // Two soft bristle strokes rather than one hiss: the second, quieter swish
+    // an eighth of a second behind is what makes it read as *brushing* — a
+    // motion with a return stroke — instead of escaping steam.
+    this.burst({ duration: 0.16, gain: 0.16, filterFrom: 500, filterTo: 1900, type: "bandpass" });
+    this.burst({ duration: 0.14, gain: 0.09, filterFrom: 1600, filterTo: 600, type: "bandpass", delay: 0.13 });
   }
 
   splat() {
@@ -126,10 +186,66 @@ export class SoundEngine implements SoundApi {
   }
 
   /**
+   * Detonation. Three layers, because a single noise burst reads as a slap: a
+   * sub-bass drop you feel, a wide noise body that opens and closes, and a
+   * long low-passed tail that is the sound bouncing off everything else.
+   */
+  boom() {
+    if (!this.enabled) return;
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(24, t + 0.55);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.85, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.65);
+    this.burst({ duration: 0.32, gain: 0.85, filterFrom: 2200, filterTo: 90 });
+    this.burst({ duration: 1.1, gain: 0.3, filterFrom: 500, filterTo: 60 });
+  }
+
+  /** Lightning: a hard ionizing crack riding a rolling rumble. */
+  zap() {
+    this.burst({ duration: 0.06, gain: 0.9, filterFrom: 12000, filterTo: 5000, type: "highpass" });
+    this.burst({ duration: 0.9, gain: 0.4, filterFrom: 1400, filterTo: 70 });
+    if (!this.enabled) return;
+    const ctx = this.ensure();
+    if (!ctx || !this.master) return;
+    const t = ctx.currentTime;
+    // A fast downward sawtooth chirp is what gives an electrical arc its
+    // characteristic "tearing" quality over the noise.
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(2400, t);
+    osc.frequency.exponentialRampToValueAtTime(180, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.22, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+    osc.connect(g).connect(this.master);
+    osc.start(t);
+    osc.stop(t + 0.16);
+  }
+
+  /** Ice: a rising glassy shimmer that ends in a splinter. */
+  freeze() {
+    this.burst({ duration: 0.4, gain: 0.16, filterFrom: 1800, filterTo: 9000, type: "highpass" });
+    this.ping(3200 + Math.random() * 1800, 0.16, 0.06, "sine");
+  }
+
+  whoosh() {
+    this.burst({ duration: 0.45, gain: 0.42, filterFrom: 300, filterTo: 2600, type: "bandpass" });
+  }
+
+  /**
    * Continuous loops (fire crackle, water spray, saw). Called every frame with
    * the target gain; ramps smoothly so loops fade in/out instead of clicking.
    */
-  loop(name: "fire" | "water" | "saw" | "flamethrower", target: number) {
+  loop(name: "fire" | "water" | "saw" | "flamethrower" | "void", target: number) {
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
     if (!this.enabled) target = 0;
@@ -148,6 +264,12 @@ export class SoundEngine implements SoundApi {
       } else if (name === "water") {
         filter.type = "highpass";
         filter.frequency.value = 2500;
+      } else if (name === "void") {
+        // Sub-bass rumble: a singularity should be felt more than heard.
+        filter.type = "lowpass";
+        filter.frequency.value = 110;
+        filter.Q.value = 8;
+        source.playbackRate.value = 0.2;
       } else if (name === "flamethrower") {
         filter.type = "bandpass";
         filter.frequency.value = 700;

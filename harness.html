@@ -1,0 +1,157 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>desktop-destroyer surface harness</title>
+<style>
+  body { margin: 0; background: #111; color: #eee; font: 12px ui-monospace, monospace; }
+  #stage { position: relative; width: 600px; height: 400px; }
+  pre { padding: 12px; white-space: pre-wrap; }
+</style>
+<div id="stage"></div>
+<pre id="out">running…</pre>
+<script type="module">
+  import { ContentLayer } from "./dist/index.js";
+
+  const W = 600;
+  const H = 400;
+  const DPR = 2;
+
+  /** A stand-in for the page raster: opaque, with type and flat colour blocks. */
+  function makeRaster() {
+    const c = document.createElement("canvas");
+    c.width = W * DPR;
+    c.height = H * DPR;
+    const x = c.getContext("2d");
+    x.scale(DPR, DPR);
+    x.fillStyle = "#1a2b3c";
+    x.fillRect(0, 0, W, H);
+    x.fillStyle = "#e0603a";
+    x.fillRect(40, 40, 220, 120);
+    x.fillStyle = "#f2f2f2";
+    x.font = "600 34px ui-monospace, monospace";
+    x.fillText("DESTROY ME", 40, 250);
+    x.fillStyle = "#39d98a";
+    x.fillRect(320, 200, 200, 150);
+    return c;
+  }
+
+  const read = (canvas) => {
+    const c = document.createElement("canvas");
+    c.width = canvas.width;
+    c.height = canvas.height;
+    c.getContext("2d").drawImage(canvas, 0, 0);
+    return c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+  };
+
+  const at = (data, w, x, y) => {
+    const i = (Math.round(y) * w + Math.round(x)) * 4;
+    return [data[i], data[i + 1], data[i + 2], data[i + 3]];
+  };
+
+  const maxDelta = (a, b) => {
+    let m = 0;
+    for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i]));
+    return m;
+  };
+
+  const results = [];
+  const check = (name, pass, detail) => results.push({ name, pass, detail });
+
+  const raster = makeRaster();
+  const layer = new ContentLayer();
+  layer.dpr = DPR;
+  layer.adopt(raster, W, H);
+  document.getElementById("stage").appendChild(layer.canvas);
+
+  check("shader renderer came up", layer.shaded, `shaded=${layer.shaded}`);
+
+  // 1. An undamaged page must survive the shader untouched.
+  layer.present();
+  const clean = read(layer.canvas);
+  const source = read(raster);
+  const delta = maxDelta(clean, source);
+  check("undamaged page is bit-identical to the raster", delta === 0, `maxDelta=${delta}`);
+
+  // 2. A hole must be a real hole, and must light its own edge.
+  const HX = 150;
+  const HY = 100;
+  const HR = 45;
+  layer.punch(HX, HY, HR);
+  layer.present();
+  const hit = read(layer.canvas);
+  const w = layer.canvas.width;
+
+  const centre = at(hit, w, HX * DPR, HY * DPR);
+  check("hole centre is fully transparent", centre[3] === 0, `alpha=${centre[3]}`);
+
+  // The shader's whole job is to make the presented page differ from the flat
+  // 2D composite *at the tear and nowhere else*. Comparing the two canvases
+  // directly is the only check that actually proves the effect ran.
+  const flat = read(layer.surface);
+  let rimShaded = 0;
+  let rimOpaque = 0;
+  let farShaded = 0;
+  for (let py = 0; py < layer.canvas.height; py++) {
+    for (let px = 0; px < w; px++) {
+      const i = (py * w + px) * 4;
+      const diff =
+        Math.abs(hit[i] - flat[i]) + Math.abs(hit[i + 1] - flat[i + 1]) + Math.abs(hit[i + 2] - flat[i + 2]);
+      const d = Math.hypot(px / DPR - HX, py / DPR - HY);
+      if (d < HR * 2.6) {
+        if (diff > 2) rimShaded++;
+        if (d > HR * 1.75 && hit[i + 3] > 200) rimOpaque++;
+      } else if (diff > 2) {
+        farShaded++;
+      }
+    }
+  }
+  check("rim survives as opaque page", rimOpaque > 500, `opaque px=${rimOpaque}`);
+  check("tear is re-shaded, not a flat cutout", rimShaded > 500, `shaded px=${rimShaded}`);
+  check(
+    "intact page away from the tear is left alone",
+    farShaded === 0,
+    `shaded px outside the wound=${farShaded}`,
+  );
+
+  // 3. The scissored redraw must leave everything outside the dirty rect alone.
+  const farBefore = at(source, w, 470 * DPR, 300 * DPR);
+  const farAfter = at(hit, w, 470 * DPR, 300 * DPR);
+  check(
+    "untouched region is unchanged by a scissored pass",
+    maxDelta(farBefore, farAfter) === 0,
+    `${farBefore} vs ${farAfter}`,
+  );
+
+  // 4. Repair must put the page back.
+  layer.restore(HX, HY, HR * 2.4);
+  layer.present();
+  const healed = read(layer.canvas);
+  const healedCentre = at(healed, w, HX * DPR, HY * DPR);
+  check("repaired centre is opaque again", healedCentre[3] === 255, `alpha=${healedCentre[3]}`);
+  check(
+    "repaired centre matches the original pixel",
+    maxDelta(healedCentre, at(source, w, HX * DPR, HY * DPR)) <= 1,
+    `${healedCentre} vs ${at(source, w, HX * DPR, HY * DPR)}`,
+  );
+
+  // 5. A cut must carve along the segment. The page is a slab (`depth` param),
+  // so a thin kerf legitimately shows the board's inside instead of the void:
+  // accept either transparency or the wood side-wall — what it must NOT be is
+  // untouched page content.
+  layer.cut(360, 60, 560, 140);
+  layer.present();
+  const cutData = read(layer.canvas);
+  const mid = at(cutData, w, 460 * DPR, 100 * DPR);
+  const midSrc = at(source, w, 460 * DPR, 100 * DPR);
+  const isWood = mid[3] > 200 && mid[0] > mid[1] && mid[1] > mid[2] && mid[0] - mid[2] > 25;
+  check(
+    "cut carves the kerf (void or slab side, not page)",
+    mid[3] < 200 || (isWood && maxDelta(mid, midSrc) > 20),
+    `rgba=${mid} (source ${midSrc})`,
+  );
+
+  const failed = results.filter((r) => !r.pass);
+  document.getElementById("out").textContent =
+    results.map((r) => `${r.pass ? "PASS" : "FAIL"}  ${r.name}  — ${r.detail}`).join("\n") +
+    `\n\n${results.length - failed.length}/${results.length} passed`;
+  window.__harness = { results, failed: failed.length };
+</script>

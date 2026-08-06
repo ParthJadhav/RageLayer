@@ -1,7 +1,7 @@
 {
   "name": "desktop-destroyer",
-  "version": "0.1.0",
-  "description": "Desktop Destroyer for the web — an interactive canvas overlay that lets visitors smash, shoot, burn, soak, saw, and paint any page. Fire spreads, water puts it out.",
+  "version": "0.2.0",
+  "description": "Desktop Destroyer for the web — an interactive overlay that lets visitors physically demolish any page. Real rigid-body debris, Voronoi shattering, DOM-aware demolition, fire that spreads, black holes, and a WebGL bloom pass.",
   "license": "MIT",
   "type": "module",
   "sideEffects": false,
@@ -21,10 +21,15 @@
   "files": [
     "dist",
     "src",
+    "benchmarks",
+    "scripts",
     "README.md"
   ],
   "scripts": {
     "build": "tsup",
+    "benchmark": "bun run build && node scripts/benchmark.mjs",
+    "benchmark:low-end": "bun run build && node scripts/benchmark.mjs --cpu 6",
+    "memory:check": "bun run build && node scripts/benchmark.mjs --scenarios idle --duration 250 --warmup 100 --leak-cycles 80",
     "prepublishOnly": "tsup"
   },
   "keywords": [
@@ -33,6 +38,12 @@
     "easter-egg",
     "particles",
     "fire",
+    "physics",
+    "rigid-body",
+    "destruction",
+    "voronoi",
+    "webgl",
+    "bloom",
     "interactive",
     "react"
   ],

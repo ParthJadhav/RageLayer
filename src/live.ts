@@ -34,6 +34,30 @@ type DrawElementImageCtx = CanvasRenderingContext2D & {
 };
 
 /**
+ * The rest of the HTML-in-Canvas surface: Chrome tells a `layoutsubtree` canvas
+ * when its element content needs repainting, and `requestPaint()` asks for that
+ * callback on the next rendering update. Shipped alongside `drawElementImage`,
+ * but detected separately — a build could have one without the other.
+ */
+type PaintableCanvas = HTMLCanvasElement & {
+  onpaint: (() => void) | null;
+  requestPaint(): void;
+};
+
+/**
+ * Does this browser drive canvas repaints by event, as canvasui.dev's
+ * components rely on? When true the mirror can be mounted once and redrawn on
+ * demand, instead of being re-cloned for every refresh.
+ */
+export function supportsPaintEvents(): boolean {
+  return (
+    typeof HTMLCanvasElement !== "undefined" &&
+    typeof (HTMLCanvasElement.prototype as Partial<PaintableCanvas>).requestPaint === "function" &&
+    "onpaint" in HTMLCanvasElement.prototype
+  );
+}
+
+/**
  * Is Chrome's HTML-in-Canvas API present?
  *
  * Note the name: the proposal was renamed from `drawElement` to
@@ -130,6 +154,60 @@ function freezeAnimations(root: HTMLElement, clone: HTMLElement) {
 }
 
 /**
+ * Phase-lock the clone's animations to the live page's, instead of pinning them
+ * to a still.
+ *
+ * `freezeAnimations` is the right answer when the clone is thrown away after one
+ * draw — a frozen twin captures the page as it looks *now*. A twin that stays
+ * mounted wants the opposite: its animations should keep running, in step with
+ * the real ones, so every repaint shows motion rather than the same still frame
+ * forever. The cascade builds the same animations on the twin in the same order,
+ * so matching them per element by index and copying `currentTime` across is
+ * enough to put the two clocks together.
+ */
+function syncAnimationClocks(root: HTMLElement, clone: HTMLElement) {
+  let animations: Animation[];
+  try {
+    animations = root.getAnimations({ subtree: true });
+  } catch {
+    return;
+  }
+  // Group by target first: `getAnimations` returns a flat list, and matching by
+  // index is only meaningful within one element's own list.
+  const byTarget = new Map<Element, Animation[]>();
+  for (const animation of animations) {
+    const effect = animation.effect;
+    if (!(effect instanceof KeyframeEffect)) continue;
+    const target = effect.target;
+    if (!(target instanceof Element)) continue;
+    const list = byTarget.get(target);
+    if (list) list.push(animation);
+    else byTarget.set(target, [animation]);
+  }
+
+  for (const [target, list] of byTarget) {
+    const path = target === root ? [] : pathTo(root, target);
+    if (!path) continue;
+    const twin = path.length === 0 ? clone : nodeAt(clone, path);
+    if (!(twin instanceof Element)) continue;
+    let twins: Animation[];
+    try {
+      twins = twin.getAnimations();
+    } catch {
+      continue;
+    }
+    for (let i = 0; i < list.length && i < twins.length; i++) {
+      try {
+        twins[i].currentTime = list[i].currentTime;
+      } catch {
+        // A finished or unresolved animation refuses the write; the twin's own
+        // copy is already at the same place in that case.
+      }
+    }
+  }
+}
+
+/**
  * Drop from the clone everything `filter` rejects — the destroyer's own overlay
  * and toolbar, framework dev tooling, anything the host excluded. This is the
  * clone-path equivalent of the `filter` option we hand to html-to-image, so
@@ -160,6 +238,26 @@ export class LiveContentSource {
   private ctx: DrawElementImageCtx | null = null;
   private mounted: HTMLElement | null = null;
   private disposed = false;
+  /**
+   * Everything a repaint needs to reproduce the last capture's geometry. Set by
+   * `capture`, read by the `onpaint` handler — which Chrome may call at any
+   * time, including on frames we did not ask for.
+   */
+  private last: { dx: number; dy: number; backdrop?: PageBackdrop } | null = null;
+  /** True once `onpaint` is wired up on the host canvas. */
+  private painting = false;
+
+  /**
+   * Can this source redraw without re-cloning the page?
+   *
+   * The clone is ~90% of a refresh (≈5 ms of the ≈6 ms); a redraw of an
+   * already-mounted mirror is the remaining draw call. It also makes the mirror
+   * genuinely live rather than a still: its animations run, phase-locked to the
+   * page's, so each repaint shows them further along.
+   */
+  get canRepaint(): boolean {
+    return this.painting && this.mounted !== null && this.last !== null;
+  }
 
   /**
    * Raster `root` at `dpr` into a canvas sized `width`×`height` CSS px.
@@ -172,9 +270,9 @@ export class LiveContentSource {
     dpr: number,
     options: LiveCaptureOptions,
   ): Promise<HTMLCanvasElement> {
+    if (this.disposed) throw new Error("capture source is disposed");
     if (!supportsLiveCapture()) throw new Error("drawElementImage is unavailable");
     const host = this.ensureHost(width, height, dpr);
-    const ctx = this.ctx!;
 
     // Clone first, then freeze, then prune: freezing walks child-index paths
     // from the live tree, so it has to run while the clone is still structurally
@@ -191,7 +289,11 @@ export class LiveContentSource {
     // known caveat that viewport-anchored chrome captures at its document
     // position. See HTML-IN-CANVAS.md.
     const clone = root.cloneNode(true) as HTMLElement;
-    freezeAnimations(root, clone);
+    // A mirror that will stay mounted keeps its animations running and merely
+    // syncs their clocks (below, once the cascade has built them); a mirror
+    // that is redrawn by re-cloning has to be pinned to the current frame
+    // instead, or every refresh restarts every animation from zero.
+    if (!supportsPaintEvents()) freezeAnimations(root, clone);
     prune(clone, options.filter);
 
     // The engine hides the real root with `visibility: hidden` in content mode,
@@ -217,6 +319,11 @@ export class LiveContentSource {
     await nextFrame();
     if (this.disposed) throw new Error("disposed during capture");
 
+    // The cascade has now built the clone's own animations, so their clocks can
+    // be put in step with the page's. Only meaningful on the repaint path — the
+    // re-clone path froze them above instead.
+    if (supportsPaintEvents()) syncAnimationClocks(root, clone);
+
     // Everything below is in *device* pixels, under an identity transform.
     //
     // `drawElementImage` does its own device-scaling: it rasterizes the element
@@ -231,19 +338,13 @@ export class LiveContentSource {
     // The destination coordinates are in the current user space, so with the
     // transform gone they are device pixels too. Rounding them keeps the
     // raster on the pixel grid, matching the snapshot path's blit.
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, host.width, host.height);
-    // The page backdrop lives on the viewport canvas, not inside the root's own
-    // box (CSS background propagation), so a bare draw comes out transparent.
-    if (options.backdrop?.color) {
-      ctx.fillStyle = options.backdrop.color;
-      ctx.fillRect(0, 0, host.width, host.height);
-    }
-    ctx.drawElementImage(
-      clone,
-      Math.round(options.source.x * dpr),
-      Math.round(options.source.y * dpr),
-    );
+    this.last = {
+      dx: Math.round(options.source.x * dpr),
+      dy: Math.round(options.source.y * dpr),
+      backdrop: options.backdrop,
+    };
+    this.paint();
+    this.listenForPaints();
 
     // Hand back a detached copy: the host canvas is reused by the next refresh,
     // and the caller keeps this one as its pristine base.
@@ -252,6 +353,85 @@ export class LiveContentSource {
     out.height = host.height;
     out.getContext("2d")!.drawImage(host, 0, 0);
     return out;
+  }
+
+  /**
+   * Redraw the mounted mirror. Cheap — one `drawElementImage` against a clone
+   * that is already laid out — and returns the *host* canvas rather than a copy,
+   * so a refresh costs no allocation either.
+   *
+   * Returns null when there is nothing mounted to repaint, which is the signal
+   * for the caller to fall back to `capture`.
+   */
+  repaint(): HTMLCanvasElement | null {
+    if (!this.canRepaint || this.disposed) return null;
+    const host = this.host!;
+    // Ask Chrome for an `onpaint` on the next rendering update, so a mirror
+    // whose own layout has moved on gets a fresh paint record before the draw.
+    // The immediate draw below is what actually produces this frame's pixels;
+    // the requested paint keeps the *next* one current.
+    (host as PaintableCanvas).requestPaint();
+    return this.paint() ? host : null;
+  }
+
+  /**
+   * Draw the mounted clone into the host, backdrop first.
+   *
+   * Everything here is in *device* pixels, under an identity transform.
+   *
+   * `drawElementImage` does its own device-scaling: it rasterizes the element at
+   * the host canvas's backing-store-to-CSS-size ratio, which is already `dpr`
+   * here, and only then applies the CTM. Measured in Chrome 149 — a 100x50 CSS
+   * element in a 300x200 CSS / 600x400 backing canvas comes out 200x100 device
+   * px under an identity transform, and 400x200 under `setTransform(2,…)`. So a
+   * dpr transform doesn't scale the raster to the backing store, it
+   * double-scales it: exactly `dpr`x too big, which is invisible on a 1x display
+   * and a 2x zoom on a retina one.
+   *
+   * The destination coordinates are in the current user space, so with the
+   * transform gone they are device pixels too. They were rounded at capture
+   * time, which keeps the raster on the pixel grid and matches the snapshot
+   * path's blit.
+   */
+  private paint(): boolean {
+    const ctx = this.ctx;
+    const host = this.host;
+    const clone = this.mounted;
+    const last = this.last;
+    if (!ctx || !host || !clone || !last) return false;
+    try {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, host.width, host.height);
+      // The page backdrop lives on the viewport canvas, not inside the root's
+      // own box (CSS background propagation), so a bare draw comes out
+      // transparent.
+      if (last.backdrop?.color) {
+        ctx.fillStyle = last.backdrop.color;
+        ctx.fillRect(0, 0, host.width, host.height);
+      }
+      ctx.drawElementImage(clone, last.dx, last.dy);
+      return true;
+    } catch {
+      // The paint record can go stale (a reflow, a subtree Chrome stopped
+      // painting). Losing one frame is fine — the caller keeps the last good
+      // pixels — but a mirror that cannot be drawn must stop claiming it can.
+      this.painting = false;
+      return false;
+    }
+  }
+
+  /**
+   * Let Chrome drive redraws: it fires `onpaint` whenever the canvas's element
+   * content needs repainting, which is how canvasui.dev's components stay live
+   * without polling. Registered once; the handler reads `this.last`, so it stays
+   * correct across re-captures.
+   */
+  private listenForPaints() {
+    if (this.painting || !this.host || !supportsPaintEvents()) return;
+    (this.host as PaintableCanvas).onpaint = () => {
+      this.paint();
+    };
+    this.painting = true;
   }
 
   private ensureHost(width: number, height: number, dpr: number): HTMLCanvasElement {
@@ -290,11 +470,20 @@ export class LiveContentSource {
   }
 
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
-    this.host?.remove();
+    if (this.host) {
+      if (this.painting) (this.host as PaintableCanvas).onpaint = null;
+      this.host.replaceChildren();
+      this.host.width = 0;
+      this.host.height = 0;
+      this.host.remove();
+    }
+    this.painting = false;
     this.host = null;
     this.ctx = null;
     this.mounted = null;
+    this.last = null;
   }
 }
 

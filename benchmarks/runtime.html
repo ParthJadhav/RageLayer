@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>desktop-destroyer runtime benchmark</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        min-height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #101114;
+        color: #f5f7fa;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+
+      main {
+        box-sizing: border-box;
+        min-height: 100vh;
+        padding: 32px;
+        background:
+          radial-gradient(circle at 70% 20%, rgba(255, 118, 44, 0.18), transparent 34%),
+          linear-gradient(145deg, #181a20, #0d0e11);
+      }
+
+      [data-benchmark-marker] {
+        max-width: 720px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section data-benchmark-marker>
+        <h1>desktop-destroyer runtime benchmark</h1>
+        <p>Automated Chrome workload. This page is intentionally synthetic and network-free.</p>
+      </section>
+    </main>
+
+    <script type="module">
+      import { Body, DestroyerEngine } from "../dist/index.js";
+
+      const SCENARIOS = ["idle", "particles", "fire", "physics", "mixed"];
+      const TAU = Math.PI * 2;
+      let engine = null;
+
+      function particle(kind, index, count) {
+        const cols = Math.ceil(Math.sqrt(count));
+        const col = index % cols;
+        const row = Math.floor(index / cols);
+        const x = 40 + (col / Math.max(1, cols - 1)) * (innerWidth - 80);
+        const y = 70 + (row / Math.max(1, cols - 1)) * (innerHeight - 150);
+        return {
+          kind,
+          x,
+          y,
+          vx: ((index * 17) % 41) - 20,
+          vy: kind === "smoke" ? -24 : ((index * 13) % 31) - 15,
+          life: 0,
+          maxLife: 120,
+          size: 3 + (index % 16),
+          gravity: 0,
+          drag: 0,
+          phase: (index / count) * TAU,
+          angle: (index / count) * TAU,
+        };
+      }
+
+      function addParticles(count) {
+        const kinds = ["smoke", "spark", "dust", "ember", "water"];
+        for (let i = 0; i < count; i++) engine.spawnParticle(particle(kinds[i % kinds.length], i, count));
+      }
+
+      function addFire(count) {
+        const columns = 8;
+        for (let i = 0; i < count; i++) {
+          const col = i % columns;
+          const row = Math.floor(i / columns);
+          engine.spawnFlame(
+            100 + col * ((innerWidth - 200) / (columns - 1)),
+            170 + row * 125,
+            1,
+          );
+        }
+      }
+
+      function makeBodySprite(index) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 24;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = `hsl(${(index * 37) % 360} 55% 58%)`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return canvas;
+      }
+
+      function addBodies(count) {
+        const columns = 16;
+        for (let i = 0; i < count; i++) {
+          const x = 90 + (i % columns) * ((innerWidth - 180) / (columns - 1));
+          const y = 80 + Math.floor(i / columns) * 25;
+          const width = 24 + (i % 4) * 2;
+          const height = 17 + (i % 3) * 2;
+          const body = new Body({
+            points: [
+              x - width / 2,
+              y - height / 2,
+              x + width / 2,
+              y - height / 2,
+              x + width / 2,
+              y + height / 2,
+              x - width / 2,
+              y + height / 2,
+            ],
+            sprite: makeBodySprite(i),
+            vx: ((i * 19) % 71) - 35,
+            vy: ((i * 23) % 41) - 20,
+            av: ((i * 29) % 21) / 10 - 1,
+            ttl: 120,
+          });
+          body.spriteW = width;
+          body.spriteH = height;
+          engine.physics.add(body);
+        }
+      }
+
+      function createEngine() {
+        return new DestroyerEngine({
+          captureContent: false,
+          soundEnabled: false,
+          harvestElements: false,
+          textMask: false,
+          postFX: true,
+          physics: true,
+          maxFlames: 32,
+          maxParticles: 1400,
+          toolStyle: "emoji",
+        });
+      }
+
+      let lastDisposeState = null;
+
+      function disposeEngine() {
+        if (!engine) return lastDisposeState;
+        const disposed = engine;
+        disposed.dispose();
+        if (window.__desktopDestroyer === disposed) delete window.__desktopDestroyer;
+        lastDisposeState = {
+          connected: disposed.container.isConnected,
+          containerChildren: disposed.container.childElementCount,
+          fxWidth: disposed.fxCtx.canvas.width,
+          fxHeight: disposed.fxCtx.canvas.height,
+          flames: disposed.flames.length,
+          bodies: disposed.physics.count,
+          particles: disposed.particles.length,
+          tools: disposed.tools.size,
+          pageElements: disposed.pageElements.length,
+          performanceCallbacks: disposed.monitor.callbacks.size,
+          contentRoot: disposed.contentRoot !== null,
+          heatCanvas: disposed.heatCanvas !== null,
+          contentReady: disposed.content !== null,
+          debugHandle: Boolean(window.__desktopDestroyer),
+        };
+        engine = null;
+        return lastDisposeState;
+      }
+
+      function setupScenario(name) {
+        disposeEngine();
+        engine = createEngine();
+        if (name === "particles") addParticles(1_200);
+        if (name === "fire") addFire(32);
+        if (name === "physics") addBodies(170);
+        if (name === "mixed") {
+          addParticles(900);
+          addFire(24);
+          addBodies(150);
+        }
+        window.__desktopDestroyer = engine;
+      }
+
+      async function cycleScenario(name, count, activeMs = 80) {
+        for (let i = 0; i < count; i++) {
+          setupScenario(name);
+          await new Promise((resolve) => setTimeout(resolve, activeMs));
+          disposeEngine();
+        }
+        return lastDisposeState;
+      }
+
+      function percentile(sorted, p) {
+        if (sorted.length === 0) return 0;
+        const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * p) - 1));
+        return sorted[index];
+      }
+
+      async function measure(durationMs = 4_000, warmupMs = 1_000) {
+        await new Promise((resolve) => setTimeout(resolve, warmupMs));
+        const intervals = [];
+        const longTasks = [];
+        const observer = "PerformanceObserver" in window
+          ? new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) longTasks.push(entry.duration);
+            })
+          : null;
+        try {
+          observer?.observe({ type: "longtask", buffered: false });
+        } catch {
+          // Long Task API is optional; frame intervals still provide the core signal.
+        }
+
+        const heapStart = performance.memory?.usedJSHeapSize ?? null;
+        const startedAt = performance.now();
+        let previous = startedAt;
+        await new Promise((resolve) => {
+          const sample = (now) => {
+            intervals.push(now - previous);
+            previous = now;
+            if (now - startedAt >= durationMs) resolve();
+            else requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+        observer?.disconnect();
+
+        const elapsedMs = performance.now() - startedAt;
+        const sorted = intervals.slice().sort((a, b) => a - b);
+        const total = intervals.reduce((sum, value) => sum + value, 0);
+        const longFrames = intervals.filter((value) => value > 20).length;
+        const veryLongFrames = intervals.filter((value) => value > 34).length;
+        const droppedFrames = intervals.reduce(
+          (sum, value) => sum + Math.max(0, Math.round(value / (1000 / 60)) - 1),
+          0,
+        );
+        const engineMetrics = engine.performanceSnapshot ?? null;
+        return {
+          elapsedMs,
+          frames: intervals.length,
+          fps: (intervals.length * 1000) / elapsedMs,
+          frameMs: {
+            average: total / Math.max(1, intervals.length),
+            p50: percentile(sorted, 0.5),
+            p95: percentile(sorted, 0.95),
+            p99: percentile(sorted, 0.99),
+            max: sorted.at(-1) ?? 0,
+          },
+          longFrames,
+          veryLongFrames,
+          droppedFrames,
+          longTasks: {
+            count: longTasks.length,
+            totalMs: longTasks.reduce((sum, value) => sum + value, 0),
+            maxMs: Math.max(0, ...longTasks),
+          },
+          heap: heapStart == null
+            ? null
+            : {
+                startBytes: heapStart,
+                endBytes: performance.memory.usedJSHeapSize,
+                deltaBytes: performance.memory.usedJSHeapSize - heapStart,
+              },
+          entities: {
+            particles: engineMetrics?.entities.particles ?? null,
+            flames: engine.flames.length,
+            bodies: engine.physics.count,
+          },
+          engine: engineMetrics,
+        };
+      }
+
+      window.ddBenchmark = {
+        scenarios: SCENARIOS,
+        setupScenario,
+        cycleScenario,
+        measure,
+        dispose: disposeEngine,
+      };
+      document.documentElement.dataset.ready = "true";
+    </script>
+  </body>
+</html>

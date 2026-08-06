@@ -135,12 +135,28 @@ canvas at `opacity: 0.005` behind everything — visually undetectable, still pa
 
 <https://canvasui.dev> (source: <https://github.com/DavidHDev/canvas-ui>) says only that
 "components that draw live HTML on canvas rely on an experimental browser capability, available
-today in Chrome behind a flag" — it names neither the method nor the flag. Its Particle Reveal
-component takes the spec-blessed arrangement: the component *owns* its content, so it can render
-that content as a `<canvas layoutsubtree>` child in JSX and draw it directly. That works when the
-canvas is the thing rendering your markup.
+today in Chrome behind a flag" — it names neither the method nor the flag. Reading the source
+(`src/lib/Canvas/CanvasVanilla.ts`, the primitive all 33 components share) it is doing four things,
+and three of them generalise to us:
 
-It does not generalise to "destroy the page you are already on", which is our problem.
+1. **`<canvas layoutsubtree>` owning the content**, drawn with `drawElementImage`. The component
+   renders your markup as a canvas child in JSX, so it can draw it directly. Works when the canvas
+   is the thing rendering your markup; does **not** generalise to "destroy the page you are already
+   on", which is our problem. See §3 for what we do instead.
+2. **`canvas.onpaint` + `requestPaint()`** rather than polling. Chrome fires `onpaint` when the
+   canvas's element content needs repainting; the handler is just
+   `ctx.reset(); ctx.drawElementImage(content, 0, 0)`. **Adopted** — see §3.1.
+3. **The 2D canvas is a source texture, not the thing on screen.** It is uploaded with
+   `texImage2D(…, sourceCanvas)` and a WebGL canvas is what sits in the DOM; every effect is a
+   fragment shader over that texture. **Adopted** — see `surface.ts`, and §6.
+4. **A quarter-res text mask** built from `Range.getClientRects()` over every text node, so shaders
+   can back off where the page has type on it and keep glyphs legible. **Adopted** — see
+   `textmask.ts`.
+
+Licensing note: canvas-ui is MIT **+ Commons Clause**, which permits use but forbids redistributing
+the components "alone, in a bundle, or as a ported version". This package is MIT and published to
+npm, so nothing here is copied from it — the architecture and the WICG API are shared, the shader
+and renderer code is ours.
 
 ## 3. Design chosen: the mirror canvas
 
@@ -156,17 +172,47 @@ page this is unacceptable. **Rejected.**
 So live mode is honestly **"instant re-capture on demand"**, not zero-copy live DOM. What it buys
 over the html-to-image snapshot path is real and large:
 
-| | snapshot (html-to-image) | live (`drawElementImage`) |
-| --- | --- | --- |
-| Cost per capture (this site, 1440×2449) | ~0.5–2 s | **~6 ms** (5 ms clone + 0.5 ms draw) |
-| Mechanism | clone → inline every computed style → serialize to SVG → base64 → decode `Image` | clone → prune → one GPU draw |
-| Refreshable while destroyed | no | yes, ~1 Hz |
-| Needs a flag | no | yes |
+| | snapshot (html-to-image) | live, re-clone | live, repaint (§3.1) |
+| --- | --- | --- | --- |
+| Cost per refresh (this site, 1440×2449) | ~0.5–2 s | ~6 ms (5 ms clone + 0.5 ms draw) | **~0.5 ms** (draw only) |
+| Mechanism | clone → inline every computed style → serialize to SVG → base64 → decode `Image` | clone → prune → one GPU draw | one GPU draw |
+| Animations in the mirror | n/a | frozen to the capture instant | running, clock-synced |
+| Refreshable while destroyed | no | yes, ~1 Hz | yes |
+| Needs a flag | no | yes | yes, plus `onpaint` |
 
-Because a refresh is ~6 ms we re-clone from the *live* DOM every `liveRefreshMs` (default 1000).
 The clock in the site hero therefore keeps ticking under the destruction until you destroy that
 region — that is the demo, and it is delivered by cheap re-capture rather than by the canvas
 holding live DOM.
+
+### 3.1 Repaint instead of re-clone (canvasui.dev's `onpaint`)
+
+The clone is ~90% of a refresh. canvas-ui never pays it, because it mounts its content once and
+lets Chrome drive redraws through `onpaint`. We can do the same to the *mirror*: mount the pruned
+clone once, register `onpaint`, and refresh with a bare `drawElementImage`.
+
+That changes what the mirror should do about animations. The re-clone path has to **freeze** them
+(`freezeAnimations`) — a fresh clone restarts every animation from t=0, so an un-frozen twin
+captures a page mid-fade-in. A twin that stays mounted wants the opposite: its animations should
+keep running. `syncAnimationClocks` therefore matches each element's animations to its twin's by
+index (the cascade builds them in the same order) and copies `currentTime` across, putting the two
+clocks in step. The mirror then animates on its own and every repaint shows it further along.
+
+Both paths are live. `LiveContentSource.canRepaint` selects between them, and any failure inside
+`paint()` — a stale paint record after a reflow, a subtree Chrome stopped painting — clears the
+flag and drops back to the re-clone path rather than losing the page.
+
+**Not verified against a real browser.** Chrome 148 in the Browser pane has neither
+`drawElementImage` nor `requestPaint`, so everything in this subsection is written from the IDL and
+from canvas-ui's usage, not measured the way §1 was. Test it with
+`--enable-blink-features=CanvasDrawElement` before trusting it.
+
+### 3.2 What a refresh still costs
+
+Making capture free does not make refresh free. `ContentLayer.recompose` rebuilds the visible
+surface from base + decals + wounds, and the surface renderer then re-uploads it — both at document
+size (2560×4900 on this site, ~12.5M px). That, not the capture, is what bounds `liveRefreshMs`;
+raising the refresh rate much past a few Hz needs `recompose` and the upload scoped to the viewport
+band, which they are not today.
 
 ### Making the clone faithful
 
@@ -258,6 +304,37 @@ engine.on("statuschange", cb);
 - `"live"` — require the API; if it is missing, or the first live capture throws, warn and fall
   back to snapshot. `liveUnavailable` drives the toolbar chip's "(live unavailable)" text.
 - `"snapshot"` — never touch the experimental API.
+
+## 6. Layering, part two: the page goes through a shader
+
+Independently of which capture mode is in use, the 2D content canvas is no longer what is on
+screen. `SurfaceRenderer` (`surface.ts`) owns a WebGL2 canvas that samples it, following the same
+split canvas-ui uses for every component.
+
+The wound field needs no buffer of its own: the surface's **alpha channel** already is one — 1
+where the page survives, 0 where a tool removed it. Its gradient across a tear gives a normal, and
+that normal drives refraction (the lip of a hole bends the page behind it), per-channel dispersion,
+and relief lighting (one side of every tear catches the light). A flat `destination-out` cutout
+becomes torn material without any tool changing how it draws.
+
+Two invariants hold this together, and both are covered by `harness.html`:
+
+- **An undamaged page is bit-identical to the raster.** Every term scales with the alpha gradient,
+  which is zero across intact page, and the quad samples at exact texel centres so `LINEAR` returns
+  exact texels. None of the capture-fidelity work in `capture.ts` is undone by presenting through
+  GL.
+- **The silhouette stays exact.** Output alpha is the *unrefracted* sample, so a refracted colour
+  can never drag opaque pixels into a hole.
+
+Cost is bounded on both sides by dirty rectangles: `texSubImage2D` with WebGL2's `UNPACK_SKIP_*`
+uploads only the region a tool touched, and `gl.scissor` restricts the raster to the same region,
+with `preserveDrawingBuffer` holding the rest. Tools that draw straight into `surfaceCtx` are
+invisible to the layer, so the engine re-shades a `TOOL_DECAL_REACH` disc around the cursor every
+frame a tool is held, and marks that land further out call `engine.markSurface`.
+
+WebGL2 missing, refusing to link, or a page larger than `MAX_TEXTURE_SIZE` all leave
+`renderer.available === false`, and the 2D surface is mounted directly — exactly the behaviour
+before this existed.
 
 ## Sources
 

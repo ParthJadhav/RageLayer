@@ -1,0 +1,93 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>desktop-destroyer tool art harness</title>
+<style>
+  body { margin: 0; background: #14161a; color: #dde; font: 12px ui-monospace, monospace; }
+  h2 { margin: 14px 16px 6px; font-size: 13px; font-weight: 600; color: #9ab; }
+  #grid { display: grid; grid-template-columns: repeat(5, 210px); gap: 8px; padding: 0 16px; }
+  .cell { position: relative; background: linear-gradient(160deg, #f5f1e8, #d9d2c4); border-radius: 8px; }
+  .cell.dark { background: linear-gradient(160deg, #26292f, #17191d); }
+  .cell span {
+    position: absolute; left: 6px; top: 4px; color: rgba(0,0,0,0.55); font-size: 10px;
+  }
+  .cell.dark span { color: rgba(255,255,255,0.55); }
+  canvas { display: block; }
+  #icons { display: flex; gap: 6px; padding: 8px 16px; align-items: center; }
+  #icons div { width: 42px; height: 42px; border-radius: 10px; background: rgba(18,17,16,0.9);
+    display: flex; align-items: center; justify-content: center; }
+  #icons img { width: 30px; height: 30px; }
+</style>
+<h2 id="hdr">tool art — rest pose (left, light) and held/firing (right, dark)</h2>
+<div id="grid"></div>
+<h2>toolbar icons (baked)</h2>
+<div id="icons"></div>
+<script type="module">
+  import {
+    hammerArt, gunArt, flamethrowerArt, waterHoseArt, chainsawArt, paintballArt,
+    broomArt, demolitionArt, rocketArt, lightningArt, freezeArt, blackHoleArt,
+    bugsArt, toolIconDataUrl,
+  } from "./dist/index.js";
+
+  const arts = {
+    hammer: hammerArt, gun: gunArt, flamethrower: flamethrowerArt,
+    water: waterHoseArt, chainsaw: chainsawArt, paintball: paintballArt,
+    broom: broomArt, demolition: demolitionArt, rocket: rocketArt,
+    lightning: lightningArt, freeze: freezeArt, blackhole: blackHoleArt, bugs: bugsArt,
+  };
+
+  const grid = document.getElementById("grid");
+  const cells = [];
+  for (const [name, art] of Object.entries(arts)) {
+    for (const held of [false, true]) {
+      const cell = document.createElement("div");
+      cell.className = "cell" + (held ? " dark" : "");
+      const label = document.createElement("span");
+      label.textContent = name + (held ? " (held)" : "");
+      const canvas = document.createElement("canvas");
+      canvas.width = 420; canvas.height = 300;
+      canvas.style.width = "210px"; canvas.style.height = "150px";
+      cell.append(label, canvas);
+      grid.append(cell);
+      cells.push({ art, held, ctx: canvas.getContext("2d") });
+    }
+  }
+
+  // Freeze the clock via ?t=<seconds>, for deterministic screenshots.
+  const qt = new URLSearchParams(location.search).get("t");
+  const start = performance.now();
+  function frame(now) {
+    const time = qt !== null ? Number(qt) : (now - start) / 1000;
+    for (const { art, held, ctx } of cells) {
+      ctx.setTransform(2, 0, 0, 2, 0, 0);
+      ctx.clearRect(0, 0, 210, 150);
+      ctx.save();
+      ctx.translate(62, 44);
+      art(ctx, {
+        time,
+        held,
+        // Held cells: pressed 80ms ago and still down (mid-action for most,
+        // just-fired for click tools). Rest cells: released long ago.
+        sinceDown: held ? 0.08 + (time % 1.6) : Infinity,
+        sinceUp: held ? Infinity : 10,
+        vx: held ? 240 : 0, vy: held ? 40 : 0,
+        aimX: -0.55, aimY: -0.835,
+      });
+      ctx.restore();
+      // hotspot marker
+      ctx.fillStyle = "rgba(255,0,0,0.7)";
+      ctx.fillRect(60.5, 42.5, 3, 3);
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const icons = document.getElementById("icons");
+  for (const art of Object.values(arts)) {
+    const holder = document.createElement("div");
+    const img = document.createElement("img");
+    img.src = toolIconDataUrl(art, 30);
+    holder.append(img);
+    icons.append(holder);
+  }
+  document.getElementById("hdr").dataset.ready = "1";
+</script>
