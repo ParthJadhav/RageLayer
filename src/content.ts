@@ -729,7 +729,7 @@ export class ContentLayer {
     root: HTMLElement,
     width: number,
     height: number,
-    filter: (node: HTMLElement) => boolean,
+    filter: (node: Node) => boolean,
     options: CaptureOptions = {},
   ) {
     if (this.disposed) return;

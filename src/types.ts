@@ -350,8 +350,13 @@ export interface DestroyerOptions {
    * dev-tooling custom elements (Next.js's indicator portal, route
    * announcers, Vite/Astro overlays, …). Replace it to capture everything, or
    * compose with the default to add your own exclusions.
+   *
+   * html-to-image calls this for every cloned node — element, text, comment —
+   * so the parameter is a `Node`. Check `nodeType` (or `instanceof Element`)
+   * before touching element-only APIs, and return `true` for non-elements
+   * unless you mean to drop raw text from the capture.
    */
-  captureFilter?(node: HTMLElement): boolean;
+  captureFilter?(node: Node): boolean;
   /**
    * Simulate torn-off chunks of the page as rigid bodies that tumble, collide
    * and pile up at the bottom of the viewport. Default true; turning it off

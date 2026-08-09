@@ -179,7 +179,11 @@ exclusions):
 import { defaultCaptureFilter } from "desktop-destroyer";
 
 new DestroyerEngine({
-  captureFilter: (node) => defaultCaptureFilter(node) && !node.classList?.contains("my-widget"),
+  // Called for every cloned node (elements *and* text) — check instanceof
+  // before touching element-only APIs.
+  captureFilter: (node) =>
+    defaultCaptureFilter(node) &&
+    !(node instanceof Element && node.classList.contains("my-widget")),
 });
 ```
 

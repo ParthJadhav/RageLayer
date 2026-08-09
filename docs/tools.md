@@ -49,7 +49,7 @@ Splatters that drip and dry, clipped to surviving page pixels.
 ## Black hole
 
 Held: thin-lens gravitational deflection, frame-dragging swirl, photon ring, opaque horizon.
-It rips elements loose and pulls debris in on an inverse-square law, then detonates on release.
+It rips elements loose and hauls debris in on an inverse-linear pull with a capture funnel at the horizon, then detonates on release.
 
 ![Black hole lensing the page mid-hold](./screenshots/blackhole.png)
 

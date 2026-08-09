@@ -34,7 +34,7 @@ Creates the overlay and starts capturing the page. Must run in a browser.
 | `captureMode` | `"auto" \| "snapshot" \| "live"` | `"auto"` | See [live mode](../README.md#live-mode-experimental) |
 | `liveRefreshMs` | `number` | `1000` | Live-mode re-capture cadence (0 = on demand) |
 | `contentRoot` | `HTMLElement` | `document.body` | What gets captured |
-| `captureFilter` | `(node) => boolean` | `defaultCaptureFilter` | Which nodes make it into the snapshot |
+| `captureFilter` | `(node: Node) => boolean` | `defaultCaptureFilter` | Which nodes make it into the snapshot. Called for every cloned node (elements *and* text); return `true` for non-elements unless you mean to drop text |
 
 ### Engine lifecycle & state
 
@@ -73,7 +73,9 @@ const stamp: Tool = {
     engine.damageCtx.fillText("🐾", e.x, e.y);
     engine.shake(3);
   },
-  // Optional: onMove, onUp, tick(engine, dt), cursor, art (see below)
+  // Optional: onMove, onUp, tick(engine, dt), cursor, art (see below),
+  // reset() — clear any module-level state (in-flight projectiles, strike
+  // sites). Called on registerTool, engine.clear() and engine.dispose().
 };
 ```
 
@@ -111,7 +113,7 @@ engine.physics;                             // the PhysicsWorld itself (blast, a
 ### State & repair
 
 `eraseDamage(x, y, r)` (the broom's verb) · `washSurface(x, y, r, strength)` (the hose's verb —
-cleans stains, never rebuilds structure) · `flushBugs(x, y, r, dir)` · `clear()` ·
+cleans stains, never rebuilds structure) · `flushBugs(x, y, r)` · `clear()` ·
 `pageElements` · `toolAim` (smoothed pointing direction — keeps directional effects lined up
 with the drawn tool art).
 
@@ -134,8 +136,13 @@ All exported for reuse without the engine:
   `drawSplat`, `drawPaintStreak`, `drawBurnChannel`, `PAINT_COLORS`, `randomPaint`.
 - **Capture** — `defaultCaptureFilter`, `measureCapture`, `resolvePageBackdrop`,
   `DD_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.
-- **Rendering** — `SurfaceRenderer`, `PostFX`, `createProgram`, `createQuad`, `createTexture`.
+- **Rendering** — `SurfaceRenderer`, `PostFX`, `createProgram`, `createQuad`, `createTexture`,
+  `clearSpriteCache` (drop the shared baked-sprite atlas; rebuilt lazily on next use — the
+  engine already calls it when the last engine is disposed).
 - **Page mapping** — `harvestElements`, `elementAt`, `elementsInBand`, `buildTextMask`.
+- **Sharing** — `downloadBlob(blob, filename)`, `copyBlobToClipboard(blob)` (resolves `false`
+  when the browser refuses), `snapshotFilename(ext?)`: the helpers the React toolbar uses to
+  save `engine.snapshot()` output, exported for hosts building their own toolbar.
 
 ## Fallback behaviour
 

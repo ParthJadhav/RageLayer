@@ -502,7 +502,7 @@ export class PhysicsWorld {
   bodies: Body[] = [];
   gravity: number;
   private maxBodies = MAX_BODIES;
-  /** Extra uniform acceleration — the black hole and explosions write here. */
+  /** Velocity/position solver passes per step (see `WorldOptions.iterations`). */
   private iterations: number;
   /** Contact storage is pooled so a tumbling heap does not allocate every frame. */
   private manifolds: Manifold[] = [];

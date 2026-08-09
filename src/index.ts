@@ -45,6 +45,8 @@ export type { BodyInit, WorldOptions } from "./physics";
 export { Body, MAX_BODIES, PhysicsWorld } from "./physics";
 export type { PostFXParams } from "./postfx";
 export { PostFX } from "./postfx";
+export { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
+export { clearSpriteCache } from "./sprites";
 export type { SurfaceParams } from "./surface";
 export { DEFAULT_SURFACE_PARAMS, SurfaceRenderer } from "./surface";
 export { buildTextMask } from "./textmask";

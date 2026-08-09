@@ -263,9 +263,14 @@ export class SoundEngine implements SoundApi {
    * the target gain; ramps smoothly so loops fade in/out instead of clicking.
    */
   loop(name: "fire" | "water" | "saw" | "flamethrower" | "void", target: number) {
+    if (!this.enabled) target = 0;
+    // The engine drives loops from its rAF with target 0 while idle. Creating
+    // the AudioContext there would happen outside any user gesture (autoplay
+    // policies block it and Chrome warns); only touch audio once a loop is
+    // actually starting or already running.
+    if (target <= 0 && !this.loops.has(name)) return;
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
-    if (!this.enabled) target = 0;
     let entry = this.loops.get(name);
     if (!entry && target > 0) {
       const source = ctx.createBufferSource();

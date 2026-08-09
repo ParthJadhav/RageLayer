@@ -136,6 +136,19 @@ export interface Sprites {
 
 let cache: Sprites | null = null;
 
+/**
+ * Release the baked sprite set (a few hundred KB of canvas backing store).
+ *
+ * Always safe: the cache is rebuilt lazily by the next `sprites()` call, so
+ * callers holding no reference lose nothing but the memory. The engine invokes
+ * this when the last live `DestroyerEngine` is disposed; hosts that mount and
+ * unmount rapidly pay one rebuild per remount, which is a handful of small
+ * gradient fills.
+ */
+export function clearSpriteCache() {
+  cache = null;
+}
+
 export function sprites(): Sprites {
   return (cache ??= {
     smoke: radial(96, [

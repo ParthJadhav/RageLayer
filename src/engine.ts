@@ -26,9 +26,10 @@ import {
 } from "./performance";
 import { MAX_BODIES, PhysicsWorld } from "./physics";
 import { PostFX } from "./postfx";
-import { blit, blitRect, blitStreak, sprites } from "./sprites";
+import { blit, blitRect, blitStreak, clearSpriteCache, sprites } from "./sprites";
 import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
 import { buildTextMask } from "./textmask";
+import { polygonArea2 } from "./topology";
 import type {
   CaptureMode,
   CaptureStatus,
@@ -50,7 +51,8 @@ import type {
 
 const TAU = Math.PI * 2;
 
-export { DD_IGNORE_ATTR };
+/** Engines currently alive in this document — refcount for the sprite cache. */
+let liveEngines = 0;
 
 const MAX_CAPTURE_HEIGHT = 12000;
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
@@ -287,7 +289,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private listeners = new Map<EngineEvent, Set<() => void>>();
   private resizeTimer = 0;
   private capturing = false;
-  private captureFilter: (node: HTMLElement) => boolean;
+  private captureFilter: (node: Node) => boolean;
   /** Non-null only while live mode is actually in use. */
   private liveSource: LiveContentSource | null = null;
   private refreshTimer = 0;
@@ -492,6 +494,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     this.lastTime = performance.now();
     this.requestFrame();
+
+    // Refcount the process-wide sprite cache: `dispose` frees it only when the
+    // last engine goes away, so overlapping engines never rebuild mid-flight.
+    liveEngines++;
 
     if (this.opts.captureContent) {
       void this.captureContent();
@@ -817,7 +823,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this._singularity = null;
     this.contentRoot = null;
     this.prevRootVisibility = null;
-    this.captureFilter = defaultCaptureFilter;
+
+    // Last engine out releases the shared sprite atlas. Safe even if another
+    // engine is created later — `sprites()` rebuilds lazily.
+    liveEngines = Math.max(0, liveEngines - 1);
+    if (liveEngines === 0) clearSpriteCache();
   }
 
   // ── Content capture (the "destroy the real page" pipeline) ────────────────
@@ -1311,16 +1321,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     path.closePath();
   }
 
-  private static polyArea2(points: number[]): number {
-    let area2 = 0;
-    const n = points.length >> 1;
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      area2 += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
-    }
-    return area2;
-  }
-
   fracture(x: number, y: number, radius: number, options: FractureOptions = {}): number {
     // Anything crawling in the struck region is crushed along with it.
     if (this.bugs.length > 0) this.squashBugs(x, y, radius);
@@ -1336,7 +1336,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     let made = 0;
 
     for (const cell of cells) {
-      const geometricArea = Math.abs(DestroyerEngine.polyArea2(cell)) * 0.5;
+      const geometricArea = Math.abs(polygonArea2(cell)) * 0.5;
       const materialArea = this.contentLayer?.materialArea(cell) ?? geometricArea;
       // A cell grazing a pre-existing hole is fine; an empty cell is not a
       // shard. Requiring a little real coverage also prevents a huge collider
@@ -1555,7 +1555,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     // Shoelace area: reject slivers (a doubled-back cut line encloses nothing
     // worth dropping, and a degenerate polygon makes a degenerate body).
-    const area2 = DestroyerEngine.polyArea2(points);
+    const area2 = polygonArea2(points);
     if (Math.abs(area2) / 2 < 320) return false;
     // The outline may span existing holes. Keep them in the falling sprite,
     // but never create a body when the outlined region is already effectively
@@ -1661,7 +1661,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const carvedCells: number[][] = [];
     let made = 0;
     for (const cell of cells) {
-      const geometricArea = Math.abs(DestroyerEngine.polyArea2(cell)) * 0.5;
+      const geometricArea = Math.abs(polygonArea2(cell)) * 0.5;
       const materialArea = this.contentLayer?.materialArea(cell) ?? geometricArea;
       if (materialArea < Math.max(8, geometricArea * 0.04)) continue;
       const body = makeChunk(

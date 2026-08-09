@@ -44,7 +44,7 @@ open `/demo/` — a complete destructible page with a vanilla toolbar.
 | 🚀 **Rocket launcher** | click | Launches from the shoulder tube at the cursor — backblast, arc out, guidance back onto the mark — then a blast that fractures and ignites |
 | ⚡ **Lightning** | click | Forking bolt with sub-branches and restrike flicker, ionized burn channel, ground crawlers, crater, fires |
 | ❄️ **Freeze ray** | hold | Frost that resists fire, slows bugs until they freeze solid, and shatters like glass |
-| 🕳️ **Black hole** | hold | Gravitationally lenses the page (thin-lens 1/r deflection, frame-dragging swirl, photon ring, opaque horizon), rips elements loose, and pulls debris in on an inverse-square law; collapses into an explosion on release |
+| 🕳️ **Black hole** | hold | Gravitationally lenses the page (thin-lens 1/r deflection, frame-dragging swirl, photon ring, opaque horizon), rips elements loose, and hauls debris in on an inverse-linear pull with a capture funnel at the horizon; collapses into an explosion on release |
 | 🐛 **Bug** | click | Release a bug that wanders and gnaws trails through the page. It lives in the engine, so it keeps eating while you switch tools — and any tool kills it: squash it, shoot it, burn it, blow it up, or feed it to a black hole |
 | 🧹 **Broom** | drag | Sweeps damage away, repairs content, swats bugs |
 
@@ -79,7 +79,7 @@ function App() {
 }
 ```
 
-Props: `onClose`, `tools` (replace/extend the toolset), `soundDefault` (default `false`), `engineOptions` (`zIndex`, `maxFlames`, `maxParticles`, `physics`, `gravity`, `postFX`, `harvestElements`, `target`, `captureMode`, …).
+Props: `onClose`, `tools` (replace/extend the toolset), `soundDefault` (default `false`), `toolStyle` (`"3d"` drawn tool art, or `"emoji"` for the classic cursors), `debugGlobal` (expose the engine as `window.__desktopDestroyer` for debugging/E2E, default `false`), `engineOptions` (`zIndex`, `maxFlames`, `maxParticles`, `physics`, `gravity`, `postFX`, `harvestElements`, `target`, `captureMode`, …).
 
 Keyboard: `1`–`9`/`0` select tools, `X` collapse, `P` save a picture, `R` repair, `M` mute, `Esc` deselects then closes.
 
@@ -297,7 +297,11 @@ import { defaultCaptureFilter } from "desktop-destroyer";
 
 <DesktopDestroyer
   engineOptions={{
-    captureFilter: (node) => defaultCaptureFilter(node) && !node.classList?.contains("my-widget"),
+    // Called for every cloned node (elements *and* text) — check instanceof
+    // before touching element-only APIs.
+    captureFilter: (node) =>
+      defaultCaptureFilter(node) &&
+      !(node instanceof Element && node.classList.contains("my-widget")),
   }}
 />;
 ```
