@@ -386,6 +386,15 @@ try {
   throw error;
 } finally {
   chrome.kill("SIGKILL");
+  // Wait for the actual exit so Chrome isn't still flushing its profile
+  // directory while rm deletes it.
+  await Promise.race([
+    new Promise((resolveExit) => {
+      if (chrome.exitCode != null) resolveExit();
+      else chrome.once("exit", resolveExit);
+    }),
+    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
+  ]);
   await new Promise((resolveClosed) => server.close(resolveClosed));
-  await rm(profileDir, { recursive: true, force: true });
+  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }

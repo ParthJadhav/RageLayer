@@ -320,11 +320,12 @@ try {
   process.exitCode = 1;
 } finally {
   chrome.kill("SIGTERM");
+  const chromeExited = new Promise((resolveExit) => {
+    if (chrome.exitCode != null) resolveExit();
+    else chrome.once("exit", resolveExit);
+  });
   await Promise.race([
-    new Promise((resolveExit) => {
-      if (chrome.exitCode != null) resolveExit();
-      else chrome.once("exit", resolveExit);
-    }),
+    chromeExited,
     new Promise((resolveTimeout) =>
       setTimeout(() => {
         chrome.kill("SIGKILL");
@@ -332,12 +333,18 @@ try {
       }, 2_000),
     ),
   ]);
+  // A SIGKILLed Chrome can still be flushing its profile when rm starts;
+  // wait for the actual exit before deleting the directory.
+  await Promise.race([
+    chromeExited,
+    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
+  ]);
   server.closeAllConnections?.();
   await Promise.race([
     new Promise((resolveClosed) => server.close(resolveClosed)),
     new Promise((resolveTimeout) => setTimeout(resolveTimeout, 1_000)),
   ]);
-  await rm(profileDir, { recursive: true, force: true });
+  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   // Node's built-in WebSocket can retain an undici keep-alive handle after a
   // long multi-scenario CDP session. Flush output, then terminate explicitly so
   // the benchmark remains CI-friendly instead of hanging after valid JSON.

@@ -707,8 +707,16 @@ try {
     }),
     new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
   ]);
-  if (chrome.exitCode == null) chrome.kill("SIGKILL");
-  await rm(profileDir, { recursive: true, force: true });
+  if (chrome.exitCode == null) {
+    chrome.kill("SIGKILL");
+    // Wait for the actual exit so Chrome isn't still flushing its profile
+    // directory while rm deletes it.
+    await Promise.race([
+      new Promise((resolveExit) => chrome.once("exit", resolveExit)),
+      new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
+    ]);
+  }
+  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 // Node's built-in WebSocket can retain an undici keep-alive handle after CDP
