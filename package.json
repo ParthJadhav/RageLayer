@@ -1,6 +1,6 @@
 {
   "name": "desktop-destroyer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Desktop Destroyer for the web — an interactive overlay that lets visitors physically demolish any page. Real rigid-body debris, Voronoi shattering, DOM-aware demolition, fire that spreads, black holes, and a WebGL bloom pass.",
   "license": "MIT",
   "author": "Parth Jadhav <jadhavparth99@gmail.com>",
