@@ -85,13 +85,13 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
     "@biomejs/biome": "^2.4.0",
-    "@changesets/changelog-github": "^0.5.1",
+    "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.29.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
     "publint": "^0.3.14",
-    "tsdown": "^0.15.9",
-    "typescript": "^5.9.0"
+    "tsdown": "^0.22.14",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "html-to-image": "^1.11.13"
