@@ -1,5 +1,0 @@
----
-"desktop-destroyer": patch
----
-
-Engine bug fixes: fire spread now respects the quality-scaled flame limit instead of the raw `maxFlames` option; a failed live refresh backs off and retries instead of permanently disabling scheduled refreshes (and no longer mutates the caller's `liveRefreshMs`); `spawnBugs` only plays its pop sound when a bug is actually released; tools gained an optional `reset()` hook that the engine invokes on `registerTool`, `clear()` and `dispose()`, so module-level tool state (in-flight rockets, lightning restrikes, hammer strike sites, aim smoothing, spawn debts) no longer leaks between engine instances; the performance monitor's frame sample buffer is now a proper wrap-around ring (long sample intervals no longer skew percentiles, and fps/frame counts reflect every observed frame); `dispose()` releases the damage-tool context wrapper and the opacity map's hit-test canvas backing; a `pagehide` listener restores the hidden page's visibility if the document navigates away mid-destruction; and documents taller than the 12000px capture cap now log a one-time warning instead of being silently truncated.
