@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Version or publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies from lockfile
+        run: bun install --frozen-lockfile
+
+      - name: Create release PR or tag release
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bun run version
+          publish: bunx changeset tag
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build release artifact
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          bun run build
+          bun pm pack
+
+      - name: Create GitHub release with tarball
+        if: steps.changesets.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="$(jq -r .version package.json)"
+          notes="$(awk "/^## ${version//./\\.}$/{flag=1;next}/^## /{flag=0}flag" CHANGELOG.md)"
+          gh release create "v${version}" \
+            --title "v${version}" \
+            --notes "${notes:-Release v${version}}" \
+            desktop-destroyer-*.tgz
+
+      - name: Publish to npm (when NPM_TOKEN is configured)
+        if: steps.changesets.outputs.published == 'true' && env.NODE_AUTH_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish desktop-destroyer-*.tgz --access public
