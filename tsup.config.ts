@@ -7,6 +7,7 @@ export default defineConfig({
   },
   format: ["esm"],
   dts: true,
+  minify: true,
   sourcemap: true,
   clean: true,
   external: ["react", "react-dom"],

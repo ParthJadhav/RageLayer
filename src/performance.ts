@@ -142,6 +142,7 @@ export class PerformanceMonitor {
   private captureMs: number | null = null;
   private qualityReason = "initial device capability";
   private coolSamples = 0;
+  private peakSamples = 0;
   private latest: PerformanceSnapshot;
   private disposed = false;
 
@@ -286,11 +287,18 @@ export class PerformanceMonitor {
     for (const callback of this.callbacks) callback(this.latest);
 
     if (!this.adaptive || this.count < 12) return null;
-    const overloaded = cpu.p95 > targetBudget * 0.72 || cpu.max > targetBudget * 1.2;
-    if (overloaded) {
+    const sustainedOverload = cpu.p95 > targetBudget * 0.72;
+    const peakOverload = cpu.max > targetBudget * 1.2;
+    if (sustainedOverload || peakOverload) {
       this.coolSamples = 0;
+      // Shader/canvas initialization can create one large first-frame spike
+      // while every recurring frame remains cool. Only a p95 overload is
+      // immediately actionable; a peak-only signal must repeat in the next
+      // sample before it is allowed to reduce visual quality.
+      if (!sustainedOverload && ++this.peakSamples < 2) return null;
+      this.peakSamples = 0;
       const pressure =
-        cpu.p95 > targetBudget * 0.72
+        sustainedOverload
           ? `p95 engine cost ${cpu.p95.toFixed(1)}ms`
           : `peak engine cost ${cpu.max.toFixed(1)}ms`;
       if (measurement.quality === "high") {
@@ -303,6 +311,8 @@ export class PerformanceMonitor {
       }
       return null;
     }
+
+    this.peakSamples = 0;
 
     const cool = cpu.p95 < targetBudget * 0.34 && cpu.max < targetBudget * 0.7;
     this.coolSamples = cool ? this.coolSamples + 1 : 0;

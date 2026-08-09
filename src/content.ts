@@ -26,11 +26,316 @@
 import { pickPixelRatio, pinFixedDescendants, type PageBackdrop } from "./capture";
 import { blit, sprites } from "./sprites";
 import { SurfaceRenderer, type SurfaceParams } from "./surface";
+import {
+  findDetachedPolygons,
+  pointInPolygon,
+  polygonMaterialArea,
+  type TopologyBounds,
+} from "./topology";
 import type { ContentPatch } from "./types";
 
 export type { ContentPatch };
 
 const TAU = Math.PI * 2;
+/** Coarse enough to resolve the chainsaw's 4–7px kerf, compact enough for tall pages. */
+const TOPOLOGY_CELL = 3;
+
+interface OpacityBounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+interface OpacityOperation {
+  restores: boolean;
+  bounds: OpacityBounds;
+  fill: Path2D;
+  stroke?: Path2D;
+  lineWidth?: number;
+}
+
+/**
+ * CPU-readable coverage for page-aware effects.
+ *
+ * The pristine alpha is captured once at low resolution. Wounds themselves are
+ * retained as spatially indexed Path2D operations and queried with
+ * isPointInPath/isPointInStroke, which does no pixel readback at all. Reverse
+ * operation order also models repair exactly: the latest remove/restore shape
+ * that contains the point wins.
+ */
+class OpacityMap {
+  private readonly raster = document.createElement("canvas");
+  private readonly rasterCtx = this.raster.getContext("2d", { willReadFrequently: true })!;
+  private readonly testCtx = document.createElement("canvas").getContext("2d")!;
+  private baseAlpha: Uint8Array | null = null;
+  private operations: OpacityOperation[] = [];
+  private cells = new Map<number, number[]>();
+  private scaleX = 1;
+  private scaleY = 1;
+  private mapWidth = 0;
+  private mapHeight = 0;
+  private cols = 1;
+  private width = 0;
+  private height = 0;
+  /** 0 = pristine void, 1 = material, 2 = removed material. */
+  private topology = new Uint8Array(0);
+  private topologyCols = 0;
+  private topologyRows = 0;
+
+  reset(source: HTMLCanvasElement, width: number, height: number) {
+    const scale = Math.min(1, Math.sqrt(2_000_000 / Math.max(1, width * height)));
+    const mapWidth = Math.max(1, Math.ceil(width * scale));
+    const mapHeight = Math.max(1, Math.ceil(height * scale));
+    this.raster.width = mapWidth;
+    this.raster.height = mapHeight;
+    this.width = width;
+    this.height = height;
+    this.mapWidth = mapWidth;
+    this.mapHeight = mapHeight;
+    this.scaleX = mapWidth / width;
+    this.scaleY = mapHeight / height;
+    this.cols = Math.max(1, Math.ceil(width / 128));
+    this.operations.length = 0;
+    this.cells.clear();
+
+    // Preserve transparent areas in unusual captures instead of assuming that
+    // every pristine page is opaque. This one downscaled read happens during
+    // capture, never in an interaction frame.
+    const ctx = this.rasterCtx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(source, 0, 0, mapWidth, mapHeight);
+    const alpha = new Uint8Array(mapWidth * mapHeight);
+    try {
+      const pixels = ctx.getImageData(0, 0, mapWidth, mapHeight).data;
+      for (let src = 3, dst = 0; dst < alpha.length; src += 4, dst++) alpha[dst] = pixels[src];
+    } catch {
+      // Cross-origin pixels can taint an otherwise usable capture. Match the
+      // old fallback and treat the pristine page as intact.
+      alpha.fill(255);
+    }
+    this.baseAlpha = alpha;
+    this.rebuildTopology();
+    // Only the Uint8 alpha plane is retained; release the temporary RGBA
+    // backing immediately (up to 8 MB at the map budget).
+    this.raster.width = 0;
+    this.raster.height = 0;
+  }
+
+  remove(path: Path2D, bounds: OpacityBounds, topologyPolygons?: number[][]) {
+    const operation = { restores: false, bounds, fill: path } satisfies OpacityOperation;
+    if (topologyPolygons) {
+      for (const polygon of topologyPolygons) this.rasterizeTopologyPolygon(polygon);
+      this.add(operation, true);
+      return;
+    }
+    this.add(operation);
+  }
+
+  removeDisc(path: Path2D, bounds: OpacityBounds, x: number, y: number, radius: number) {
+    this.rasterizeTopologyDisc(x, y, radius, false);
+    this.add({ restores: false, bounds, fill: path }, true);
+  }
+
+  removeCut(kerf: Path2D, nicks: Path2D, lineWidth: number, bounds: OpacityBounds) {
+    this.add({ restores: false, bounds, fill: nicks, stroke: kerf, lineWidth });
+  }
+
+  restoreDisc(x: number, y: number, r: number) {
+    const path = new Path2D();
+    path.arc(x, y, r, 0, TAU);
+    this.rasterizeTopologyDisc(x, y, r, true);
+    this.add(
+      {
+        restores: true,
+        bounds: { x0: x - r, y0: y - r, x1: x + r, y1: y + r },
+        fill: path,
+      },
+      true,
+    );
+  }
+
+  restoreAll() {
+    this.operations.length = 0;
+    this.cells.clear();
+    this.rebuildTopology();
+  }
+
+  sample(x: number, y: number): number {
+    const base = this.baseAlpha;
+    if (!base || x < 0 || y < 0 || x >= this.width || y >= this.height) return 0;
+    const px = Math.min(this.mapWidth - 1, Math.floor(x * this.scaleX));
+    const py = Math.min(this.mapHeight - 1, Math.floor(y * this.scaleY));
+    const pristine = base[py * this.mapWidth + px] / 255;
+    const cell = this.cells.get(Math.floor(y / 128) * this.cols + Math.floor(x / 128));
+    if (!cell) return pristine;
+    for (let i = cell.length - 1; i >= 0; i--) {
+      const operation = this.operations[cell[i]];
+      const b = operation.bounds;
+      if (x < b.x0 || y < b.y0 || x > b.x1 || y > b.y1) continue;
+      let hit = this.testCtx.isPointInPath(operation.fill, x, y);
+      if (!hit && operation.stroke) {
+        this.testCtx.lineCap = "round";
+        this.testCtx.lineWidth = operation.lineWidth ?? 1;
+        hit = this.testCtx.isPointInStroke(operation.stroke, x, y);
+      }
+      if (hit) return operation.restores ? pristine : 0;
+    }
+    return pristine;
+  }
+
+  /** 0 = pristine void, 1 = surviving material, 2 = structurally removed. */
+  stateAt(x: number, y: number): 0 | 1 | 2 {
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height || this.topology.length === 0) return 0;
+    const c = Math.min(this.topologyCols - 1, Math.floor(x / TOPOLOGY_CELL));
+    const r = Math.min(this.topologyRows - 1, Math.floor(y / TOPOLOGY_CELL));
+    return this.topology[r * this.topologyCols + c] as 0 | 1 | 2;
+  }
+
+  dispose() {
+    this.baseAlpha = null;
+    this.operations.length = 0;
+    this.cells.clear();
+    this.topology = new Uint8Array(0);
+    this.topologyCols = this.topologyRows = 0;
+    this.raster.width = 0;
+    this.raster.height = 0;
+    this.mapWidth = this.mapHeight = this.width = this.height = 0;
+  }
+
+  private add(operation: OpacityOperation, topologyHandled = false) {
+    if (!this.baseAlpha) return;
+    if (!topologyHandled) this.rasterizeTopology(operation);
+    const index = this.operations.push(operation) - 1;
+    const b = operation.bounds;
+    const x0 = Math.max(0, Math.floor(b.x0 / 128));
+    const y0 = Math.max(0, Math.floor(b.y0 / 128));
+    const x1 = Math.min(this.cols - 1, Math.floor(b.x1 / 128));
+    const y1 = Math.min(Math.ceil(this.height / 128) - 1, Math.floor(b.y1 / 128));
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const key = ty * this.cols + tx;
+        let list = this.cells.get(key);
+        if (!list) {
+          list = [];
+          this.cells.set(key, list);
+        }
+        list.push(index);
+      }
+    }
+  }
+
+  private pristineStateAt(x: number, y: number): 0 | 1 {
+    const base = this.baseAlpha;
+    if (!base || x < 0 || y < 0 || x >= this.width || y >= this.height) return 0;
+    const px = Math.min(this.mapWidth - 1, Math.floor(x * this.scaleX));
+    const py = Math.min(this.mapHeight - 1, Math.floor(y * this.scaleY));
+    return base[py * this.mapWidth + px] >= 77 ? 1 : 0;
+  }
+
+  private rebuildTopology() {
+    if (!this.baseAlpha || this.width <= 0 || this.height <= 0) {
+      this.topology = new Uint8Array(0);
+      this.topologyCols = this.topologyRows = 0;
+      return;
+    }
+    this.topologyCols = Math.max(1, Math.ceil(this.width / TOPOLOGY_CELL));
+    this.topologyRows = Math.max(1, Math.ceil(this.height / TOPOLOGY_CELL));
+    const size = this.topologyCols * this.topologyRows;
+    const topology = this.topology.length === size ? this.topology : new Uint8Array(size);
+    for (let r = 0; r < this.topologyRows; r++) {
+      const y = Math.min(this.height - 0.01, (r + 0.5) * TOPOLOGY_CELL);
+      for (let c = 0; c < this.topologyCols; c++) {
+        const x = Math.min(this.width - 0.01, (c + 0.5) * TOPOLOGY_CELL);
+        topology[r * this.topologyCols + c] = this.pristineStateAt(x, y);
+      }
+    }
+    this.topology = topology;
+  }
+
+  /** Apply one structural operation to the compact connectivity grid once. */
+  private rasterizeTopology(operation: OpacityOperation) {
+    if (this.topology.length === 0) return;
+    const b = operation.bounds;
+    const c0 = Math.max(0, Math.floor(b.x0 / TOPOLOGY_CELL));
+    const r0 = Math.max(0, Math.floor(b.y0 / TOPOLOGY_CELL));
+    const c1 = Math.min(this.topologyCols - 1, Math.floor(b.x1 / TOPOLOGY_CELL));
+    const r1 = Math.min(this.topologyRows - 1, Math.floor(b.y1 / TOPOLOGY_CELL));
+    const ctx = this.testCtx;
+    if (operation.stroke) {
+      ctx.lineCap = "round";
+      ctx.lineWidth = operation.lineWidth ?? 1;
+    }
+    const offset = TOPOLOGY_CELL * 0.3;
+    const probeOffsets = [0, 0, offset, offset, -offset, offset, offset, -offset, -offset, -offset];
+    for (let r = r0; r <= r1; r++) {
+      const y = Math.min(this.height - 0.01, (r + 0.5) * TOPOLOGY_CELL);
+      for (let c = c0; c <= c1; c++) {
+        const x = Math.min(this.width - 0.01, (c + 0.5) * TOPOLOGY_CELL);
+        let hit = false;
+        for (let p = 0; p < probeOffsets.length; p += 2) {
+          const px = x + probeOffsets[p];
+          const py = y + probeOffsets[p + 1];
+          hit = ctx.isPointInPath(operation.fill, px, py);
+          if (!hit && operation.stroke) hit = ctx.isPointInStroke(operation.stroke, px, py);
+          if (hit) break;
+        }
+        if (!hit) continue;
+        this.topology[r * this.topologyCols + c] = operation.restores ? this.pristineStateAt(x, y) : 2;
+      }
+    }
+  }
+
+  /** Fast path for engine-generated polygons whose vertices are already known. */
+  private rasterizeTopologyPolygon(points: number[]) {
+    if (this.topology.length === 0 || points.length < 6) return;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (let i = 0; i < points.length; i += 2) {
+      minX = Math.min(minX, points[i]);
+      minY = Math.min(minY, points[i + 1]);
+      maxX = Math.max(maxX, points[i]);
+      maxY = Math.max(maxY, points[i + 1]);
+    }
+    const c0 = Math.max(0, Math.floor(minX / TOPOLOGY_CELL));
+    const r0 = Math.max(0, Math.floor(minY / TOPOLOGY_CELL));
+    const c1 = Math.min(this.topologyCols - 1, Math.floor(maxX / TOPOLOGY_CELL));
+    const r1 = Math.min(this.topologyRows - 1, Math.floor(maxY / TOPOLOGY_CELL));
+    for (let r = r0; r <= r1; r++) {
+      const y = Math.min(this.height - 0.01, (r + 0.5) * TOPOLOGY_CELL);
+      for (let c = c0; c <= c1; c++) {
+        const x = Math.min(this.width - 0.01, (c + 0.5) * TOPOLOGY_CELL);
+        if (pointInPolygon(points, x, y)) this.topology[r * this.topologyCols + c] = 2;
+      }
+    }
+  }
+
+  private rasterizeTopologyDisc(x: number, y: number, radius: number, restores: boolean) {
+    if (this.topology.length === 0 || radius <= 0) return;
+    const c0 = Math.max(0, Math.floor((x - radius) / TOPOLOGY_CELL));
+    const r0 = Math.max(0, Math.floor((y - radius) / TOPOLOGY_CELL));
+    const c1 = Math.min(this.topologyCols - 1, Math.floor((x + radius) / TOPOLOGY_CELL));
+    const r1 = Math.min(this.topologyRows - 1, Math.floor((y + radius) / TOPOLOGY_CELL));
+    // A cell touched by the physical disc is empty/whole for connectivity. The
+    // half-cell expansion matches the cut grid's conservative kerf treatment.
+    const reach = radius + TOPOLOGY_CELL * 0.5;
+    const reach2 = reach * reach;
+    for (let r = r0; r <= r1; r++) {
+      const py = Math.min(this.height - 0.01, (r + 0.5) * TOPOLOGY_CELL);
+      for (let c = c0; c <= c1; c++) {
+        const px = Math.min(this.width - 0.01, (c + 0.5) * TOPOLOGY_CELL);
+        const dx = px - x;
+        const dy = py - y;
+        if (dx * dx + dy * dy > reach2) continue;
+        this.topology[r * this.topologyCols + c] = restores ? this.pristineStateAt(px, py) : 2;
+      }
+    }
+  }
+}
 
 /**
  * Context members that read rather than draw. The tee below mirrors everything
@@ -136,6 +441,7 @@ export class ContentLayer {
   readonly surface: HTMLCanvasElement;
   readonly ctx: CanvasRenderingContext2D;
   private readonly renderer = new SurfaceRenderer();
+  private readonly opacity = new OpacityMap();
   /**
    * Pristine copy: the repair source, and — in live mode — the thing a refresh
    * swaps out for freshly captured page pixels.
@@ -172,8 +478,8 @@ export class ContentLayer {
       top: "0",
       left: "0",
     } satisfies Partial<CSSStyleDeclaration>);
-    // `willReadFrequently` is deliberately off: nothing reads this back on the
-    // CPU, and the GPU-resident copy is what `texSubImage2D` wants.
+    // The visible surface stays GPU-friendly. Page-aware hit tests use the
+    // compact CPU-side opacity map above instead of reading this canvas back.
     this.ctx = this.surface.getContext("2d")!;
   }
 
@@ -242,8 +548,8 @@ export class ContentLayer {
    * Push whatever changed since the last call to the screen. Cheap and a no-op
    * when nothing was damaged this frame; the engine calls it once per frame.
    */
-  present() {
-    if (this.renderer.needsRender) this.renderer.render(this.surface);
+  present(allowReconcile = true) {
+    if (this.renderer.needsRender(allowReconcile)) this.renderer.render(this.surface);
   }
 
   /**
@@ -254,9 +560,9 @@ export class ContentLayer {
    * the cursor is already covered by the engine's per-frame safety net — this
    * is for marks that land away from it (paint splashes, a lightning channel).
    */
-  markSurface(x: number, y: number, r: number) {
+  markSurface(x: number, y: number, r: number, reconcile = false) {
     if (!this.ready) return;
-    this.touchDisc(x, y, r);
+    this.touchDisc(x, y, r, reconcile);
   }
 
   /** As `markSurface`, for a mark that runs along a segment (a stroke, a bolt). */
@@ -271,15 +577,15 @@ export class ContentLayer {
   }
 
   /** Flag a damaged region, in CSS px, for re-upload and re-shading. */
-  private touch(x0: number, y0: number, x1: number, y1: number) {
+  private touch(x0: number, y0: number, x1: number, y1: number, reconcile = false) {
     if (!this.renderer.available) return;
     const d = this.dpr;
-    this.renderer.markDirty(x0 * d, y0 * d, x1 * d, y1 * d);
+    this.renderer.markDirty(x0 * d, y0 * d, x1 * d, y1 * d, reconcile);
   }
 
   /** Flag a circular region, in CSS px. */
-  private touchDisc(x: number, y: number, r: number) {
-    this.touch(x - r, y - r, x + r, y + r);
+  private touchDisc(x: number, y: number, r: number, reconcile = false) {
+    this.touch(x - r, y - r, x + r, y + r, reconcile);
   }
 
   /**
@@ -334,19 +640,44 @@ export class ContentLayer {
       return;
     }
 
-    // Compose: backdrop across the whole layer, then the raster at the root's
-    // document offset. Anything outside the root's box (body margins, a
-    // reserved scrollbar gutter) keeps the page backdrop instead of falling
-    // through to the void.
+    const pixelWidth = Math.round(width * this.dpr);
+    const pixelHeight = Math.round(height * this.dpr);
+    const sourceX = Math.round(source.x * this.dpr);
+    const sourceY = Math.round(source.y * this.dpr);
+
+    // Most hosts capture <body> at the document origin and its raster already
+    // is the final layer. Adopting it directly avoids allocating and copying a
+    // second document-sized canvas during startup (up to 80 MB at the capture
+    // budget) without changing a pixel of the result.
+    const fillsLayer =
+      sourceX === 0 &&
+      sourceY === 0 &&
+      raster.width === pixelWidth &&
+      raster.height === pixelHeight;
+    if (fillsLayer) {
+      this.adopt(raster, width, height);
+      return;
+    }
+
+    // Inset roots still need composition: backdrop across the whole layer,
+    // then the raster at the root's document offset. Anything outside the
+    // root's box (body margins, a reserved scrollbar gutter) keeps the page
+    // backdrop instead of falling through to the void.
     const snap = document.createElement("canvas");
-    snap.width = Math.round(width * this.dpr);
-    snap.height = Math.round(height * this.dpr);
+    snap.width = pixelWidth;
+    snap.height = pixelHeight;
     const sctx = snap.getContext("2d")!;
     if (backdrop.color) {
       sctx.fillStyle = backdrop.color;
       sctx.fillRect(0, 0, snap.width, snap.height);
     }
-    sctx.drawImage(raster, Math.round(source.x * this.dpr), Math.round(source.y * this.dpr));
+    sctx.drawImage(raster, sourceX, sourceY);
+
+    // The composed snapshot owns the pixels now. Reset the html-to-image
+    // intermediate immediately instead of waiting for GC to notice an enormous
+    // detached backing store during the rest of capture setup.
+    raster.width = 0;
+    raster.height = 0;
 
     this.adopt(snap, width, height);
   }
@@ -373,6 +704,7 @@ export class ContentLayer {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.drawImage(raster, 0, 0);
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.opacity.reset(raster, width, height);
     // Sized from the raster's backing store, not from `width * dpr`: a tall
     // page has its ratio stepped down by `pickPixelRatio`, and the shader's
     // texel size has to match the texture it is actually sampling.
@@ -475,9 +807,19 @@ export class ContentLayer {
    * eroded but *taken away*, because it has just become a physics body falling
    * down the screen.
    */
-  carveShape(path: Path2D, bounds?: { x: number; y: number; w: number; h: number }) {
+  carveShape(
+    path: Path2D,
+    bounds?: { x: number; y: number; w: number; h: number },
+    topologyPolygons?: number[][],
+  ) {
     if (!this.ready) return;
-    this.carve(path);
+    this.carve(
+      path,
+      bounds
+        ? { x0: bounds.x, y0: bounds.y, x1: bounds.x + bounds.w, y1: bounds.y + bounds.h }
+        : { x0: 0, y0: 0, x1: this.width, y1: this.height },
+      topologyPolygons,
+    );
     // `Path2D` exposes no bounds, so the caller supplies them. Without them the
     // whole page has to be re-shaded, which is correct but costs a full upload.
     if (bounds) this.touch(bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h);
@@ -491,7 +833,7 @@ export class ContentLayer {
    * both targets, so the visible canvas (immediate feedback) and the wound mask
    * (which survives a live refresh) can never drift apart.
    */
-  private carve(path: Path2D) {
+  private carve(path: Path2D, bounds: OpacityBounds, topologyPolygons?: number[][]) {
     const ctx = this.ctx;
     // Composite mode is set and reset by hand rather than via save/restore:
     // these run against a document-sized canvas many times a second while fire
@@ -499,6 +841,7 @@ export class ContentLayer {
     ctx.globalCompositeOperation = "destination-out";
     ctx.fill(path);
     ctx.globalCompositeOperation = "source-over";
+    this.opacity.remove(path, bounds, topologyPolygons);
     if (!this.live) return;
     this.ensureLayers();
     const wctx = this.woundsCtx!;
@@ -519,27 +862,49 @@ export class ContentLayer {
       path.moveTo(x + Math.cos(a) * d + br, y + Math.sin(a) * d);
       path.arc(x + Math.cos(a) * d, y + Math.sin(a) * d, br, 0, TAU);
     }
-    this.carve(path);
+    const bounds = { x0: x - r * 1.7, y0: y - r * 1.7, x1: x + r * 1.7, y1: y + r * 1.7 };
+    const ctx = this.ctx;
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fill(path);
+    ctx.globalCompositeOperation = "source-over";
+    this.opacity.removeDisc(path, bounds, x, y, r);
+    if (this.live) {
+      this.ensureLayers();
+      const wctx = this.woundsCtx!;
+      wctx.fillStyle = "#000";
+      wctx.fill(path);
+    }
     // Rim bites reach ~1.65r; the char below reaches 1.9r and marks its own.
     this.touchDisc(x, y, r * 1.7);
     this.char(x, y, r * 1.9, 0.45);
   }
 
-  /**
-   * Content alpha (0..1) at a document point — 1 where the page survives, 0
-   * inside a hole. One 1×1 `getImageData`; cheap enough for a per-flame tick a
-   * few times a second, not for per-particle-per-frame queries.
-   */
+  /** Content alpha (0..1) at a document point, without a visible-canvas readback. */
   opacityAt(x: number, y: number): number {
     if (!this.ready) return 1;
-    const px = Math.max(0, Math.min(this.surface.width - 1, Math.round(x * this.dpr)));
-    const py = Math.max(0, Math.min(this.surface.height - 1, Math.round(y * this.dpr)));
-    try {
-      return this.ctx.getImageData(px, py, 1, 1).data[3] / 255;
-    } catch {
-      // Tainted canvas — assume the page is intact rather than killing effects.
-      return 1;
-    }
+    return this.opacity.sample(x, y);
+  }
+
+  /** Approximate surviving material area inside an arbitrary polygon. */
+  materialArea(points: number[]): number {
+    if (!this.ready) return 0;
+    return polygonMaterialArea(points, (x, y) => this.opacity.sample(x, y));
+  }
+
+  /**
+   * Find pieces that recent damage has disconnected from the surrounding page.
+   * Used by the chainsaw after each meaningful stretch of real cutting.
+   */
+  detachedPolygons(bounds: TopologyBounds): number[][] {
+    if (!this.ready) return [];
+    return findDetachedPolygons(
+      {
+        width: this.width,
+        height: this.height,
+        stateAt: (x, y) => this.opacity.stateAt(x, y),
+      },
+      bounds,
+    );
   }
 
   /** Darken surviving pixels around a wound (charred/bruised rim). */
@@ -574,9 +939,10 @@ export class ContentLayer {
       path.moveTo(bx + br, by);
       path.arc(bx, by, br, 0, TAU);
     }
-    this.carve(path);
+    const reach = r * 1.35 + 3;
+    this.carve(path, { x0: x - reach, y0: y - reach, x1: x + reach, y1: y + reach });
     // Blobs sit within r of the centre and are themselves up to 3 + 0.35r wide.
-    this.touchDisc(x, y, r * 1.35 + 3);
+    this.touchDisc(x, y, reach);
     this.char(x, y, r * 2.2, 0.28);
   }
 
@@ -612,6 +978,14 @@ export class ContentLayer {
     stroke(ctx);
     ctx.fill(nicks);
     ctx.globalCompositeOperation = "source-over";
+    // Kerf half-width plus the widest nick and its jitter.
+    const reach = lineWidth / 2 + 7;
+    this.opacity.removeCut(kerf, nicks, lineWidth, {
+      x0: Math.min(x1, x2) - reach,
+      y0: Math.min(y1, y2) - reach,
+      x1: Math.max(x1, x2) + reach,
+      y1: Math.max(y1, y2) + reach,
+    });
     if (this.live) {
       this.ensureLayers();
       const wctx = this.woundsCtx!;
@@ -621,8 +995,6 @@ export class ContentLayer {
       wctx.fill(nicks);
     }
 
-    // Kerf half-width plus the widest nick and its jitter.
-    const reach = lineWidth / 2 + 7;
     this.touch(
       Math.min(x1, x2) - reach,
       Math.min(y1, y2) - reach,
@@ -670,6 +1042,7 @@ export class ContentLayer {
     ctx.clearRect(x0, y0, w, h);
     ctx.drawImage(this.base, x0 * d, y0 * d, w * d, h * d, x0, y0, w, h);
     ctx.restore();
+    this.opacity.restoreDisc(x, y, r);
     this.touch(x0, y0, x1, y1);
 
     // Live mode: forget the wound too, or the next base refresh reopens it.
@@ -740,6 +1113,7 @@ export class ContentLayer {
     ctx.clearRect(0, 0, this.surface.width, this.surface.height);
     ctx.restore();
     ctx.drawImage(this.base, 0, 0, this.width, this.height);
+    this.opacity.restoreAll();
     this.clearLayers();
     this.renderer.markAllDirty();
   }
@@ -770,6 +1144,7 @@ export class ContentLayer {
     this.woundsCtx = this.decalsCtx = null;
     this.teeCtx = null;
     this.renderer.dispose();
+    this.opacity.dispose();
     this.surface.width = 0;
     this.surface.height = 0;
     this.surface.remove();

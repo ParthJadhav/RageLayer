@@ -27,8 +27,11 @@
   ],
   "scripts": {
     "build": "tsup",
+    "test": "bun test",
     "benchmark": "bun run build && node scripts/benchmark.mjs",
     "benchmark:low-end": "bun run build && node scripts/benchmark.mjs --cpu 6",
+    "profile:effects": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,broom",
+    "profile:effects:low-end": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,broom --cpu 6",
     "memory:check": "bun run build && node scripts/benchmark.mjs --scenarios idle --duration 250 --warmup 100 --leak-cycles 80",
     "prepublishOnly": "tsup"
   },

@@ -440,9 +440,16 @@ export interface DestroyerEngineApi {
   /**
    * Cut a traced polygon (x0,y0,x1,y1,… document CSS px) clean out of the page;
    * the enclosed region falls as one rigid piece carrying those pixels.
-   * Returns false when the region is too small, too large, or capture isn't up.
+   * Returns false when the region has too little surviving material or capture
+   * isn't ready. Large valid regions are baked with a bounded pixel budget.
    */
   cutout(points: number[]): boolean;
+  /**
+   * Release every island of surviving page material disconnected inside this
+   * document-space region. Unlike `cutout`, this derives shapes from current
+   * material connectivity, so earlier holes and page edges participate.
+   */
+  dislodge(x0: number, y0: number, x1: number, y1: number): number;
   /**
    * Release a crawling bug (default one) that wanders and eats the page.
    * Bugs die to fire, gunshots, fractures, explosions, and black holes —

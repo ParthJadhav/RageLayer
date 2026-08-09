@@ -2,6 +2,7 @@ import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
 import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
 import { emojiCursor } from "./cursors";
 import { heavyTools } from "./heavy-tools";
+import { surfaceRuns, type TopologyBounds } from "./topology";
 import {
   broomArt,
   chainsawArt,
@@ -664,23 +665,57 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
 
 /** Torn strips are cut loose every this many px of travel. */
 const STRIP_INTERVAL = 64;
+/** Connectivity analysis is regional and only needs to run after real travel. */
+const TOPOLOGY_INTERVAL = 24;
+
+function includeCut(bounds: TopologyBounds | null, x1: number, y1: number, x2: number, y2: number) {
+  if (!bounds) {
+    return {
+      x0: Math.min(x1, x2),
+      y0: Math.min(y1, y2),
+      x1: Math.max(x1, x2),
+      y1: Math.max(y1, y2),
+    };
+  }
+  bounds.x0 = Math.min(bounds.x0, x1, x2);
+  bounds.y0 = Math.min(bounds.y0, y1, y2);
+  bounds.x1 = Math.max(bounds.x1, x1, x2);
+  bounds.y1 = Math.max(bounds.y1, y1, y2);
+  return bounds;
+}
+
+function releaseSawIslands(
+  engine: DestroyerEngineApi,
+  state: { cutBounds: TopologyBounds | null; scanDebt: number },
+) {
+  const bounds = state.cutBounds;
+  if (!bounds) return 0;
+  state.scanDebt = 0;
+  return engine.dislodge(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
+}
 
 /** Chainsaw: drag to tear gashes along the path. */
-export const chainsaw: Tool & { lastCut: Vec2 | null; stripDebt: number; trail: number[] } = {
+export const chainsaw: Tool & {
+  lastCut: Vec2 | null;
+  stripDebt: number;
+  scanDebt: number;
+  cutBounds: TopologyBounds | null;
+} = {
   id: "chainsaw",
   name: "Chainsaw",
   icon: "🪚",
-  hint: "drag to cut — close a loop to drop the piece",
+  hint: "drag to cut — any isolated shape drops",
   cursor: emojiCursor("🪚"),
   art: chainsawArt,
   lastCut: null,
   stripDebt: 0,
-  /** The cut path since pointer-down, x0,y0,x1,y1,… in document CSS px. */
-  trail: [],
+  scanDebt: 0,
+  cutBounds: null,
   onDown(engine, e) {
     this.lastCut = { x: e.x, y: e.y };
     this.stripDebt = 0;
-    chainsaw.trail = [e.x, e.y];
+    this.scanDebt = 0;
+    this.cutBounds = null;
   },
   onMove(engine: DestroyerEngineApi, e: ToolPointerEvent) {
     const self = chainsaw;
@@ -697,112 +732,107 @@ export const chainsaw: Tool & { lastCut: Vec2 | null; stripDebt: number; trail: 
     const ex = e.x + nx * (Math.random() - 0.5) * jitter;
     const ey = e.y + ny * (Math.random() - 0.5) * jitter;
 
-    // Dragged across a hole, the blade is spinning in empty space: nothing to
-    // bite means no gash, no sawdust, no kickback. The stroke is still
-    // tracked — a loop that skirts a hole should still close — but the saw
-    // only cuts where page remains.
-    if (!engine.onPage(self.lastCut.x, self.lastCut.y) && !engine.onPage(ex, ey)) {
-      self.lastCut = { x: ex, y: ey };
-      self.trail.push(ex, ey);
-      return;
-    }
+    // Clip the blade stroke against current material. Crossing a hole produces
+    // two independent rim cuts; empty space never receives a gash or sawdust.
+    const runs = surfaceRuns(self.lastCut.x, self.lastCut.y, ex, ey, (x, y) => engine.onPage(x, y));
+    let cutLength = 0;
+    for (const run of runs) {
+      drawGash(engine.surfaceCtx, run.x1, run.y1, run.x2, run.y2);
+      engine.content?.cut(run.x1, run.y1, run.x2, run.y2);
+      self.cutBounds = includeCut(self.cutBounds, run.x1, run.y1, run.x2, run.y2);
+      cutLength += run.length;
 
-    // Torn edges first, then slice through the actual content so the cut
-    // itself stays a real gap.
-    drawGash(engine.surfaceCtx, self.lastCut.x, self.lastCut.y, ex, ey);
-    engine.content?.cut(self.lastCut.x, self.lastCut.y, ex, ey);
-
-    // Sawdust sprays back along the blade; page-coloured confetti comes off with
-    // it, so the debris looks like shredded page rather than generic grit.
-    for (let i = 0; i < 12; i++) {
-      const back = Math.atan2(-dy, -dx) + (Math.random() - 0.5) * 1.5;
-      const speed = 120 + Math.random() * 320;
-      engine.spawnParticle({
-        kind: "sawdust",
-        x: e.x + (Math.random() - 0.5) * 8,
-        y: e.y + (Math.random() - 0.5) * 8,
-        vx: Math.cos(back) * speed,
-        vy: Math.sin(back) * speed - 60,
-        life: 0,
-        maxLife: 0.5 + Math.random() * 0.6,
-        size: 1.5 + Math.random() * 2.5,
-        angle: Math.random() * TAU,
-        spin: (Math.random() - 0.5) * 25,
-        bounce: 0.3,
-        restY: e.y + 50 + Math.random() * 150,
-      });
-    }
-    if (Math.random() < 0.7) {
-      debris(engine, e.x, e.y, 3, Math.random() < 0.5 ? "#d8d2c8" : "#8e8880");
-    }
-    dustPuff(engine, e.x, e.y, 3, 10, 0.7);
-
-    // Every so often a strip of page comes away entirely and falls.
-    self.stripDebt += dist;
-    if (self.stripDebt >= STRIP_INTERVAL) {
-      self.stripDebt = 0;
-      const size = 14 + Math.random() * 22;
-      const patch = engine.content?.patch(ex, ey, size, size);
-      if (patch) {
+      const mx = (run.x1 + run.x2) * 0.5;
+      const my = (run.y1 + run.y2) * 0.5;
+      const chips = Math.min(12, Math.max(3, Math.ceil(run.length * 0.55)));
+      // Sawdust sprays back along the blade; page-coloured confetti comes off
+      // with it, so debris exists only in proportion to material actually cut.
+      for (let i = 0; i < chips; i++) {
+        const back = Math.atan2(-dy, -dx) + (Math.random() - 0.5) * 1.5;
+        const speed = 120 + Math.random() * 320;
         engine.spawnParticle({
-          kind: "shard",
-          x: ex,
-          y: ey,
-          vx: (Math.random() - 0.5) * 90,
-          vy: 30 + Math.random() * 80,
+          kind: "sawdust",
+          x: mx + (Math.random() - 0.5) * 8,
+          y: my + (Math.random() - 0.5) * 8,
+          vx: Math.cos(back) * speed,
+          vy: Math.sin(back) * speed - 60,
           life: 0,
-          maxLife: 1.4 + Math.random() * 0.8,
-          size,
+          maxLife: 0.5 + Math.random() * 0.6,
+          size: 1.5 + Math.random() * 2.5,
           angle: Math.random() * TAU,
-          spin: (Math.random() - 0.5) * 9,
+          spin: (Math.random() - 0.5) * 25,
           bounce: 0.3,
-          restY: ey + 130 + Math.random() * 260,
-          img: patch.img,
-          sx: patch.sx,
-          sy: patch.sy,
-          sw: patch.sw,
-          sh: patch.sh,
+          restY: my + 50 + Math.random() * 150,
         });
       }
+      if (Math.random() < 0.7) {
+        debris(engine, mx, my, Math.min(3, Math.ceil(run.length / 8)), Math.random() < 0.5 ? "#d8d2c8" : "#8e8880");
+      }
+      dustPuff(engine, mx, my, Math.min(3, Math.ceil(run.length / 7)), 10, 0.7);
+
+      // Every so often a real chip comes away. Sample just beside the kerf (the
+      // centreline is now void), then remove the chip from the page before it
+      // appears in flight so material is conserved.
+      self.stripDebt += run.length;
+      if (self.stripDebt >= STRIP_INTERVAL) {
+        self.stripDebt %= STRIP_INTERVAL;
+        const size = 14 + Math.random() * 22;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const chipX = mx + nx * side * 7;
+        const chipY = my + ny * side * 7;
+        if (engine.onPage(chipX, chipY)) {
+          const patch = engine.content?.patch(chipX, chipY, size, size);
+          if (patch) {
+            engine.content?.punch(chipX, chipY, size * 0.22);
+            engine.spawnParticle({
+              kind: "shard",
+              x: chipX,
+              y: chipY,
+              vx: nx * side * (35 + Math.random() * 80),
+              vy: 30 + Math.random() * 80,
+              life: 0,
+              maxLife: 1.4 + Math.random() * 0.8,
+              size,
+              angle: Math.random() * TAU,
+              spin: (Math.random() - 0.5) * 9,
+              bounce: 0.3,
+              restY: chipY + 130 + Math.random() * 260,
+              img: patch.img,
+              sx: patch.sx,
+              sy: patch.sy,
+              sw: patch.sw,
+              sh: patch.sh,
+            });
+          }
+        }
+      }
     }
 
-    // Kickback shoves the page along the blade's own direction.
-    engine.shake(5, nx, ny);
-    self.lastCut = { x: ex, y: ey };
+    self.lastCut.x = ex;
+    self.lastCut.y = ey;
+    if (cutLength <= 0) return;
 
-    // ── Closed-loop detection ────────────────────────────────────────────────
-    // The saw remembers where it has cut this stroke. When the blade comes back
-    // within a hand's width of an earlier point on the trail, the loop between
-    // there and here is a finished cut — the enclosed piece drops out whole,
-    // exactly the shape that was sawn.
-    const trail = self.trail;
-    trail.push(ex, ey);
-    // A runaway stroke shouldn't grow without bound; ~600 points ≈ a very long
-    // scribble, and only the recent past can still close a loop that matters.
-    if (trail.length > 1200) trail.splice(0, trail.length - 1200);
-    const points = trail.length / 2;
-    // Skip the last few points: the blade is trivially "near" where it just was.
-    for (let i = 0; i < points - 9; i++) {
-      const dx = trail[i * 2] - ex;
-      const dy = trail[i * 2 + 1] - ey;
-      if (dx * dx + dy * dy > 14 * 14) continue;
-      // Stride the loop down to a drawable, physics-friendly vertex count.
-      const raw = trail.slice(i * 2);
-      const stride = Math.max(1, Math.floor(raw.length / 2 / 26));
-      const loop: number[] = [];
-      for (let k = 0; k < raw.length / 2; k += stride) loop.push(raw[k * 2], raw[k * 2 + 1]);
-      if (engine.cutout(loop)) {
-        // The piece is gone; cutting continues from here on a fresh trail.
-        self.trail = [ex, ey];
-        dustPuff(engine, ex, ey, 8, 16, 1);
-        engine.shake(9);
+    // Kickback and connectivity both scale with actual contact, never cursor
+    // travel through a hole. Connectivity—not pointer proximity—decides release.
+    engine.shake(5, nx, ny);
+    self.scanDebt += cutLength;
+    if (self.scanDebt >= TOPOLOGY_INTERVAL) {
+      const released = releaseSawIslands(engine, self);
+      if (released > 0) {
+        dustPuff(engine, ex, ey, 8 + released * 2, 18, 1);
+        engine.shake(9 + released * 2);
       }
-      break;
     }
   },
-  onUp() {
+  onUp(engine) {
+    const released = releaseSawIslands(engine, this);
+    if (released > 0 && this.lastCut) {
+      dustPuff(engine, this.lastCut.x, this.lastCut.y, 8 + released * 2, 18, 1);
+      engine.shake(9 + released * 2);
+    }
     this.lastCut = null;
-    chainsaw.trail = [];
+    this.cutBounds = null;
+    this.scanDebt = 0;
   },
   tick(engine, _dt, held) {
     engine.sound.loop("saw", held ? 0.28 : 0);

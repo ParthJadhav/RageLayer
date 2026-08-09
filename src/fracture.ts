@@ -44,6 +44,12 @@ export interface BakeOptions {
   flat?: boolean;
   /** Reject chunks larger than this per side, CSS px. Default `MAX_CHUNK`. */
   maxSize?: number;
+  /**
+   * Maximum device-pixel area for each baked face. Oversized pieces keep their
+   * exact outline and world-space size, but use a proportionally smaller
+   * backing store so one page-sized island cannot allocate two giant canvases.
+   */
+  maxPixels?: number;
 }
 
 /** Chunks bigger than this (CSS px per side) are wasteful to bake. */
@@ -85,13 +91,25 @@ export function bakeChunk(
   // Fully outside the captured page: there are no pixels to carry.
   if (maxX < 0 || maxY < 0 || minX > source.width || minY > source.height) return null;
 
-  const d = source.dpr;
+  const sourceDpr = source.dpr;
+  const pixelBudget = options.maxPixels ?? Infinity;
+  const d = Math.min(sourceDpr, Math.sqrt(pixelBudget / (w * h)));
   const sprite = document.createElement("canvas");
   sprite.width = Math.max(1, Math.round(w * d));
   sprite.height = Math.max(1, Math.round(h * d));
   const ctx = sprite.getContext("2d")!;
   ctx.setTransform(d, 0, 0, d, 0, 0);
-  ctx.drawImage(source.img, minX * d, minY * d, w * d, h * d, 0, 0, w, h);
+  ctx.drawImage(
+    source.img,
+    minX * sourceDpr,
+    minY * sourceDpr,
+    w * sourceDpr,
+    h * sourceDpr,
+    0,
+    0,
+    w,
+    h,
+  );
 
   // Mask to the polygon. `destination-in` is what gives shards their jagged
   // silhouette — a rectangular chunk of page never reads as broken.
@@ -135,12 +153,20 @@ export function bakeChunk(
     sctx.globalCompositeOperation = "source-atop";
     sctx.strokeStyle = "rgba(24, 17, 10, 0.5)";
     sctx.lineWidth = 1;
-    for (let gy = 1.5; gy < h; gy += 2.5 + Math.random() * 2.5) {
+    // A page-height island does not need thousands of sub-pixel grain strokes
+    // in a downsampled backing store. Keep their visible density bounded.
+    const grainStep = Math.max(2.5, h / 360);
+    for (let gy = 1.5; gy < h; gy += grainStep + Math.random() * grainStep) {
       sctx.beginPath();
       sctx.moveTo(0, gy);
       sctx.lineTo(w, gy + rand(-1, 1));
       sctx.stroke();
     }
+    // The source sprite already contains every earlier hole and cut. Use that
+    // alpha as the final material mask so the offset underside cannot paint
+    // "wood" into a void merely because the new chunk's outer polygon spans it.
+    sctx.globalCompositeOperation = "destination-in";
+    sctx.drawImage(sprite, 0, 0, w, h);
     sctx.globalCompositeOperation = "source-over";
   }
 

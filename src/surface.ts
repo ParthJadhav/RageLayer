@@ -108,7 +108,13 @@ void main () {
     photonRing = exp(-abs(wr - rs * 1.45) / (rs * 0.22)) * uWarp.w;
   }
 
-  float a = alphaAt(uv);
+  // Keep the centre texel around. Across the overwhelmingly common flat part
+  // of the page it is already the exact final colour; re-sampling it once per
+  // channel (plus the text mask) used four texture reads to reproduce the same
+  // value. The edge branch below is output-identical and only runs where an
+  // alpha neighbour actually differs.
+  vec4 centre = texture(uContent, uv);
+  float a = centre.a;
 
   vec2 step = uTexel * max(uEdge, 0.5);
   float aLeft  = alphaAt(uv - vec2(step.x, 0.0));
@@ -122,31 +128,36 @@ void main () {
   vec2 grad = vec2(aRight - aLeft, aAbove - aBelow) * 0.5;
   float edge = clamp(length(grad) * 2.0, 0.0, 1.0);
 
-  // Text keeps its refraction damped so glyphs near a tear read as cut rather
-  // than smeared. The lighting below is left alone — that is the cue that says
-  // the cut has an edge at all.
-  float text = uHasText > 0.5 ? texture(uText, uv).r : 0.0;
-  float crisp = 1.0 - 0.75 * text;
+  vec3 col;
+  if (edge == 0.0) {
+    col = centre.rgb;
+  } else {
+    // Text keeps its refraction damped so glyphs near a tear read as cut rather
+    // than smeared. The lighting below is left alone — that is the cue that says
+    // the cut has an edge at all.
+    float text = uHasText > 0.5 ? texture(uText, uv).r : 0.0;
+    float crisp = 1.0 - 0.75 * text;
 
-  // Back into texture space, where +y runs down.
-  vec2 gradTex = vec2(grad.x, -grad.y);
-  vec2 offset = gradTex * uRefract * crisp * step;
-  float spread = uDispersion * crisp;
+    // Back into texture space, where +y runs down.
+    vec2 gradTex = vec2(grad.x, -grad.y);
+    vec2 offset = gradTex * uRefract * crisp * step;
+    float spread = uDispersion * crisp;
 
-  vec3 col = vec3(
-    texture(uContent, uv + offset * (1.0 + spread)).r,
-    texture(uContent, uv + offset).g,
-    texture(uContent, uv + offset * (1.0 - spread)).b
-  );
+    col = vec3(
+      texture(uContent, uv + offset * (1.0 + spread)).r,
+      texture(uContent, uv + offset).g,
+      texture(uContent, uv + offset * (1.0 - spread)).b
+    );
 
-  // Light the tear. Subtracting LIGHT.z means a flat normal produces exactly no
-  // change, so this cannot tint the intact page.
-  vec3 normal = normalize(vec3(-grad * uRelief * 14.0, 1.0));
-  float diffuse = clamp(dot(normal, LIGHT), 0.0, 1.0);
-  col *= clamp(1.0 + (diffuse - LIGHT.z) * uRim, 0.3, 1.9);
+    // Light the tear. Subtracting LIGHT.z means a flat normal produces exactly
+    // no change, so this cannot tint the intact page.
+    vec3 normal = normalize(vec3(-grad * uRelief * 14.0, 1.0));
+    float diffuse = clamp(dot(normal, LIGHT), 0.0, 1.0);
+    col *= clamp(1.0 + (diffuse - LIGHT.z) * uRim, 0.3, 1.9);
 
-  // Torn fibre shadow, hugging the surviving side of the cut.
-  col *= 1.0 - uCharEdge * edge * a;
+    // Torn fibre shadow, hugging the surviving side of the cut.
+    col *= 1.0 - uCharEdge * edge * a;
+  }
 
   // ── Slab depth ────────────────────────────────────────────────────────────
   // The page is a board, not a sheet: inside a hole, just below the top edge,
@@ -360,7 +371,7 @@ export class SurfaceRenderer {
    * geometry they drew; the padding for the shader's own sampling reach is
    * added here so no caller has to know the effect's radius.
    */
-  markDirty(x0: number, y0: number, x1: number, y1: number) {
+  markDirty(x0: number, y0: number, x1: number, y1: number, reconcile = false) {
     if (!this.available) return;
     // The shader reads `uEdge` texels out and refracts by up to `uRefract`
     // more, and the slab side extends `depth` px below a wound's top edge — so
@@ -372,7 +383,11 @@ export class SurfaceRenderer {
     const nx1 = Math.min(this.width, Math.ceil(x1) + pad);
     const ny1 = Math.min(this.height, Math.ceil(y1) + pad);
     if (nx1 <= nx0 || ny1 <= ny0) return;
-    this.owesFull = true;
+    // Only the engine's pointer safety-net can under-report a tool drawing.
+    // ContentLayer's own operations and explicit markSurface bounds are exact;
+    // making every one of those schedule a document-sized upload caused a
+    // periodic texImage2D stall even for a tiny paint splat.
+    if (reconcile) this.owesFull = true;
     const d = this.dirty;
     if (!d) {
       this.dirty = { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
@@ -424,12 +439,14 @@ export class SurfaceRenderer {
     };
   }
 
-  get needsRender(): boolean {
+  needsRender(allowReconcile = true): boolean {
     if (!this.available) return false;
     // A reconcile is owed and due: widen to the whole surface so anything a
     // caller under-reported gets picked up. Cheap in practice — it only fires
     // while damage is actually happening, and at most every RECONCILE_MS.
-    if (this.owesFull && performance.now() - this.lastFull >= RECONCILE_MS) this.markAllDirty();
+    if (allowReconcile && this.owesFull && performance.now() - this.lastFull >= RECONCILE_MS) {
+      this.markAllDirty();
+    }
     return this.dirty !== null || this.warp !== null || this.prevWarpRect !== null;
   }
 

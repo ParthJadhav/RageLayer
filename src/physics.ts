@@ -23,7 +23,7 @@
 
 const TAU = Math.PI * 2;
 
-/** Broadphase is O(n²) over bounding circles, so the cap is what bounds cost. */
+/** Hard safety cap for simulation, sprite memory, and worst-case dense contact work. */
 export const MAX_BODIES = 190;
 
 export interface BodyInit {
@@ -55,6 +55,11 @@ export class Body {
   readonly wv: Float64Array;
   /** World-space outward face normals, parallel to `wv`. */
   readonly wn: Float64Array;
+  /** Tight world-space AABB, rebuilt with the vertex cache. */
+  minX = 0;
+  minY = 0;
+  maxX = 0;
+  maxY = 0;
 
   x: number;
   y: number;
@@ -200,12 +205,26 @@ export class Body {
     const cos = Math.cos(this.angle);
     const sin = Math.sin(this.angle);
     const n = this.count;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
     for (let i = 0; i < n; i++) {
       const lx = this.lv[i * 2];
       const ly = this.lv[i * 2 + 1];
-      this.wv[i * 2] = this.x + lx * cos - ly * sin;
-      this.wv[i * 2 + 1] = this.y + lx * sin + ly * cos;
+      const x = this.x + lx * cos - ly * sin;
+      const y = this.y + lx * sin + ly * cos;
+      this.wv[i * 2] = x;
+      this.wv[i * 2 + 1] = y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
+    this.minX = minX;
+    this.minY = minY;
+    this.maxX = maxX;
+    this.maxY = maxY;
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const dx = this.wv[j * 2] - this.wv[i * 2];
@@ -245,6 +264,20 @@ export class Body {
       }
     } else {
       this.idle = 0;
+    }
+  }
+
+  /** Release backing stores as soon as a chunk leaves the world. */
+  dispose() {
+    if (this.sprite) {
+      this.sprite.width = 0;
+      this.sprite.height = 0;
+      this.sprite = null;
+    }
+    if (this.sideSprite) {
+      this.sideSprite.width = 0;
+      this.sideSprite.height = 0;
+      this.sideSprite = null;
     }
   }
 }
@@ -473,6 +506,8 @@ export class PhysicsWorld {
   private iterations: number;
   /** Contact storage is pooled so a tumbling heap does not allocate every frame. */
   private manifolds: Manifold[] = [];
+  /** Reused x-sorted candidate list for the sweep-and-prune broadphase. */
+  private broadphase: Body[] = [];
 
   /** Static geometry: a floor that tracks the viewport, plus side walls. */
   private floor: Body | null = null;
@@ -497,7 +532,8 @@ export class PhysicsWorld {
 
   trim(limit: number) {
     if (this.bodies.length <= limit) return;
-    this.bodies.splice(0, this.bodies.length - limit);
+    const retired = this.bodies.splice(0, this.bodies.length - limit);
+    for (const body of retired) body.dispose();
   }
 
   /**
@@ -553,13 +589,14 @@ export class PhysicsWorld {
           victim = i;
         }
       }
-      this.bodies.splice(victim, 1);
+      this.bodies.splice(victim, 1)[0]?.dispose();
     }
     this.bodies.push(body);
     return body;
   }
 
   clear() {
+    for (const body of this.bodies) body.dispose();
     this.bodies.length = 0;
   }
 
@@ -663,7 +700,10 @@ export class PhysicsWorld {
       const b = bodies[i];
       b.age += dt;
       if (b.age > b.ttl) b.alpha -= dt * 1.6;
-      if (b.dead || b.alpha <= 0 || b.y > this.floorY + 2600) continue;
+      if (b.dead || b.alpha <= 0 || b.y > this.floorY + 2600) {
+        b.dispose();
+        continue;
+      }
       bodies[write++] = b;
     }
     bodies.length = write;
@@ -684,22 +724,32 @@ export class PhysicsWorld {
     }
     for (const b of bodies) if (!b.awake) b.sync();
 
-    // 2 — broadphase + manifolds. O(n²) over bounding circles: with the body
-    // cap that is ~18k cheap rejects a frame, far below the cost of the solver.
+    // 2 — broadphase + manifolds. Sweep tight world AABBs along x and stop as
+    // soon as the next body's left edge clears the current right edge. This
+    // produces the exact same SAT candidates as the old all-pairs circle test,
+    // without visiting thousands of impossible pairs in a wide debris field.
     const manifolds = this.manifolds;
     let manifoldCount = 0;
-    for (let i = 0; i < bodies.length; i++) {
-      const a = bodies[i];
+    const broadphase = this.broadphase;
+    broadphase.length = 0;
+    for (const body of bodies) broadphase.push(body);
+    broadphase.sort((a, b) => a.minX - b.minX);
+    for (let i = 0; i < broadphase.length; i++) {
+      const a = broadphase[i];
       // Ghosts are mid-swallow: they collide with nothing on the way down.
       if (a.ghost) continue;
-      for (let j = i + 1; j < bodies.length; j++) {
-        const b = bodies[j];
+      for (let j = i + 1; j < broadphase.length; j++) {
+        const b = broadphase[j];
+        if (b.minX > a.maxX) break;
         if (b.ghost) continue;
         if (!a.awake && !b.awake) continue;
+        if (b.maxY < a.minY || b.minY > a.maxY) continue;
+        // Preserve the old circle reject inside the much smaller sweep window;
+        // it is especially effective for rotated shards whose AABBs meet only
+        // at opposite corners.
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const reach = a.radius + b.radius;
-        if (dx > reach || dx < -reach || dy > reach || dy < -reach) continue;
         if (dx * dx + dy * dy > reach * reach) continue;
         const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold());
         if (collide(a, b, m)) {
@@ -711,8 +761,7 @@ export class PhysicsWorld {
       }
       for (const s of statics) {
         if (!a.awake) continue;
-        if (Math.abs(a.x - s.x) > a.radius + 4200) continue;
-        if (Math.abs(a.y - s.y) > a.radius + 6200) continue;
+        if (a.maxX < s.minX || a.minX > s.maxX || a.maxY < s.minY || a.minY > s.maxY) continue;
         const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold());
         if (collide(a, s, m)) manifoldCount++;
       }
@@ -837,7 +886,6 @@ export class PhysicsWorld {
       // hangs below regardless of how the chunk has rotated — which is where a
       // board's edge sits when seen from slightly above.
       if (b.sideSprite) {
-        ctx.save();
         ctx.translate(b.x, b.y + 3);
         ctx.rotate(b.angle);
         ctx.drawImage(
@@ -847,10 +895,14 @@ export class PhysicsWorld {
           b.spriteW,
           b.spriteH,
         );
-        ctx.restore();
+        // Move from the underside's world-space offset back to the face while
+        // retaining the current rotation. This avoids a second save/restore
+        // pair per chunk without changing either transform.
+        ctx.translate(-3 * Math.sin(b.angle), -3 * Math.cos(b.angle));
+      } else {
+        ctx.translate(b.x, b.y);
+        ctx.rotate(b.angle);
       }
-      ctx.translate(b.x, b.y);
-      ctx.rotate(b.angle);
       ctx.drawImage(
         b.sprite,
         b.spriteX - b.spriteW / 2,

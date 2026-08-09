@@ -1281,6 +1281,9 @@ const ICON_STATE: ToolArtState = {
   aimY: -0.835,
 };
 
+/** Reopening an identical toolbar should not rasterize and PNG-encode 13 tools again. */
+const iconCache = new WeakMap<ToolArtFn, Map<number, string>>();
+
 /**
  * Render a tool's art to a data-URL icon.
  *
@@ -1289,6 +1292,12 @@ const ICON_STATE: ToolArtState = {
  * crop into the icon. Runs once per tool when a toolbar mounts.
  */
 export function toolIconDataUrl(art: ToolArtFn, size = 30, state: Partial<ToolArtState> = {}): string {
+  const cacheable = Object.keys(state).length === 0;
+  if (cacheable) {
+    const cached = iconCache.get(art)?.get(size);
+    if (cached !== undefined) return cached;
+  }
+
   const pad = 64;
   const big = document.createElement("canvas");
   big.width = big.height = 256;
@@ -1324,5 +1333,14 @@ export function toolIconDataUrl(art: ToolArtFn, size = 30, state: Partial<ToolAr
   const dh = h * scale;
   octx.imageSmoothingQuality = "high";
   octx.drawImage(big, x0 - 1, y0 - 1, w, h, (size * dpr - dw) / 2, (size * dpr - dh) / 2, dw, dh);
-  return out.toDataURL();
+  const url = out.toDataURL();
+  if (cacheable) {
+    let sizes = iconCache.get(art);
+    if (!sizes) {
+      sizes = new Map();
+      iconCache.set(art, sizes);
+    }
+    sizes.set(size, url);
+  }
+  return url;
 }

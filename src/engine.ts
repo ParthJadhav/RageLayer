@@ -262,8 +262,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private _liveUnavailable = false;
   /** Post-processing chain. Null when disabled or WebGL is unavailable. */
   private postfx: PostFX | null = null;
-  /** The GL output is mounted. False uses the plain 2D effects canvas. */
+  /** Whether the selected quality profile allows post-processing work. */
+  private postfxEnabled = false;
+  /** The GL output is mounted. False uses the identical plain 2D effects canvas. */
   private postfxActive = false;
+  /** Avoid retrying a WebGL setup that already failed on this device. */
+  private postfxTried = false;
   /** Post-FX slice of the most recent render, for the performance breakdown. */
   private postFXFrameMs = 0;
   /** Low-res heat field sampled by the shimmer shader. */
@@ -388,29 +392,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.damageCanvas.width = 0;
     this.damageCanvas.height = 0;
 
-    // With post-processing on, the 2D fx canvas becomes an offscreen *source*
-    // and the WebGL output takes its place in the DOM. Everything upstream —
-    // particles, flames, debris — is unaware of the swap.
-    if (this.opts.postFX) {
-      const postfx = new PostFX();
-      if (postfx.available) {
-        this.postfx = postfx;
-        this.postfxActive = this.qualityProfile.postFX;
-        if (this.postfxActive) this.container.appendChild(postfx.canvas);
-        this.heatCanvas = document.createElement("canvas");
-        this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
-      } else {
-        postfx.dispose();
-      }
-    }
-    if (!this.postfxActive) {
-      Object.assign(this.fxCanvas.style, {
-        position: "absolute",
-        top: "0",
-        left: "0",
-      } satisfies Partial<CSSStyleDeclaration>);
-      this.container.appendChild(this.fxCanvas);
-    }
+    // The raw FX canvas is the zero-cost presentation path. The WebGL chain is
+    // created lazily when a tool is selected or effects are spawned, so merely
+    // opening the destroyer does not compile shaders and allocate another set
+    // of viewport-sized buffers.
+    Object.assign(this.fxCanvas.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+    } satisfies Partial<CSSStyleDeclaration>);
+    this.container.appendChild(this.fxCanvas);
     // The fx canvas is re-drawn every frame and only ever shows the viewport,
     // so it is promoted to its own compositor layer and scrolled by transform.
     Object.assign(this.fxCanvas.style, {
@@ -436,14 +427,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     } satisfies Partial<CSSStyleDeclaration>);
     this.container.appendChild(this.vignette);
     this._damageCtx = this.damageCanvas.getContext("2d")!;
-    // `desynchronized` lets the compositor take fx frames without round-tripping
-    // through the main thread's commit. Nothing reads pixels back from fx.
-    // Measured: ~15% off GPU-process time in the fire-heavy trace.
-    //
-    // It is deliberately *off* under post-processing: there the canvas is not
-    // presented at all, it is uploaded as a texture every frame, and a
-    // low-latency surface has nothing to offer a `texImage2D` source.
-    this._fxCtx = this.fxCanvas.getContext("2d", { desynchronized: !this.postfxActive })!;
+    // `desynchronized` helps when this canvas is presented directly, but it is
+    // actively harmful when post-FX uploads the canvas into WebGL: Chrome has
+    // to synchronize two independent IOSurfaces before every texSubImage2D.
+    // Keep one compositor-owned surface for post-FX installations; packages
+    // with post-FX disabled still get the low-latency direct-present path.
+    this._fxCtx = this.fxCanvas.getContext("2d", { desynchronized: !this.opts.postFX })!;
 
     (options.target ?? document.body).appendChild(this.container);
     this.resize();
@@ -595,6 +584,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const drawn = next?.art && this.opts.toolStyle === "3d";
     this.container.style.cursor = next ? (drawn ? "none" : (next.cursor ?? "crosshair")) : "";
     this.container.style.touchAction = next ? "none" : "";
+    // Tool selection precedes the first destructive pointer action, making it
+    // a safe time to warm the quality-preserving post-FX path without charging
+    // the opening or capture path for it.
+    if (next && this.opts.postFX && this.qualityProfile.postFX) this.setPostFXEnabled(true);
     this.emit("toolchange");
     this.requestFrame();
   }
@@ -1235,6 +1228,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     path.closePath();
   }
 
+  private static polyArea2(points: number[]): number {
+    let area2 = 0;
+    const n = points.length >> 1;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      area2 += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
+    }
+    return area2;
+  }
+
   fracture(x: number, y: number, radius: number, options: FractureOptions = {}): number {
     // Anything crawling in the struck region is crushed along with it.
     if (this.bugs.length > 0) this.squashBugs(x, y, radius);
@@ -1246,9 +1249,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const cells = voronoiCells(x, y, radius, count);
     const power = options.power ?? 240;
     const carve = new Path2D();
+    const carvedCells: number[][] = [];
     let made = 0;
 
     for (const cell of cells) {
+      const geometricArea = Math.abs(DestroyerEngine.polyArea2(cell)) * 0.5;
+      const materialArea = this.contentLayer?.materialArea(cell) ?? geometricArea;
+      // A cell grazing a pre-existing hole is fine; an empty cell is not a
+      // shard. Requiring a little real coverage also prevents a huge collider
+      // being attached to one surviving anti-aliased pixel at a torn rim.
+      if (materialArea < Math.max(8, geometricArea * 0.06)) continue;
       const body = makeChunk(
         src,
         cell,
@@ -1275,6 +1285,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       body.av = (Math.random() - 0.5) * 10;
       this.physics.add(body);
       DestroyerEngine.appendPoly(carve, cell);
+      carvedCells.push(cell);
       made++;
     }
     if (made === 0) return 0;
@@ -1285,7 +1296,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       y: y - radius,
       w: radius * 2,
       h: radius * 2,
-    });
+    }, carvedCells);
     this.contentLayer?.char(x, y, radius * 1.2, icy ? 0.08 : 0.3);
     if (icy) {
       this.meltFrost(x, y, radius);
@@ -1416,13 +1427,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     // Shoelace area: reject slivers (a doubled-back cut line encloses nothing
     // worth dropping, and a degenerate polygon makes a degenerate body).
-    let area2 = 0;
-    const n = points.length / 2;
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      area2 += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
-    }
+    const area2 = DestroyerEngine.polyArea2(points);
     if (Math.abs(area2) / 2 < 320) return false;
+    // The outline may span existing holes. Keep them in the falling sprite,
+    // but never create a body when the outlined region is already effectively
+    // empty. This is the shared guard for chainsaw loops and custom tools.
+    if ((this.contentLayer?.materialArea(points) ?? 0) < 240) return false;
 
     const body = makeChunk(
       src,
@@ -1433,8 +1443,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
         friction: 0.7,
         ttl: 16 + Math.random() * 10,
       },
-      // A sawn piece can be far bigger than a blast shard; allow it.
-      { edge: "rgba(12, 9, 7, 0.5)", maxSize: 700 },
+      // A sawn island may be as large as the captured page. Preserve its exact
+      // geometry while bounding only the backing-store pixel cost; this avoids
+      // turning a valid large loop into a no-op or a multi-megabyte frame spike.
+      {
+        edge: "rgba(12, 9, 7, 0.5)",
+        maxSize: Math.max(src.width, src.height),
+        maxPixels: 2_000_000,
+      },
       convexHull(points),
     );
     if (!body) return false;
@@ -1461,13 +1477,32 @@ export class DestroyerEngine implements DestroyerEngineApi {
       y: minY,
       w: maxX - minX,
       h: maxY - minY,
-    });
+    }, [points]);
 
     this.sound.crack();
     return true;
   }
 
+  dislodge(x0: number, y0: number, x1: number, y1: number): number {
+    const layer = this.contentLayer;
+    if (!layer?.ready || !this.opts.physics) return 0;
+    const polygons = layer.detachedPolygons({
+      x0: Math.min(x0, x1),
+      y0: Math.min(y0, y1),
+      x1: Math.max(x0, x1),
+      y1: Math.max(y0, y1),
+    });
+    let released = 0;
+    for (const polygon of polygons) {
+      if (this.cutout(polygon)) released++;
+    }
+    return released;
+  }
+
   demolish(x: number, y: number): boolean {
+    // A wrecking blow delivered through an existing hole cannot couple to a
+    // card merely because the card's old DOM rectangle still contains it.
+    if (!this.onPage(x, y)) return false;
     // Deliberately forgiving: a direct hit always wins, but a near miss on a
     // 26 px line of text still takes the paragraph. See `elementAt`.
     const el = elementAt(this.pageElements, x, y, 16);
@@ -1491,8 +1526,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
         : [[el.x, el.y, el.x + el.w, el.y, el.x + el.w, el.y + el.h, el.x, el.y + el.h]];
 
     const carve = new Path2D();
+    const carvedCells: number[][] = [];
     let made = 0;
     for (const cell of cells) {
+      const geometricArea = Math.abs(DestroyerEngine.polyArea2(cell)) * 0.5;
+      const materialArea = this.contentLayer?.materialArea(cell) ?? geometricArea;
+      if (materialArea < Math.max(8, geometricArea * 0.04)) continue;
       const body = makeChunk(
         src,
         cell,
@@ -1514,9 +1553,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
       body.av = (Math.random() - 0.5) * 3.6;
       this.physics.add(body);
       DestroyerEngine.appendPoly(carve, cell);
+      carvedCells.push(cell);
       made++;
     }
-    if (made === 0) return false;
+    if (made === 0) {
+      // Another tool already removed this harvested DOM rectangle. Retire the
+      // stale target so demolition and black-hole feeding can reach what is
+      // actually still present instead of retrying empty geometry forever.
+      el.taken = true;
+      return false;
+    }
 
     el.taken = true;
     // `gridCells` jitters cell corners by up to 22% of a cell, so the carved
@@ -1527,7 +1573,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       y: el.y - slack,
       w: el.w + slack * 2,
       h: el.h + slack * 2,
-    });
+    }, carvedCells);
     for (let i = 0; i < 12; i++) {
       this.spawnParticle({
         kind: "dust",
@@ -1581,10 +1627,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   freeze(x: number, y: number, radius: number, amount: number) {
     this.ensureFrost();
-    this.paintFrost(x, y, radius, amount);
+    this.paintFrost(x, y, radius, amount, true);
   }
 
-  private paintFrost(x: number, y: number, radius: number, amount: number) {
+  private paintFrost(x: number, y: number, radius: number, amount: number, surfaceOnly = false) {
     const grid = this.frost!;
     const c0 = Math.max(0, Math.floor((x - radius) / FROST_CELL));
     const c1 = Math.min(this.frostCols - 1, Math.floor((x + radius) / FROST_CELL));
@@ -1596,6 +1642,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         const dy = (r + 0.5) * FROST_CELL - y;
         const d = Math.hypot(dx, dy);
         if (d > radius) continue;
+        if (surfaceOnly && !this.onPage((c + 0.5) * FROST_CELL, (r + 0.5) * FROST_CELL)) continue;
         const i = r * this.frostCols + c;
         const next = grid[i] + amount * (1 - d / radius);
         grid[i] = Math.max(0, Math.min(1, next));
@@ -1624,7 +1671,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   // ── Heat field (drives the post-processing shimmer) ───────────────────────
 
   heat(x: number, y: number, radius: number, amount: number) {
-    if (!this.postfxActive) return;
+    if (!this.postfxEnabled) return;
     const ctx = this.heatCtx;
     if (!ctx || amount <= 0) return;
     const hx = (x - this.fxOffsetX) / HEAT_SCALE;
@@ -1665,12 +1712,37 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (this.flames.length > flameLimit) this.flames.length = flameLimit;
     this.physics.setIterations(this.qualityProfile.physicsIterations);
     this.physics.setBodyLimit(Math.max(24, Math.round(MAX_BODIES * this.qualityProfile.bodyScale)));
-    this.setPostFXActive(this.opts.postFX && this.qualityProfile.postFX);
+    this.setPostFXEnabled(this.opts.postFX && this.qualityProfile.postFX);
   }
 
-  private setPostFXActive(active: boolean) {
+  private ensurePostFX() {
+    if (this.postfx || this.postfxTried || this.disposed || !this.opts.postFX) return;
+    this.postfxTried = true;
+    const postfx = new PostFX();
+    if (!postfx.available) {
+      postfx.dispose();
+      return;
+    }
+    this.postfx = postfx;
+    this.heatCanvas = document.createElement("canvas");
+    this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
+    postfx.resize(this.fxCanvas.width, this.fxCanvas.height, this.fxW, this.fxH);
+    this.heatCanvas.width = Math.max(1, Math.round(this.fxW / HEAT_SCALE));
+    this.heatCanvas.height = Math.max(1, Math.round(this.fxH / HEAT_SCALE));
+  }
+
+  private setPostFXEnabled(enabled: boolean) {
+    if (enabled) this.ensurePostFX();
+    const next = enabled && !!this.postfx;
+    if (next === this.postfxEnabled) return;
+    this.postfxEnabled = next;
+    if (!next) this.setPostFXOutput(false);
+  }
+
+  /** Swap presentation only when the shader changes the frame's pixels. */
+  private setPostFXOutput(active: boolean) {
     const postfx = this.postfx;
-    const next = !!postfx && active;
+    const next = this.postfxEnabled && !!postfx && active;
     if (next === this.postfxActive) return;
     const outgoing = this.postfxActive ? postfx!.canvas : this.fxCanvas;
     const incoming = next ? postfx!.canvas : this.fxCanvas;
@@ -1827,8 +1899,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
       dy: this.lastPointer.y < -100 ? 0 : y - this.lastPointer.y,
       buttons: e.buttons,
     };
-    this.lastPointer = { x, y };
-    this.pointer = { x, y };
+    this.lastPointer.x = x;
+    this.lastPointer.y = y;
+    this.pointer.x = x;
+    this.pointer.y = y;
     return ev;
   }
 
@@ -1837,7 +1911,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     e.preventDefault();
     this.pointerDown = true;
     this.artDownAt = performance.now() / 1000;
-    this.lastPointer = { x: -1000, y: -1000 };
+    this.lastPointer.x = this.lastPointer.y = -1000;
     // Always build the event (it updates this.pointer for tick-driven tools),
     // even when the tool has no onDown handler.
     const ev = this.toolEvent(e);
@@ -1862,8 +1936,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   };
 
   private onPointerLeave = () => {
-    this.pointer = { x: -1000, y: -1000 };
-    this.lastPointer = { x: -1000, y: -1000 };
+    this.pointer.x = this.pointer.y = -1000;
+    this.lastPointer.x = this.lastPointer.y = -1000;
     this.requestFrame();
   };
 
@@ -1883,6 +1957,20 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.lastRenderedAt = now;
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
+
+    // Direct API users can spawn entities without selecting a tool. Lazily
+    // bring up post-FX on the first frame that can actually use it as well.
+    // Initialization happens outside the recurring CPU measurement so a
+    // one-time shader compile cannot incorrectly downgrade adaptive quality.
+    if (
+      !this.postfxEnabled &&
+      !this.postfxTried &&
+      this.opts.postFX &&
+      this.qualityProfile.postFX &&
+      this.hasPostFXDemand()
+    ) {
+      this.setPostFXEnabled(true);
+    }
     const frameStartedAt = performance.now();
 
     // The heat field is rebuilt from scratch every frame: it describes where
@@ -1902,11 +1990,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // the content layer cannot observe. Every built-in decal lands within this
     // reach of the cursor; anything further out marks itself via `markSurface`.
     if (this.pointerDown && this.activeTool && this.contentLayer?.ready) {
-      this.contentLayer.markSurface(this.pointer.x, this.pointer.y, TOOL_DECAL_REACH);
+      this.contentLayer.markSurface(this.pointer.x, this.pointer.y, TOOL_DECAL_REACH, true);
     }
     // Push page damage to the screen before the effects layer draws over it.
     const surfaceStartedAt = performance.now();
-    this.contentLayer?.present();
+    // A safety-net reconcile is a document-sized correctness sweep. Defer it
+    // while a held tool is actively animating; its local dirty region is still
+    // uploaded every frame, and the one full sweep runs immediately on release.
+    this.contentLayer?.present(!this.pointerDown);
     const surfaceMs = performance.now() - surfaceStartedAt;
     const renderStartedAt = performance.now();
     this.render();
@@ -1961,8 +2052,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     );
   }
 
+  private hasPostFXDemand() {
+    if (this.flames.length > 0 || this.destruction > 0.016 || this._singularity) return true;
+    for (const particle of this.particles) {
+      if (particle.kind === "flash" || particle.kind === "jet") return true;
+    }
+    return false;
+  }
+
   private resetHeat() {
-    if (!this.postfxActive) {
+    if (!this.postfxEnabled) {
       this.heatLevel = 0;
       return;
     }
@@ -1987,7 +2086,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const p = this.pointer;
     if (p.x <= -999) {
       this.artVX = this.artVY = 0;
-      this.artPrev = { x: -1000, y: -1000 };
+      this.artPrev.x = this.artPrev.y = -1000;
       return;
     }
     if (this.artPrev.x > -999 && dt > 0) {
@@ -2005,7 +2104,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
         this.artAimY /= am;
       }
     }
-    this.artPrev = { x: p.x, y: p.y };
+    this.artPrev.x = p.x;
+    this.artPrev.y = p.y;
   }
 
   /**
@@ -2758,7 +2858,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         // A drip that has stopped moving leaves a permanent run on the page.
         // Queued, not stamped here: the content canvas is document-sized and
         // this pass is already the hot loop.
-        if (p.kind === "paint") this.pendingStamps.push(p);
+        if (p.kind === "paint" && this.onPage(p.x, p.y)) this.pendingStamps.push(p);
         continue;
       }
 
@@ -2771,6 +2871,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       if (p.angle !== undefined && p.spin) p.angle += p.spin * dt;
+      // Paint clings while there is a surface under it. Reaching a hole turns
+      // the run into a falling drop; in this 2D layer that means it leaves the
+      // page without stamping a bridge across the void.
+      if (p.kind === "paint" && !this.onPage(p.x, p.y)) continue;
       // Runs trail behind whatever is sliding down the page — water rivulets
       // and paint drips both leave a tail as long as the distance they covered.
       if (p.kind === "rivulet" || p.kind === "paint") p.len = (p.len ?? 0) + Math.max(0, p.vy) * dt;
@@ -2803,7 +2907,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         // mid-compaction could land a new particle in a slot this pass has
         // already walked past.
         if (p.life > p.maxLife * 0.85) {
-          this.pendingSplashes.push(p.x, p.y);
+          if (this.onPage(p.x, p.y)) this.pendingSplashes.push(p.x, p.y);
           continue;
         }
       }
@@ -3284,7 +3388,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private present(time: number): number {
     const startedAt = performance.now();
     const postfx = this.postfx;
-    if (!this.postfxActive || !postfx || !this.heatCanvas) return 0;
+    if (!this.postfxEnabled || !postfx || !this.heatCanvas) {
+      this.setPostFXOutput(false);
+      return 0;
+    }
     let bloom = 0;
     for (const f of this.flames) bloom += f.intensity;
     bloom = Math.min(0.85, bloom * 0.16 + (this._singularity ? 0.55 : 0));
@@ -3296,10 +3403,22 @@ export class DestroyerEngine implements DestroyerEngineApi {
         break;
       }
     }
+    const heat = this.heatLevel * 0.012;
+    const aberration = this.destruction * 0.006 + (this._singularity ? 0.004 : 0);
+
+    // A plain particle/debris/tool-art frame has no bloom, heat refraction, or
+    // chromatic split. Presenting the source canvas is bit-identical and avoids
+    // a full-screen texture upload plus composite pass on those frames.
+    if (bloom <= 0.01 && heat <= 0.0001 && aberration <= 0.0001) {
+      this.setPostFXOutput(false);
+      return performance.now() - startedAt;
+    }
+
+    this.setPostFXOutput(true);
     postfx.render(this.fxCanvas, this.heatCanvas, {
       bloom,
-      heat: this.heatLevel * 0.012,
-      aberration: this.destruction * 0.006 + (this._singularity ? 0.004 : 0),
+      heat,
+      aberration,
       time,
     });
     return performance.now() - startedAt;
@@ -3422,7 +3541,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private updateLoops() {
-    const heat = Math.min(1, this.flames.reduce((sum, f) => sum + f.intensity, 0) / 4);
+    let total = 0;
+    for (const flame of this.flames) total += flame.intensity;
+    const heat = Math.min(1, total / 4);
     this.sound.loop("fire", heat * 0.5);
   }
 }

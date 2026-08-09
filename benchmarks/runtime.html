@@ -214,7 +214,11 @@
         const startedAt = performance.now();
         let previous = startedAt;
         await new Promise((resolve) => {
-          const sample = (now) => {
+          const sample = () => {
+            // Keep elapsed time and frame intervals on the same clock. CDP CPU
+            // emulation can offset rAF's callback timestamp from
+            // performance.now(), accidentally extending throttled benchmarks.
+            const now = performance.now();
             intervals.push(now - previous);
             previous = now;
             if (now - startedAt >= durationMs) resolve();
