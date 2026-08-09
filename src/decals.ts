@@ -188,7 +188,13 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
 }
 
 /** Soft scorch mark accumulated under a flame. Alpha scales with intensity. */
-export function drawScorch(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, alpha: number) {
+export function drawScorch(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  alpha: number,
+) {
   ctx.save();
   ctx.globalCompositeOperation = "source-atop";
   blit(ctx, sprites().scorch, x, y, radius, alpha);
@@ -204,7 +210,13 @@ export function drawScorch(ctx: CanvasRenderingContext2D, x: number, y: number, 
  * of hard bright needles radiating from the coldest point. The bloom alone
  * reads as fog; the needles alone read as scratches. Together they read as ice.
  */
-export function drawFrost(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, amount: number) {
+export function drawFrost(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius: number,
+  amount: number,
+) {
   ctx.save();
   ctx.globalCompositeOperation = "source-atop";
   blit(ctx, sprites().frost, x, y, radius, Math.min(0.5, amount * 0.55));
@@ -274,7 +286,13 @@ export function drawBurnChannel(ctx: CanvasRenderingContext2D, points: number[])
  * lit on their upper face and dark underneath, so the page reads as paper being
  * ripped rather than a line being drawn on it.
  */
-export function drawGash(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+export function drawGash(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+) {
   const dx = x2 - x1;
   const dy = y2 - y1;
   const len = Math.hypot(dx, dy);
@@ -304,7 +322,12 @@ export function drawGash(ctx: CanvasRenderingContext2D, x1: number, y1: number, 
       bx + ax,
       by + ay,
     );
-    ctx.quadraticCurveTo(bx + ax * 0.5 + nx * lift * side * 0.35, by + ay * 0.5 + ny * lift * side * 0.35, bx, by);
+    ctx.quadraticCurveTo(
+      bx + ax * 0.5 + nx * lift * side * 0.35,
+      by + ay * 0.5 + ny * lift * side * 0.35,
+      bx,
+      by,
+    );
     ctx.fillStyle = `rgba(228, 222, 212, ${rand(0.3, 0.62)})`;
     ctx.fill();
     // Shadowed underside of the curl.
@@ -422,7 +445,15 @@ export function drawSplat(
     ctx.arc(Math.cos(a) * d, Math.sin(a) * d, Math.max(0.8, r), 0, TAU);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(Math.cos(a) * (d - 5), Math.sin(a) * (d - 5), Math.max(0.6, r * 0.7), r * 2, a + Math.PI / 2, 0, TAU);
+    ctx.ellipse(
+      Math.cos(a) * (d - 5),
+      Math.sin(a) * (d - 5),
+      Math.max(0.6, r * 0.7),
+      r * 2,
+      a + Math.PI / 2,
+      0,
+      TAU,
+    );
     ctx.fill();
   }
 

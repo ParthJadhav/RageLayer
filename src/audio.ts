@@ -12,12 +12,17 @@ export class SoundEngine implements SoundApi {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
-  private loops = new Map<string, { source: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode }>();
+  private loops = new Map<
+    string,
+    { source: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode }
+  >();
 
   private ensure(): AudioContext | null {
     if (typeof window === "undefined") return null;
     if (!this.ctx) {
-      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const Ctor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return null;
       this.ctx = new Ctor();
       this.master = this.ctx.createGain();
@@ -99,7 +104,12 @@ export class SoundEngine implements SoundApi {
     // Contact transient: nearly all attack, no tail.
     this.burst({ duration: 0.03, gain: 0.8, filterFrom: 5200, filterTo: 2000, type: "bandpass" });
     // Knock body — the woody mid punch.
-    this.burst({ duration: 0.1 + Math.random() * 0.04, gain: 0.9, filterFrom: 520 + Math.random() * 140, filterTo: 70 });
+    this.burst({
+      duration: 0.1 + Math.random() * 0.04,
+      gain: 0.9,
+      filterFrom: 520 + Math.random() * 140,
+      filterTo: 70,
+    });
     // Crumble tail, a hair behind the hit: debris sifting out of the wound.
     this.burst({
       duration: 0.22,
@@ -174,7 +184,14 @@ export class SoundEngine implements SoundApi {
     // an eighth of a second behind is what makes it read as *brushing* — a
     // motion with a return stroke — instead of escaping steam.
     this.burst({ duration: 0.16, gain: 0.16, filterFrom: 500, filterTo: 1900, type: "bandpass" });
-    this.burst({ duration: 0.14, gain: 0.09, filterFrom: 1600, filterTo: 600, type: "bandpass", delay: 0.13 });
+    this.burst({
+      duration: 0.14,
+      gain: 0.09,
+      filterFrom: 1600,
+      filterTo: 600,
+      type: "bandpass",
+      delay: 0.13,
+    });
   }
 
   splat() {

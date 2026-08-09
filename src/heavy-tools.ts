@@ -11,10 +11,17 @@
  * so a host app can write its own tool with the same reach.
  */
 
-import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
-import { drawBurnChannel, drawFrost } from "./decals";
 import { emojiCursor } from "./cursors";
-import { blackHoleArt, bugsArt, demolitionArt, freezeArt, lightningArt, rocketArt } from "./toolart";
+import { drawBurnChannel, drawFrost } from "./decals";
+import {
+  blackHoleArt,
+  bugsArt,
+  demolitionArt,
+  freezeArt,
+  lightningArt,
+  rocketArt,
+} from "./toolart";
+import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
 
 const TAU = Math.PI * 2;
 
@@ -361,7 +368,14 @@ export const lightning: Tool = {
         const fl = len * rand(0.3, 0.6);
         drawBolt(
           engine,
-          boltPath(branch[j], branch[j + 1], branch[j] + Math.cos(fa) * fl, branch[j + 1] + Math.sin(fa) * fl, 5, 30),
+          boltPath(
+            branch[j],
+            branch[j + 1],
+            branch[j] + Math.cos(fa) * fl,
+            branch[j + 1] + Math.sin(fa) * fl,
+            5,
+            30,
+          ),
           2.5,
           0.16,
         );
@@ -603,4 +617,11 @@ export const bugs: Tool = {
   },
 };
 
-export const heavyTools: Tool[] = [demolition, rocketLauncher, lightning, freezeRay, blackHole, bugs];
+export const heavyTools: Tool[] = [
+  demolition,
+  rocketLauncher,
+  lightning,
+  freezeRay,
+  blackHole,
+  bugs,
+];

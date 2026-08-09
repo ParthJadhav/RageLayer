@@ -297,7 +297,7 @@ export function voronoiCells(cx: number, cy: number, radius: number, count: numb
       // Perpendicular bisector: keep the side nearer to site i.
       const mx = (sx + ox) / 2;
       const my = (sy + oy) / 2;
-      cell = clipHalfPlane(cell, nx / len, ny / len, ((nx / len) * mx + (ny / len) * my));
+      cell = clipHalfPlane(cell, nx / len, ny / len, (nx / len) * mx + (ny / len) * my);
     }
     if (cell.length >= 6) cells.push(cell);
   }

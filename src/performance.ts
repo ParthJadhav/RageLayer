@@ -297,10 +297,9 @@ export class PerformanceMonitor {
       // sample before it is allowed to reduce visual quality.
       if (!sustainedOverload && ++this.peakSamples < 2) return null;
       this.peakSamples = 0;
-      const pressure =
-        sustainedOverload
-          ? `p95 engine cost ${cpu.p95.toFixed(1)}ms`
-          : `peak engine cost ${cpu.max.toFixed(1)}ms`;
+      const pressure = sustainedOverload
+        ? `p95 engine cost ${cpu.p95.toFixed(1)}ms`
+        : `peak engine cost ${cpu.max.toFixed(1)}ms`;
       if (measurement.quality === "high") {
         this.qualityReason = `${pressure} exceeded the safe share of a ${targetBudget.toFixed(1)}ms frame budget`;
         return "balanced";

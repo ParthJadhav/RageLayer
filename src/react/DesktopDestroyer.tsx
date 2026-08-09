@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DestroyerEngine } from "../engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "../share";
-import { defaultTools } from "../tools";
 import { toolIconDataUrl } from "../toolart";
+import { defaultTools } from "../tools";
 import type { CaptureStatus, DestroyerOptions, Tool, ToolStyle } from "../types";
 
 export interface DesktopDestroyerProps {
@@ -113,7 +113,11 @@ const dotStyle: React.CSSProperties = {
 /** Chip label, dot colour and tooltip for each capture state. */
 function chipFor(status: CaptureStatus, liveUnavailable: boolean) {
   if (status === "capturing") {
-    return { label: "Capturing page…", color: "", title: "Rasterizing the page into the destructible canvas." };
+    return {
+      label: "Capturing page…",
+      color: "",
+      title: "Rasterizing the page into the destructible canvas.",
+    };
   }
   if (status === "live") {
     return {
@@ -264,16 +268,13 @@ export function DesktopDestroyer({
     engineRef.current?.setSound(sound);
   }, [sound]);
 
-  const selectTool = useCallback(
-    (id: string | null) => {
-      setActiveToolId((current) => {
-        const next = id === current ? null : id;
-        engineRef.current?.setTool(next);
-        return next;
-      });
-    },
-    [],
-  );
+  const selectTool = useCallback((id: string | null) => {
+    setActiveToolId((current) => {
+      const next = id === current ? null : id;
+      engineRef.current?.setTool(next);
+      return next;
+    });
+  }, []);
 
   /** Flatten the wreckage to PNG: clipboard if the browser allows, else a download. */
   const saveSnapshot = useCallback(async () => {
@@ -335,9 +336,14 @@ export function DesktopDestroyer({
   // whose z-index would trap the toolbar underneath the canvas overlay.
   return createPortal(
     <>
+      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: KEYFRAMES is a static string constant owned by this module */}
       <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
       {activeTool && (
-        <div className="dd-hint" data-dd-ignore="" style={{ position: "fixed", zIndex: 2147483001 }}>
+        <div
+          className="dd-hint"
+          data-dd-ignore=""
+          style={{ position: "fixed", zIndex: 2147483001 }}
+        >
           {activeTool.name} — {activeTool.hint}
         </div>
       )}
@@ -363,6 +369,7 @@ export function DesktopDestroyer({
       <div style={barStyle} role="toolbar" aria-label="Desktop Destroyer tools" data-dd-ignore="">
         {toolset.map((tool, i) => (
           <button
+            type="button"
             key={tool.id}
             className="dd-tool"
             style={buttonBase}
@@ -387,6 +394,7 @@ export function DesktopDestroyer({
         ))}
         <div style={dividerStyle} />
         <button
+          type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 19 }}
           title="Collapse the whole page (X)"
@@ -396,6 +404,7 @@ export function DesktopDestroyer({
           💥
         </button>
         <button
+          type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
           title="Save a picture of the wreckage (P)"
@@ -405,6 +414,7 @@ export function DesktopDestroyer({
           📸
         </button>
         <button
+          type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
           title={sound ? "Mute sound (M)" : "Enable sound (M)"}
@@ -414,6 +424,7 @@ export function DesktopDestroyer({
           {sound ? "🔊" : "🔇"}
         </button>
         <button
+          type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
           title="Repair everything (R)"
@@ -423,6 +434,7 @@ export function DesktopDestroyer({
           🩹
         </button>
         <button
+          type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 16, color: "rgba(255,255,255,0.8)" }}
           title="Close (Esc)"

@@ -46,7 +46,7 @@ export function pointInPolygon(points: number[], x: number, y: number): boolean 
     const yi = points[i * 2 + 1];
     const xj = points[j * 2];
     const yj = points[j * 2 + 1];
-    if ((yi > y) === (yj > y)) continue;
+    if (yi > y === yj > y) continue;
     const crossX = ((xj - xi) * (y - yi)) / (yj - yi || Number.EPSILON) + xi;
     if (x < crossX) inside = !inside;
   }
@@ -100,7 +100,13 @@ export function polygonMaterialArea(
   return geometricArea * opacityAt(cx / n, cy / n);
 }
 
-function addEdge(starts: number[], ends: number[], adjacency: Map<number, number[]>, start: number, end: number) {
+function addEdge(
+  starts: number[],
+  ends: number[],
+  adjacency: Map<number, number[]>,
+  start: number,
+  end: number,
+) {
   const index = starts.push(start) - 1;
   ends.push(end);
   const outgoing = adjacency.get(start);
@@ -233,10 +239,7 @@ function traceOuterBoundary(
  * Existing holes naturally participate because connectivity comes from the
  * current opacity map, not from the shape of the pointer trail.
  */
-export function findDetachedPolygons(
-  source: MaterialTopology,
-  bounds: TopologyBounds,
-): number[][] {
+export function findDetachedPolygons(source: MaterialTopology, bounds: TopologyBounds): number[][] {
   const padded = 24;
   let x0 = Math.max(0, bounds.x0 - padded);
   let y0 = Math.max(0, bounds.y0 - padded);
@@ -285,7 +288,8 @@ export function findDetachedPolygons(
   const rightAnchors = x1 < source.width - 0.01;
   const bottomAnchors = y1 < source.height - 0.01;
   const queue = new Int32Array(total);
-  const components: { label: number; cells: number; touchesDamage: boolean; anchored: boolean }[] = [];
+  const components: { label: number; cells: number; touchesDamage: boolean; anchored: boolean }[] =
+    [];
   let nextLabel = 0;
 
   for (let seed = 0; seed < total; seed++) {
@@ -361,7 +365,17 @@ export function findDetachedPolygons(
   // A single scribble can close several regions at once (for example a figure
   // eight). Release all useful islands, with a cap guarding malicious paths.
   for (let i = 0; i < Math.min(8, candidates.length); i++) {
-    const polygon = traceOuterBoundary(labels, candidates[i].label, cols, rows, x0, y0, cell, x1, y1);
+    const polygon = traceOuterBoundary(
+      labels,
+      candidates[i].label,
+      cols,
+      rows,
+      x0,
+      y0,
+      cell,
+      x1,
+      y1,
+    );
     if (polygon.length >= 6) polygons.push(polygon);
   }
   return polygons;

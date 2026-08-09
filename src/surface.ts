@@ -43,7 +43,7 @@
  * before this file existed.
  */
 
-import { createProgram, createQuad, createTexture, maxTextureSize, type GLProgram } from "./gl";
+import { createProgram, createQuad, createTexture, type GLProgram, maxTextureSize } from "./gl";
 
 const FRAG = `#version 300 es
 precision highp float;

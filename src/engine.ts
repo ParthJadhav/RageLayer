@@ -1,3 +1,34 @@
+import { SoundEngine } from "./audio";
+import {
+  DD_IGNORE_ATTR,
+  defaultCaptureFilter,
+  measureCapture,
+  pickPixelRatio,
+  resolvePageBackdrop,
+} from "./capture";
+import { ContentLayer } from "./content";
+import { drawPaintStreak, drawScorch } from "./decals";
+import { elementAt, elementsInBand, harvestElements, type PageElement } from "./elements";
+import {
+  type ChunkSource,
+  convexHull,
+  gridCells,
+  makeChunk,
+  shardBudget,
+  voronoiCells,
+} from "./fracture";
+import { LiveContentSource, supportsLiveCapture } from "./live";
+import {
+  detectInitialQuality,
+  PerformanceMonitor,
+  QUALITY_PROFILES,
+  type QualityProfile,
+} from "./performance";
+import { MAX_BODIES, PhysicsWorld } from "./physics";
+import { PostFX } from "./postfx";
+import { blit, blitRect, blitStreak, sprites } from "./sprites";
+import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
+import { buildTextMask } from "./textmask";
 import type {
   CaptureMode,
   CaptureStatus,
@@ -16,33 +47,11 @@ import type {
   Tool,
   Vec2,
 } from "./types";
-import { SoundEngine } from "./audio";
-import { ContentLayer } from "./content";
-import {
-  DD_IGNORE_ATTR,
-  defaultCaptureFilter,
-  measureCapture,
-  pickPixelRatio,
-  resolvePageBackdrop,
-} from "./capture";
-import { drawPaintStreak, drawScorch } from "./decals";
-import { elementAt, elementsInBand, harvestElements, type PageElement } from "./elements";
-import { convexHull, gridCells, makeChunk, shardBudget, voronoiCells, type ChunkSource } from "./fracture";
-import { LiveContentSource, supportsLiveCapture } from "./live";
-import { MAX_BODIES, PhysicsWorld } from "./physics";
-import {
-  detectInitialQuality,
-  PerformanceMonitor,
-  QUALITY_PROFILES,
-  type QualityProfile,
-} from "./performance";
-import { PostFX } from "./postfx";
-import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
-import { buildTextMask } from "./textmask";
-import { blit, blitRect, blitStreak, sprites } from "./sprites";
 
 const TAU = Math.PI * 2;
+
 export { DD_IGNORE_ATTR };
+
 const MAX_CAPTURE_HEIGHT = 12000;
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
 const FX_MARGIN = 120;
@@ -881,7 +890,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
       geometry.width,
       geometry.height,
       layer.dpr,
-      { source: geometry.source, rootSize: geometry.rootSize, backdrop, filter: this.captureFilter },
+      {
+        source: geometry.source,
+        rootSize: geometry.rootSize,
+        backdrop,
+        filter: this.captureFilter,
+      },
     );
     if (this.disposed) throw new Error("disposed");
     // Set before adopt: `adopt` resets the wound buffers, and `live` decides
@@ -988,7 +1002,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   spawnParticle(p: Particle) {
-    const limit = Math.max(64, Math.round(this.opts.maxParticles * this.qualityProfile.particleScale));
+    const limit = Math.max(
+      64,
+      Math.round(this.opts.maxParticles * this.qualityProfile.particleScale),
+    );
     if (this.particles.length >= limit) {
       // At the cap, recycle a slot round-robin instead of `shift()`-ing the
       // array (which memmoves every remaining particle, on every spawn, at the
@@ -1270,7 +1287,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
         },
         icy
           ? // Ice is thin and translucent — no wooden underside on the shards.
-            { tint: "rgba(150, 214, 255, 0.3)", edge: "rgba(232, 248, 255, 0.85)", edgeWidth: 1.1, flat: true }
+            {
+              tint: "rgba(150, 214, 255, 0.3)",
+              edge: "rgba(232, 248, 255, 0.85)",
+              edgeWidth: 1.1,
+              flat: true,
+            }
           : { edge: "rgba(12, 9, 7, 0.45)" },
       );
       if (!body) continue;
@@ -1291,12 +1313,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (made === 0) return 0;
 
     // The page loses exactly what the physics world gained.
-    this.contentLayer?.carveShape(carve, {
-      x: x - radius,
-      y: y - radius,
-      w: radius * 2,
-      h: radius * 2,
-    }, carvedCells);
+    this.contentLayer?.carveShape(
+      carve,
+      {
+        x: x - radius,
+        y: y - radius,
+        w: radius * 2,
+        h: radius * 2,
+      },
+      carvedCells,
+    );
     this.contentLayer?.char(x, y, radius * 1.2, icy ? 0.08 : 0.3);
     if (icy) {
       this.meltFrost(x, y, radius);
@@ -1344,8 +1370,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     // Fireball: a white core, an expanding shock ring, then the boiling
     // smoke ball that is most of what an explosion actually looks like.
-    this.spawnParticle({ kind: "flash", x, y, vx: 0, vy: 0, life: 0, maxLife: 0.3, size: radius * 2.6 });
-    this.spawnParticle({ kind: "ring", x, y, vx: 0, vy: 0, life: 0, maxLife: 0.62, size: radius * 2.2 });
+    this.spawnParticle({
+      kind: "flash",
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.3,
+      size: radius * 2.6,
+    });
+    this.spawnParticle({
+      kind: "ring",
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.62,
+      size: radius * 2.2,
+    });
     for (let i = 0; i < 34; i++) {
       const a = Math.random() * TAU;
       const sp = 90 + Math.random() * 420;
@@ -1472,12 +1516,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
       minY = Math.min(minY, points[i + 1]);
       maxY = Math.max(maxY, points[i + 1]);
     }
-    this.contentLayer?.carveShape(carve, {
-      x: minX,
-      y: minY,
-      w: maxX - minX,
-      h: maxY - minY,
-    }, [points]);
+    this.contentLayer?.carveShape(
+      carve,
+      {
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY,
+      },
+      [points],
+    );
 
     this.sound.crack();
     return true;
@@ -1568,12 +1616,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // `gridCells` jitters cell corners by up to 22% of a cell, so the carved
     // outline can bulge past the element's own rect.
     const slack = Math.max(el.w / cols, el.h / rows) * 0.25;
-    this.contentLayer?.carveShape(carve, {
-      x: el.x - slack,
-      y: el.y - slack,
-      w: el.w + slack * 2,
-      h: el.h + slack * 2,
-    }, carvedCells);
+    this.contentLayer?.carveShape(
+      carve,
+      {
+        x: el.x - slack,
+        y: el.y - slack,
+        w: el.w + slack * 2,
+        h: el.h + slack * 2,
+      },
+      carvedCells,
+    );
     for (let i = 0; i < 12; i++) {
       this.spawnParticle({
         kind: "dust",
@@ -1596,7 +1648,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   collapse() {
     const top = this.scrollY - 240;
     const bottom = this.scrollY + this.viewportH + 240;
-    this.collapseQueue = elementsInBand(this.pageElements, top, bottom, this.scrollY + this.viewportH * 0.35);
+    this.collapseQueue = elementsInBand(
+      this.pageElements,
+      top,
+      bottom,
+      this.scrollY + this.viewportH * 0.35,
+    );
     this.collapseTimer = 0;
     if (this.collapseQueue.length > 0) {
       this.requestFrame();
@@ -1690,7 +1747,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private emit(event: EngineEvent) {
-    this.listeners.get(event)?.forEach((cb) => cb());
+    this.listeners.get(event)?.forEach((cb) => {
+      cb();
+    });
   }
 
   private applyQuality(tier: PerformanceQualityTier) {
@@ -1708,7 +1767,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.particles.splice(0, this.particles.length - particleLimit);
       this.recycleCursor %= this.particles.length;
     }
-    const flameLimit = Math.max(4, Math.round(this.opts.maxFlames * this.qualityProfile.flameScale));
+    const flameLimit = Math.max(
+      4,
+      Math.round(this.opts.maxFlames * this.qualityProfile.flameScale),
+    );
     if (this.flames.length > flameLimit) this.flames.length = flameLimit;
     this.physics.setIterations(this.qualityProfile.physicsIterations);
     this.physics.setBodyLimit(Math.max(24, Math.round(MAX_BODIES * this.qualityProfile.bodyScale)));
@@ -2310,7 +2372,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     fuel[i] = Math.max(0, fuel[i] - amount);
     // Neighbours dry out at a quarter rate: a fire burning through one board
     // scorches the boards beside it before they catch.
-    for (const [nx, ny] of [[cx - 1, cy], [cx + 1, cy], [cx, cy - 1], [cx, cy + 1]] as const) {
+    for (const [nx, ny] of [
+      [cx - 1, cy],
+      [cx + 1, cy],
+      [cx, cy - 1],
+      [cx, cy + 1],
+    ] as const) {
       if (nx < 0 || ny < 0 || nx >= this.fuelCols || ny >= this.fuelRows) continue;
       const j = ny * this.fuelCols + nx;
       fuel[j] = Math.max(0, fuel[j] - amount * 0.25);
@@ -2862,7 +2929,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
         continue;
       }
 
-      const gravity = p.gravity ?? (p.kind === "smoke" || p.kind === "steam" || p.kind === "dust" ? -10 : 350);
+      const gravity =
+        p.gravity ?? (p.kind === "smoke" || p.kind === "steam" || p.kind === "dust" ? -10 : 350);
       p.vy += gravity * dt;
       if (p.drag) {
         p.vx *= 1 - p.drag * dt;
@@ -3098,7 +3166,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
       if (p.kind === "stream") {
         // The unbroken column of water leaving the nozzle, before it fans out
         // into droplets. Drawn opaque, not additively — water occludes.
-        blitStreak(ctx, sprite.streakWater, p.x, p.y, p.angle ?? 0, p.len ?? 40, p.size, 0.85 * (1 - t * 0.6));
+        blitStreak(
+          ctx,
+          sprite.streakWater,
+          p.x,
+          p.y,
+          p.angle ?? 0,
+          p.len ?? 40,
+          p.size,
+          0.85 * (1 - t * 0.6),
+        );
         continue;
       }
       if (p.kind === "rivulet") {
@@ -3123,7 +3200,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
       ctx.fillStyle = p.kind === "water" ? "rgb(140, 190, 240)" : "rgb(160, 200, 240)";
       ctx.globalAlpha = p.kind === "water" ? 0.85 : 0.7 * (1 - t);
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y, p.size * 0.7, p.size * 1.3, Math.atan2(p.vy, p.vx) + Math.PI / 2, 0, TAU);
+      ctx.ellipse(
+        p.x,
+        p.y,
+        p.size * 0.7,
+        p.size * 1.3,
+        Math.atan2(p.vy, p.vx) + Math.PI / 2,
+        0,
+        TAU,
+      );
       ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -3156,18 +3241,40 @@ export class DestroyerEngine implements DestroyerEngineApi {
     for (const p of puff) {
       const t = p.life / p.maxLife;
       if (p.kind === "dust") {
-        blit(ctx, sprite.dust, p.x, p.y, p.size * (1 + t * 2.6), 0.3 * (1 - t) * Math.min(1, t * 8));
+        blit(
+          ctx,
+          sprite.dust,
+          p.x,
+          p.y,
+          p.size * (1 + t * 2.6),
+          0.3 * (1 - t) * Math.min(1, t * 8),
+        );
         continue;
       }
       if (p.kind === "steam") {
-        blit(ctx, sprite.steam, p.x, p.y, p.size * (1 + t * 2.2), 0.32 * (1 - t) * Math.min(1, t * 6));
+        blit(
+          ctx,
+          sprite.steam,
+          p.x,
+          p.y,
+          p.size * (1 + t * 2.2),
+          0.32 * (1 - t) * Math.min(1, t * 6),
+        );
         continue;
       }
       // Smoke: born lit by the fire it came off, cooling to grey as it climbs,
       // and swaying so a column rolls rather than sliding straight up.
       const sway = Math.sin(time * 1.6 + (p.phase ?? 0)) * p.size * 0.5 * t;
       const fade = (1 - t) * Math.min(1, t * 5);
-      if (t < 0.35) blit(ctx, sprite.smokeWarm, p.x + sway, p.y, p.size * (1 + t * 2.4), 0.34 * fade * (1 - t / 0.35));
+      if (t < 0.35)
+        blit(
+          ctx,
+          sprite.smokeWarm,
+          p.x + sway,
+          p.y,
+          p.size * (1 + t * 2.4),
+          0.34 * fade * (1 - t / 0.35),
+        );
       blit(ctx, sprite.smoke, p.x + sway, p.y, p.size * (1 + t * 2.6), 0.3 * fade);
     }
     ctx.globalAlpha = 1;
@@ -3180,7 +3287,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
         ctx.globalAlpha = 0.92;
         ctx.fillStyle = p.color ?? "#e63946";
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y - (p.len ?? 0) * 0.5, p.size * 0.5, p.size * 0.5 + (p.len ?? 0) * 0.5, 0, 0, TAU);
+        ctx.ellipse(
+          p.x,
+          p.y - (p.len ?? 0) * 0.5,
+          p.size * 0.5,
+          p.size * 0.5 + (p.len ?? 0) * 0.5,
+          0,
+          0,
+          TAU,
+        );
         ctx.fill();
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * 0.85, 0, TAU);
@@ -3248,7 +3363,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // Rigid debris. Opaque, and above the loose particles: a falling chunk of
     // page is a solid object and has to occlude the dust it kicked up.
     if (this.physics.count > 0) {
-      this.physics.render(ctx, view.left - 200, view.top - 200, view.right + 200, view.bottom + 200);
+      this.physics.render(
+        ctx,
+        view.left - 200,
+        view.top - 200,
+        view.right + 200,
+        view.bottom + 200,
+      );
     }
 
     // The singularity's horizon. Drawn source-over, not additively — the one
@@ -3276,7 +3397,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
       const t = p.life / p.maxLife;
       switch (p.kind) {
         case "ember":
-          blit(ctx, t < 0.5 ? sprite.emberHot : sprite.emberCool, p.x, p.y, p.size * (1 - t * 0.5) * 1.6, 1 - t);
+          blit(
+            ctx,
+            t < 0.5 ? sprite.emberHot : sprite.emberCool,
+            p.x,
+            p.y,
+            p.size * (1 - t * 0.5) * 1.6,
+            1 - t,
+          );
           break;
         case "spark":
           // Fast sparks smear into a streak; slow ones stay points.
@@ -3297,10 +3425,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
         case "ring":
           // Expanding shockwave. Hollow by construction, so it rides over a
           // fresh hole without painting the void back in.
-          blit(ctx, sprite.shockRing, p.x, p.y, p.size * (0.35 + t * 1.9), (1 - t) * (1 - t) * 0.85);
+          blit(
+            ctx,
+            sprite.shockRing,
+            p.x,
+            p.y,
+            p.size * (0.35 + t * 1.9),
+            (1 - t) * (1 - t) * 0.85,
+          );
           break;
         case "streak":
-          blitStreak(ctx, sprite.streakHot, p.x, p.y, p.angle ?? 0, p.len ?? 40, p.size, (1 - t) * 0.9);
+          blitStreak(
+            ctx,
+            sprite.streakHot,
+            p.x,
+            p.y,
+            p.angle ?? 0,
+            p.len ?? 40,
+            p.size,
+            (1 - t) * 0.9,
+          );
           break;
         case "jet": {
           // Flamethrower fuel: white-hot at the nozzle, swelling and cooling as
@@ -3373,7 +3517,17 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (x1 <= x0 || y1 <= y0) return;
     const d = layer.dpr;
     ctx.globalCompositeOperation = "destination-in";
-    ctx.drawImage(layer.surface, x0 * d, y0 * d, (x1 - x0) * d, (y1 - y0) * d, x0, y0, x1 - x0, y1 - y0);
+    ctx.drawImage(
+      layer.surface,
+      x0 * d,
+      y0 * d,
+      (x1 - x0) * d,
+      (y1 - y0) * d,
+      x0,
+      y0,
+      x1 - x0,
+      y1 - y0,
+    );
     ctx.globalCompositeOperation = "source-over";
   }
 
@@ -3434,7 +3588,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * frequency is a wobble; two is the shimmer that reads as heat.
    */
   private renderFlame(ctx: CanvasRenderingContext2D, f: Flame, time: number) {
-    const flicker = 0.85 + 0.15 * Math.sin(time * 13 + f.seed) + 0.08 * Math.sin(time * 29 + f.seed * 2);
+    const flicker =
+      0.85 + 0.15 * Math.sin(time * 13 + f.seed) + 0.08 * Math.sin(time * 29 + f.seed * 2);
     const r = f.radius * f.intensity * flicker;
     if (r < 1) return;
     const { x, y } = f;

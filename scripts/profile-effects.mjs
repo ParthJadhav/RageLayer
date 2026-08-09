@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 
-const chromePath = process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath =
+  process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const targetUrl = readFlag("--url", "http://127.0.0.1:4321/");
 const cpuRate = Math.max(1, Number(readFlag("--cpu", "1")));
 const deviceScaleFactor = Math.max(1, Number(readFlag("--dpr", "2")));
@@ -11,7 +12,9 @@ const durationMs = Math.max(1_500, Number(readFlag("--duration", "5000")));
 const variant = readFlag("--variant", "full");
 const metricsOnly = process.argv.includes("--metrics-only");
 const captureScreenshots = process.argv.includes("--screenshots");
-const outputDir = resolve(readFlag("--output", join(tmpdir(), `desktop-destroyer-effects-${Date.now()}`)));
+const outputDir = resolve(
+  readFlag("--output", join(tmpdir(), `desktop-destroyer-effects-${Date.now()}`)),
+);
 const effects = readFlag("--effects", "lightning,paintball,blackhole")
   .split(",")
   .map((value) => value.trim())
@@ -146,7 +149,7 @@ function frameSummary(sample, targetFrameMs) {
   return {
     targetFrameMs,
     frames: intervals.length,
-    fps: intervals.length * 1000 / sample.elapsedMs,
+    fps: (intervals.length * 1000) / sample.elapsedMs,
     averageMs: intervals.reduce((sum, value) => sum + value, 0) / Math.max(1, intervals.length),
     p50Ms: percentile(intervals, 0.5),
     p95Ms: percentile(intervals, 0.95),
@@ -198,8 +201,14 @@ function cpuSummary(profile) {
     (row) => row.function !== "(idle)" && row.function !== "(program)" && row.function !== "(root)",
   );
   return {
-    topSelf: useful.slice().sort((a, b) => b.selfMs - a.selfMs).slice(0, 18),
-    topTotal: useful.slice().sort((a, b) => b.totalMs - a.totalMs).slice(0, 18),
+    topSelf: useful
+      .slice()
+      .sort((a, b) => b.selfMs - a.selfMs)
+      .slice(0, 18),
+    topTotal: useful
+      .slice()
+      .sort((a, b) => b.totalMs - a.totalMs)
+      .slice(0, 18),
   };
 }
 
@@ -452,7 +461,9 @@ try {
       sessionId,
     );
     if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+      throw new Error(
+        result.exceptionDetails.exception?.description ?? result.exceptionDetails.text,
+      );
     }
     return result.result.value;
   };
@@ -476,8 +487,14 @@ try {
   };
 
   await waitUntil("document.readyState === 'complete'", 20_000, "Production page did not load");
-  await evalValue(`Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "DESTROY")?.click()`);
-  await waitUntil("Boolean(window.__desktopDestroyer)", Math.max(45_000, 10_000 * cpuRate), "Desktop Destroyer did not mount");
+  await evalValue(
+    `Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "DESTROY")?.click()`,
+  );
+  await waitUntil(
+    "Boolean(window.__desktopDestroyer)",
+    Math.max(45_000, 10_000 * cpuRate),
+    "Desktop Destroyer did not mount",
+  );
   await waitUntil(
     "['snapshot', 'live'].includes(window.__desktopDestroyer.captureStatus)",
     Math.max(30_000, 20_000 * cpuRate),
@@ -497,7 +514,11 @@ try {
     };
     requestAnimationFrame(sample);
   })`);
-  const targetFrameMs = percentile(idle.filter((value) => value > 0 && value < 20), 0.5) || 1000 / 60;
+  const targetFrameMs =
+    percentile(
+      idle.filter((value) => value > 0 && value < 20),
+      0.5,
+    ) || 1000 / 60;
   const opacityCheck = await evaluate(`async () => {
     const engine = window.__desktopDestroyer;
     const layer = engine.content;
@@ -589,9 +610,15 @@ try {
       );
       const frameEvent = await Promise.race([
         nextFrame,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Chrome screencast timed out")), 5_000)),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Chrome screencast timed out")), 5_000),
+        ),
       ]);
-      await cdp.send("Page.screencastFrameAck", { sessionId: frameEvent.params.sessionId }, sessionId);
+      await cdp.send(
+        "Page.screencastFrameAck",
+        { sessionId: frameEvent.params.sessionId },
+        sessionId,
+      );
       await cdp.send("Page.stopScreencast", {}, sessionId);
       screenshotPath = join(outputDir, `${effect}-${cpuRate}x.png`);
       await writeFile(screenshotPath, Buffer.from(frameEvent.params.data, "base64"));
@@ -631,13 +658,18 @@ try {
       },
       cpu: profile ? cpuSummary(profile) : null,
       trace: profile ? traceSummary(traceEvents) : null,
-      artifacts: profile || screenshotPath ? {
-        ...(profile ? {
-          cpuProfile: join(outputDir, `${prefix}.cpuprofile`),
-          trace: join(outputDir, `${prefix}.trace.json`),
-        } : {}),
-        ...(screenshotPath ? { screenshot: screenshotPath } : {}),
-      } : null,
+      artifacts:
+        profile || screenshotPath
+          ? {
+              ...(profile
+                ? {
+                    cpuProfile: join(outputDir, `${prefix}.cpuprofile`),
+                    trace: join(outputDir, `${prefix}.trace.json`),
+                  }
+                : {}),
+              ...(screenshotPath ? { screenshot: screenshotPath } : {}),
+            }
+          : null,
     });
     await evalValue("window.__desktopDestroyer.clear()");
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));

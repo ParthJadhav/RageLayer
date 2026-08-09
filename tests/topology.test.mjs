@@ -76,10 +76,7 @@ describe("material topology", () => {
   });
 
   test("a severed document corner falls instead of acting permanently anchored", () => {
-    const pieces = detached(
-      [[0, 72.4, 74.1, 0]],
-      { x0: 0, y0: 0, x1: 75, y1: 73 },
-    );
+    const pieces = detached([[0, 72.4, 74.1, 0]], { x0: 0, y0: 0, x1: 75, y1: 73 });
     expect(pieces).toHaveLength(1);
     expect(Math.abs(polygonArea2(pieces[0])) / 2).toBeGreaterThan(1_800);
     expect(Math.abs(polygonArea2(pieces[0])) / 2).toBeLessThan(3_500);

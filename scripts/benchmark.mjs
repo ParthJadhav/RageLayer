@@ -1,13 +1,14 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
-import { mkdtemp, rm, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const chromePath = process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromePath =
+  process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cpuRate = Number(readFlag("--cpu", "1"));
 const durationMs = Number(readFlag("--duration", "4000"));
 const warmupMs = Number(readFlag("--warmup", "1000"));
@@ -23,19 +24,23 @@ function readFlag(name, fallback) {
 }
 
 function contentType(pathname) {
-  return {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".map": "application/json; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-  }[extname(pathname)] ?? "application/octet-stream";
+  return (
+    {
+      ".html": "text/html; charset=utf-8",
+      ".js": "text/javascript; charset=utf-8",
+      ".map": "application/json; charset=utf-8",
+      ".css": "text/css; charset=utf-8",
+    }[extname(pathname)] ?? "application/octet-stream"
+  );
 }
 
 async function startServer() {
   const server = createServer(async (request, response) => {
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
-      const pathname = decodeURIComponent(url.pathname === "/" ? "/benchmarks/runtime.html" : url.pathname);
+      const pathname = decodeURIComponent(
+        url.pathname === "/" ? "/benchmarks/runtime.html" : url.pathname,
+      );
       const filepath = resolve(packageRoot, `.${pathname}`);
       if (!filepath.startsWith(`${packageRoot}/`)) throw new Error("outside package root");
       const info = await stat(filepath);
@@ -119,7 +124,9 @@ function metricDelta(before, after, key) {
 function roundValues(value) {
   if (Array.isArray(value)) return value.map(roundValues);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, roundValues(child)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, roundValues(child)]),
+    );
   }
   return typeof value === "number" ? Math.round(value * 100) / 100 : value;
 }

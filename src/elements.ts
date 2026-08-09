@@ -49,7 +49,17 @@ export interface PageElement {
 }
 
 const REPLACED = new Set(["IMG", "SVG", "VIDEO", "CANVAS", "PICTURE"]);
-const SKIP = new Set(["SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "HEAD", "LINK", "META", "BR", "HR"]);
+const SKIP = new Set([
+  "SCRIPT",
+  "STYLE",
+  "NOSCRIPT",
+  "TEMPLATE",
+  "HEAD",
+  "LINK",
+  "META",
+  "BR",
+  "HR",
+]);
 
 function documentRect(el: Element, scrollX: number, scrollY: number) {
   const r = el.getBoundingClientRect();

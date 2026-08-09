@@ -23,9 +23,9 @@
  * layer behaves exactly as it did before the renderer existed.
  */
 
-import { pickPixelRatio, pinFixedDescendants, type PageBackdrop } from "./capture";
+import { type PageBackdrop, pickPixelRatio, pinFixedDescendants } from "./capture";
 import { blit, sprites } from "./sprites";
-import { SurfaceRenderer, type SurfaceParams } from "./surface";
+import { type SurfaceParams, SurfaceRenderer } from "./surface";
 import {
   findDetachedPolygons,
   pointInPolygon,
@@ -188,7 +188,8 @@ class OpacityMap {
 
   /** 0 = pristine void, 1 = surviving material, 2 = structurally removed. */
   stateAt(x: number, y: number): 0 | 1 | 2 {
-    if (x < 0 || y < 0 || x >= this.width || y >= this.height || this.topology.length === 0) return 0;
+    if (x < 0 || y < 0 || x >= this.width || y >= this.height || this.topology.length === 0)
+      return 0;
     const c = Math.min(this.topologyCols - 1, Math.floor(x / TOPOLOGY_CELL));
     const r = Math.min(this.topologyRows - 1, Math.floor(y / TOPOLOGY_CELL));
     return this.topology[r * this.topologyCols + c] as 0 | 1 | 2;
@@ -283,7 +284,9 @@ class OpacityMap {
           if (hit) break;
         }
         if (!hit) continue;
-        this.topology[r * this.topologyCols + c] = operation.restores ? this.pristineStateAt(x, y) : 2;
+        this.topology[r * this.topologyCols + c] = operation.restores
+          ? this.pristineStateAt(x, y)
+          : 2;
       }
     }
   }
@@ -629,7 +632,10 @@ export class ContentLayer {
         backgroundColor: backdrop.color,
         // Applied after html-to-image's own width/height, so this wins: the
         // clone keeps its real size and margins inside the margin-box raster.
-        style: { ...backdrop.image, ...options.rootSize } as unknown as Partial<CSSStyleDeclaration>,
+        style: {
+          ...backdrop.image,
+          ...options.rootSize,
+        } as unknown as Partial<CSSStyleDeclaration>,
       });
     } finally {
       unpin();

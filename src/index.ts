@@ -1,4 +1,4 @@
-export { DestroyerEngine } from "./engine";
+export type { CaptureGeometry, PageBackdrop } from "./capture";
 export {
   DD_IGNORE_ATTR,
   DEV_TOOL_ELEMENT_PREFIXES,
@@ -6,32 +6,11 @@ export {
   measureCapture,
   resolvePageBackdrop,
 } from "./capture";
-export type { CaptureGeometry, PageBackdrop } from "./capture";
-export { ContentLayer } from "./content";
 export type { CaptureOptions } from "./content";
-export { LiveContentSource, supportsLiveCapture, supportsPaintEvents } from "./live";
-export type { LiveCaptureOptions } from "./live";
-export { defaultTools, hammer, gun, flamethrower, waterHose, chainsaw, paintball, broom } from "./tools";
-export { heavyTools, blackHole, bugs, demolition, freezeRay, lightning, rocketLauncher } from "./heavy-tools";
+export { ContentLayer } from "./content";
 export { emojiCursor } from "./cursors";
+export type { CrackOptions, Paint } from "./decals";
 export {
-  toolIconDataUrl,
-  hammerArt,
-  gunArt,
-  flamethrowerArt,
-  waterHoseArt,
-  chainsawArt,
-  paintballArt,
-  broomArt,
-  demolitionArt,
-  rocketArt,
-  lightningArt,
-  freezeArt,
-  blackHoleArt,
-  bugsArt,
-} from "./toolart";
-export {
-  PAINT_COLORS,
   drawBulletHole,
   drawBurnChannel,
   drawCrack,
@@ -40,42 +19,74 @@ export {
   drawPaintStreak,
   drawScorch,
   drawSplat,
+  PAINT_COLORS,
   randomPaint,
 } from "./decals";
-export type { CrackOptions, Paint } from "./decals";
-export { Body, PhysicsWorld, MAX_BODIES } from "./physics";
-export type { BodyInit, WorldOptions } from "./physics";
-export { bakeChunk, convexHull, gridCells, makeChunk, shardBudget, voronoiCells } from "./fracture";
-export type { BakeOptions, ChunkSource } from "./fracture";
-export { elementAt, elementsInBand, harvestElements } from "./elements";
 export type { PageElement } from "./elements";
-export { PostFX } from "./postfx";
-export type { PostFXParams } from "./postfx";
-export { DEFAULT_SURFACE_PARAMS, SurfaceRenderer } from "./surface";
-export type { SurfaceParams } from "./surface";
-export { buildTextMask } from "./textmask";
-export { QUALITY_PROFILES } from "./performance";
-export { createProgram, createQuad, createTexture, maxTextureSize, QUAD_VERT } from "./gl";
+export { elementAt, elementsInBand, harvestElements } from "./elements";
+export { DestroyerEngine } from "./engine";
+export type { BakeOptions, ChunkSource } from "./fracture";
+export { bakeChunk, convexHull, gridCells, makeChunk, shardBudget, voronoiCells } from "./fracture";
 export type { GLProgram } from "./gl";
+export { createProgram, createQuad, createTexture, maxTextureSize, QUAD_VERT } from "./gl";
+export {
+  blackHole,
+  bugs,
+  demolition,
+  freezeRay,
+  heavyTools,
+  lightning,
+  rocketLauncher,
+} from "./heavy-tools";
+export type { LiveCaptureOptions } from "./live";
+export { LiveContentSource, supportsLiveCapture, supportsPaintEvents } from "./live";
+export { QUALITY_PROFILES } from "./performance";
+export type { BodyInit, WorldOptions } from "./physics";
+export { Body, MAX_BODIES, PhysicsWorld } from "./physics";
+export type { PostFXParams } from "./postfx";
+export { PostFX } from "./postfx";
+export type { SurfaceParams } from "./surface";
+export { DEFAULT_SURFACE_PARAMS, SurfaceRenderer } from "./surface";
+export { buildTextMask } from "./textmask";
+export {
+  blackHoleArt,
+  broomArt,
+  bugsArt,
+  chainsawArt,
+  demolitionArt,
+  flamethrowerArt,
+  freezeArt,
+  gunArt,
+  hammerArt,
+  lightningArt,
+  paintballArt,
+  rocketArt,
+  toolIconDataUrl,
+  waterHoseArt,
+} from "./toolart";
+export {
+  broom,
+  chainsaw,
+  defaultTools,
+  flamethrower,
+  gun,
+  hammer,
+  paintball,
+  waterHose,
+} from "./tools";
 export type {
   CaptureMode,
   CaptureStatus,
-  DestroyerOptions,
-  DestroyerEngineApi,
   ContentApi,
   ContentPatch,
+  DestroyerEngineApi,
+  DestroyerOptions,
   EngineEvent,
   ExplodeOptions,
+  Flame,
   FractureOptions,
-  Singularity,
-  Tool,
-  ToolArtFn,
-  ToolArtState,
-  ToolPointerEvent,
-  ToolStyle,
   Particle,
   ParticleKind,
-  Flame,
   PerformanceEntities,
   PerformanceFrameBreakdown,
   PerformanceFrameStats,
@@ -83,5 +94,11 @@ export type {
   PerformanceQuality,
   PerformanceQualityTier,
   PerformanceSnapshot,
+  Singularity,
   SoundApi,
+  Tool,
+  ToolArtFn,
+  ToolArtState,
+  ToolPointerEvent,
+  ToolStyle,
 } from "./types";

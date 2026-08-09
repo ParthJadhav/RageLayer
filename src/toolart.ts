@@ -134,7 +134,16 @@ function outline(ctx: Ctx, alpha = 0.45) {
  * A shaded cylinder from (x0,y0) to (x1,y1) — handles, barrels, tubes.
  * The gradient runs across the rod, which is what makes it read as round.
  */
-function rod(ctx: Ctx, x0: number, y0: number, x1: number, y1: number, w: number, stops: Stops, edge = 0.45) {
+function rod(
+  ctx: Ctx,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  w: number,
+  stops: Stops,
+  edge = 0.45,
+) {
   const a = Math.atan2(y1 - y0, x1 - x0);
   const len = Math.hypot(x1 - x0, y1 - y0);
   ctx.save();
@@ -385,7 +394,8 @@ export const gunArt: ToolArtFn = (ctx, s) => {
   ctx.fill();
 
   // Barrel heat while hammering on auto.
-  if (s.held && s.sinceDown > 0.4) glow(ctx, 0, -4, 14, "rgba(255,120,40,0.5)", Math.min(0.5, (s.sinceDown - 0.4) * 0.5));
+  if (s.held && s.sinceDown > 0.4)
+    glow(ctx, 0, -4, 14, "rgba(255,120,40,0.5)", Math.min(0.5, (s.sinceDown - 0.4) * 0.5));
 
   ctx.restore();
 };
@@ -1107,7 +1117,12 @@ export const blackHoleArt: ToolArtFn = (ctx, s) => {
   ctx.globalCompositeOperation = "lighter";
   const spin = s.time * (1.5 + charge * 6);
   for (let arm = 0; arm < 3; arm++) {
-    ctx.strokeStyle = arm === 0 ? "rgba(190,140,255,0.8)" : arm === 1 ? "rgba(120,90,230,0.65)" : "rgba(255,190,120,0.5)";
+    ctx.strokeStyle =
+      arm === 0
+        ? "rgba(190,140,255,0.8)"
+        : arm === 1
+          ? "rgba(120,90,230,0.65)"
+          : "rgba(255,190,120,0.5)";
     ctx.lineWidth = 1.6;
     ctx.beginPath();
     for (let k = 0; k <= 14; k++) {
@@ -1291,7 +1306,11 @@ const iconCache = new WeakMap<ToolArtFn, Map<number, string>>();
  * renders large, scans the alpha channel for the true bounds, and fits that
  * crop into the icon. Runs once per tool when a toolbar mounts.
  */
-export function toolIconDataUrl(art: ToolArtFn, size = 30, state: Partial<ToolArtState> = {}): string {
+export function toolIconDataUrl(
+  art: ToolArtFn,
+  size = 30,
+  state: Partial<ToolArtState> = {},
+): string {
   const cacheable = Object.keys(state).length === 0;
   if (cacheable) {
     const cached = iconCache.get(art)?.get(size);
@@ -1308,7 +1327,10 @@ export function toolIconDataUrl(art: ToolArtFn, size = 30, state: Partial<ToolAr
 
   // Alpha bounds of what was actually drawn.
   const data = bctx.getImageData(0, 0, 256, 256).data;
-  let x0 = 256, y0 = 256, x1 = 0, y1 = 0;
+  let x0 = 256,
+    y0 = 256,
+    x1 = 0,
+    y1 = 0;
   for (let y = 0; y < 256; y++) {
     for (let x = 0; x < 256; x++) {
       if (data[(y * 256 + x) * 4 + 3] > 24) {

@@ -1,8 +1,6 @@
-import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
-import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
 import { emojiCursor } from "./cursors";
+import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
 import { heavyTools } from "./heavy-tools";
-import { surfaceRuns, type TopologyBounds } from "./topology";
 import {
   broomArt,
   chainsawArt,
@@ -12,6 +10,8 @@ import {
   paintballArt,
   waterHoseArt,
 } from "./toolart";
+import { surfaceRuns, type TopologyBounds } from "./topology";
+import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
 
 const TAU = Math.PI * 2;
 
@@ -43,7 +43,14 @@ function debris(engine: DestroyerEngineApi, x: number, y: number, count: number,
  * and drifts down — it is the slow part of a hit, and what keeps a wound
  * looking fresh for a second after the fast debris is gone.
  */
-function dustPuff(engine: DestroyerEngineApi, x: number, y: number, count: number, spread: number, force = 1) {
+function dustPuff(
+  engine: DestroyerEngineApi,
+  x: number,
+  y: number,
+  count: number,
+  spread: number,
+  force = 1,
+) {
   for (let i = 0; i < count; i++) {
     const a = Math.random() * TAU;
     const d = Math.random() * spread;
@@ -169,13 +176,31 @@ export const hammer: Tool = {
         // Second: the cracks run, chips fly.
         debris(engine, e.x, e.y, 12);
         dustPuff(engine, e.x, e.y, 12, 22, 1.3);
-        engine.spawnParticle({ kind: "ring", x: e.x, y: e.y, vx: 0, vy: 0, life: 0, maxLife: 0.35, size: 40 });
+        engine.spawnParticle({
+          kind: "ring",
+          x: e.x,
+          y: e.y,
+          vx: 0,
+          vy: 0,
+          life: 0,
+          maxLife: 0.35,
+          size: 40,
+        });
         engine.sound.crack();
       } else {
         // Third: deep splintering — pale fragments and a real shudder.
         debris(engine, e.x, e.y, 16, Math.random() < 0.5 ? "#d8d2c8" : "#8e8880");
         dustPuff(engine, e.x, e.y, 16, 28, 1.5);
-        engine.spawnParticle({ kind: "ring", x: e.x, y: e.y, vx: 0, vy: 0, life: 0, maxLife: 0.42, size: 54 });
+        engine.spawnParticle({
+          kind: "ring",
+          x: e.x,
+          y: e.y,
+          vx: 0,
+          vy: 0,
+          life: 0,
+          maxLife: 0.42,
+          size: 54,
+        });
         engine.sound.crack();
       }
       engine.shake(7 + stage * 3, (Math.random() - 0.5) * 0.5, 1);
@@ -470,7 +495,11 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
       self.cooldown = 0.1;
       // Always light directly under the nozzle, then throw a second seed further
       // down the cone so the fire creeps outward in the direction you are aiming.
-      engine.spawnFlame(pointer.x + (Math.random() - 0.5) * 22, pointer.y + (Math.random() - 0.5) * 16, 0.5);
+      engine.spawnFlame(
+        pointer.x + (Math.random() - 0.5) * 22,
+        pointer.y + (Math.random() - 0.5) * 16,
+        0.5,
+      );
       const reach = 26 + Math.random() * 46;
       engine.spawnFlame(pointer.x + aim.x * reach, pointer.y + aim.y * reach, 0.32);
     }
@@ -711,7 +740,7 @@ export const chainsaw: Tool & {
   stripDebt: 0,
   scanDebt: 0,
   cutBounds: null,
-  onDown(engine, e) {
+  onDown(_engine, e) {
     this.lastCut = { x: e.x, y: e.y };
     this.stripDebt = 0;
     this.scanDebt = 0;
@@ -766,7 +795,13 @@ export const chainsaw: Tool & {
         });
       }
       if (Math.random() < 0.7) {
-        debris(engine, mx, my, Math.min(3, Math.ceil(run.length / 8)), Math.random() < 0.5 ? "#d8d2c8" : "#8e8880");
+        debris(
+          engine,
+          mx,
+          my,
+          Math.min(3, Math.ceil(run.length / 8)),
+          Math.random() < 0.5 ? "#d8d2c8" : "#8e8880",
+        );
       }
       dustPuff(engine, mx, my, Math.min(3, Math.ceil(run.length / 7)), 10, 0.7);
 

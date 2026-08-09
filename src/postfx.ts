@@ -311,7 +311,17 @@ export class PostFX {
     // frames only replace the pixels with `texSubImage2D`.
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fxTex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, pixelWidth, pixelHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      pixelWidth,
+      pixelHeight,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
 
     for (const t of [this.ping, this.pong]) {
       if (!t) continue;
@@ -349,7 +359,17 @@ export class PostFX {
     if (heat.width !== this.heatW || heat.height !== this.heatH) {
       this.heatW = heat.width;
       this.heatH = heat.height;
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.heatW, this.heatH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        this.heatW,
+        this.heatH,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+      );
     }
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, heat);
 

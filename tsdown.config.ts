@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: {
@@ -6,8 +6,8 @@ export default defineConfig({
     "react/index": "src/react/index.ts",
   },
   format: ["esm"],
+  platform: "browser",
   dts: true,
-  minify: true,
   sourcemap: true,
   clean: true,
   external: ["react", "react-dom"],
