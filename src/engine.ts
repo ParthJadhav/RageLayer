@@ -136,10 +136,19 @@ const TOOL_DECAL_REACH = 96;
  * mode's transparent decals buffer.
  */
 function atopAsOver(ctx: CanvasRenderingContext2D): CanvasRenderingContext2D {
+  // Context methods are stable, so each is bound once. Rebinding inside the
+  // `get` trap allocated a fresh closure per property access, and decal-heavy
+  // tools touch the context hundreds of times a frame.
+  const bound = new Map<string | symbol, unknown>();
   return new Proxy(ctx, {
     get(target, prop) {
+      const cached = bound.get(prop);
+      if (cached !== undefined) return cached;
       const value = Reflect.get(target, prop);
-      return typeof value === "function" ? value.bind(target) : value;
+      if (typeof value !== "function") return value;
+      const fn = value.bind(target);
+      bound.set(prop, fn);
+      return fn;
     },
     set(target, prop, value) {
       Reflect.set(
@@ -181,6 +190,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   /** The damage canvas only gets a backing store once something draws on it. */
   private damageReady = false;
   private particles: Particle[] = [];
+  /**
+   * Live "flash"/"jet" particles. Kinds never mutate after spawn, so exact
+   * bookkeeping at the few lifecycle sites replaces the full-array scans the
+   * post-FX demand and bloom checks used to make every frame.
+   */
+  private flashJetCount = 0;
   /** Round-robin slot to recycle when the particle cap is reached. */
   private recycleCursor = 0;
   /** Flat x,y pairs for splashes queued during the particle step. */
@@ -619,6 +634,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.contentLayer?.restoreAll();
     this.flames = [];
     this.particles.length = 0;
+    this.flashJetCount = 0;
     this.destruction = 0;
     this.physics.clear();
     this.frost = null;
@@ -770,6 +786,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     this.flames.length = 0;
     this.particles.length = 0;
+    this.flashJetCount = 0;
     this.pendingSplashes.length = 0;
     this.pendingStamps.length = 0;
     this.bucketWet.length = 0;
@@ -1036,16 +1053,21 @@ export class DestroyerEngine implements DestroyerEngineApi {
       64,
       Math.round(this.opts.maxParticles * this.qualityProfile.particleScale),
     );
+    const hot = p.kind === "flash" || p.kind === "jet";
     if (this.particles.length >= limit) {
       // At the cap, recycle a slot round-robin instead of `shift()`-ing the
       // array (which memmoves every remaining particle, on every spawn, at the
       // exact moment the system is already saturated). Render order is decided
       // by particle kind, not array order, so the swap is invisible.
       this.recycleCursor = (this.recycleCursor + 1) % this.particles.length;
+      const old = this.particles[this.recycleCursor];
+      if (old.kind === "flash" || old.kind === "jet") this.flashJetCount--;
+      if (hot) this.flashJetCount++;
       this.particles[this.recycleCursor] = p;
       this.requestFrame();
       return;
     }
+    if (hot) this.flashJetCount++;
     this.particles.push(p);
     this.requestFrame();
   }
@@ -1800,6 +1822,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
       // in the frame loop, so the one splice is preferable to ongoing churn.
       this.particles.splice(0, this.particles.length - particleLimit);
       this.recycleCursor %= this.particles.length;
+      let hot = 0;
+      for (const p of this.particles) {
+        if (p.kind === "flash" || p.kind === "jet") hot++;
+      }
+      this.flashJetCount = hot;
     }
     const flameLimit = this.flameLimit();
     if (this.flames.length > flameLimit) this.flames.length = flameLimit;
@@ -2162,11 +2189,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private hasPostFXDemand() {
-    if (this.flames.length > 0 || this.destruction > 0.016 || this._singularity) return true;
-    for (const particle of this.particles) {
-      if (particle.kind === "flash" || particle.kind === "jet") return true;
-    }
-    return false;
+    return (
+      this.flames.length > 0 ||
+      this.destruction > 0.016 ||
+      !!this._singularity ||
+      this.flashJetCount > 0
+    );
   }
 
   private resetHeat() {
@@ -2968,6 +2996,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // instead of a `splice` (O(n) memmove) per death.
     const list = this.particles;
     let write = 0;
+    let hotSurvivors = 0;
     for (let i = 0; i < list.length; i++) {
       const p = list[i];
       p.life += dt;
@@ -3029,9 +3058,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
           continue;
         }
       }
+      if (p.kind === "flash" || p.kind === "jet") hotSurvivors++;
       list[write++] = p;
     }
     list.length = write;
+    // Settle the exact count from what actually survived the walk; deferred
+    // splash/stamp spawns below go through `spawnParticle` and count themselves.
+    this.flashJetCount = hotSurvivors;
     if (this.recycleCursor >= write) this.recycleCursor = 0;
 
     for (let i = 0; i < this.pendingSplashes.length; i += 2) {
@@ -3601,12 +3634,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     bloom = Math.min(0.85, bloom * 0.16 + (this._singularity ? 0.55 : 0));
     // Explosions and muzzle flashes are brief but very bright; let them bloom
     // even with no fire burning.
-    for (const p of this.particles) {
-      if (p.kind === "flash" || p.kind === "jet") {
-        bloom = Math.max(bloom, 0.45);
-        break;
-      }
-    }
+    if (this.flashJetCount > 0) bloom = Math.max(bloom, 0.45);
     const heat = this.heatLevel * 0.012;
     const aberration = this.destruction * 0.006 + (this._singularity ? 0.004 : 0);
 

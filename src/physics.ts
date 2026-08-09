@@ -508,6 +508,13 @@ export class PhysicsWorld {
   private manifolds: Manifold[] = [];
   /** Reused x-sorted candidate list for the sweep-and-prune broadphase. */
   private broadphase: Body[] = [];
+  /**
+   * Cached answer for `active`, recomputed by the loop `step` already runs over
+   * every body. External mutations that can wake or add bodies set it `true`
+   * conservatively; the next step settles it, so the getter never has to
+   * re-scan the whole heap once per frame.
+   */
+  private activeCache = false;
 
   /** Static geometry: a floor that tracks the viewport, plus side walls. */
   private floor: Body | null = null;
@@ -573,6 +580,7 @@ export class PhysicsWorld {
       // A scroll drags the floor through the heap; let it re-settle rather than
       // leaving bodies buried in (or hovering above) the new surface.
       for (const b of this.bodies) b.wake();
+      if (this.bodies.length > 0) this.activeCache = true;
     }
   }
 
@@ -592,12 +600,14 @@ export class PhysicsWorld {
       this.bodies.splice(victim, 1)[0]?.dispose();
     }
     this.bodies.push(body);
+    this.activeCache = true;
     return body;
   }
 
   clear() {
     for (const body of this.bodies) body.dispose();
     this.bodies.length = 0;
+    this.activeCache = false;
   }
 
   get count() {
@@ -606,14 +616,12 @@ export class PhysicsWorld {
 
   /** Whether another simulation step can visibly change the heap. */
   get active() {
-    for (const body of this.bodies) {
-      if (body.awake || Number.isFinite(body.ttl)) return true;
-    }
-    return false;
+    return this.activeCache;
   }
 
   /** Radial blast: shove every body away from (x, y), waking the heap. */
   blast(x: number, y: number, radius: number, power: number) {
+    if (this.bodies.length > 0) this.activeCache = true;
     for (const b of this.bodies) {
       const dx = b.x - x;
       const dy = b.y - y;
@@ -643,6 +651,7 @@ export class PhysicsWorld {
    * return spirals in and dies instead of slingshotting past forever.
    */
   attract(x: number, y: number, strength: number, dt: number, eatRadius: number): Body[] {
+    if (this.bodies.length > 0) this.activeCache = true;
     const eaten: Body[] = [];
     for (const b of this.bodies) {
       if (b.fixed) continue;
@@ -866,7 +875,13 @@ export class PhysicsWorld {
 
     // Ghosting lasts one step: whatever grips a body must re-assert it every
     // frame, so a released singularity leaves no permanently intangible debris.
-    for (const b of bodies) b.ghost = false;
+    // The same walk settles the `active` cache from real post-step state.
+    let active = false;
+    for (const b of bodies) {
+      b.ghost = false;
+      if (b.awake || Number.isFinite(b.ttl)) active = true;
+    }
+    this.activeCache = active;
   }
 
   /**

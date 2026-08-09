@@ -53,7 +53,16 @@ interface OpacityOperation {
   fill: Path2D;
   stroke?: Path2D;
   lineWidth?: number;
+  /** Index cells still referencing this op; freed when it reaches zero. */
+  cells?: number;
 }
+
+/**
+ * Per-cell operation list length that triggers flattening into the resolved
+ * wound plane. Bounds both `sample()`'s worst-case walk and total retained
+ * `Path2D` state — sustained fire used to grow one cell's list without limit.
+ */
+const FLATTEN_THRESHOLD = 32;
 
 /**
  * CPU-readable coverage for page-aware effects.
@@ -63,14 +72,27 @@ interface OpacityOperation {
  * isPointInPath/isPointInStroke, which does no pixel readback at all. Reverse
  * operation order also models repair exactly: the latest remove/restore shape
  * that contains the point wins.
+ *
+ * Recent wounds stay exact. Once a cell's list exceeds `FLATTEN_THRESHOLD`
+ * its accumulated ops are rasterized — in order, clipped to the cell — into a
+ * map-resolution "removed" plane and the list is cleared, so a long
+ * flamethrower session cannot grow either query time or retained geometry
+ * without bound. The plane holds a strictly older prefix of the history than
+ * any surviving list entry, so the newest-op-wins walk stays correct; only
+ * wounds old enough to be flattened trade exact geometry for map-pixel
+ * resolution (the same resolution the pristine alpha itself is stored at).
  */
 class OpacityMap {
   private readonly raster = document.createElement("canvas");
   private readonly rasterCtx = this.raster.getContext("2d", { willReadFrequently: true })!;
   private readonly testCtx = document.createElement("canvas").getContext("2d")!;
   private baseAlpha: Uint8Array | null = null;
-  private operations: OpacityOperation[] = [];
+  private operations: (OpacityOperation | undefined)[] = [];
   private cells = new Map<number, number[]>();
+  /** Resolved old wounds at map resolution: 255 where material was removed. */
+  private removed: Uint8Array | null = null;
+  private removedCanvas: HTMLCanvasElement | null = null;
+  private removedCtx: CanvasRenderingContext2D | null = null;
   private scaleX = 1;
   private scaleY = 1;
   private mapWidth = 0;
@@ -98,6 +120,7 @@ class OpacityMap {
     this.cols = Math.max(1, Math.ceil(width / 128));
     this.operations.length = 0;
     this.cells.clear();
+    this.dropRemovedPlane();
 
     // Preserve transparent areas in unusual captures instead of assuming that
     // every pristine page is opaque. This one downscaled read happens during
@@ -160,6 +183,7 @@ class OpacityMap {
   restoreAll() {
     this.operations.length = 0;
     this.cells.clear();
+    this.dropRemovedPlane();
     this.rebuildTopology();
   }
 
@@ -170,19 +194,22 @@ class OpacityMap {
     const py = Math.min(this.mapHeight - 1, Math.floor(y * this.scaleY));
     const pristine = base[py * this.mapWidth + px] / 255;
     const cell = this.cells.get(Math.floor(y / 128) * this.cols + Math.floor(x / 128));
-    if (!cell) return pristine;
-    for (let i = cell.length - 1; i >= 0; i--) {
-      const operation = this.operations[cell[i]];
-      const b = operation.bounds;
-      if (x < b.x0 || y < b.y0 || x > b.x1 || y > b.y1) continue;
-      let hit = this.testCtx.isPointInPath(operation.fill, x, y);
-      if (!hit && operation.stroke) {
-        this.testCtx.lineCap = "round";
-        this.testCtx.lineWidth = operation.lineWidth ?? 1;
-        hit = this.testCtx.isPointInStroke(operation.stroke, x, y);
+    if (cell) {
+      for (let i = cell.length - 1; i >= 0; i--) {
+        const operation = this.operations[cell[i]]!;
+        const b = operation.bounds;
+        if (x < b.x0 || y < b.y0 || x > b.x1 || y > b.y1) continue;
+        let hit = this.testCtx.isPointInPath(operation.fill, x, y);
+        if (!hit && operation.stroke) {
+          this.testCtx.lineCap = "round";
+          this.testCtx.lineWidth = operation.lineWidth ?? 1;
+          hit = this.testCtx.isPointInStroke(operation.stroke, x, y);
+        }
+        if (hit) return operation.restores ? pristine : 0;
       }
-      if (hit) return operation.restores ? pristine : 0;
     }
+    // No live op decides this point; older, flattened history might.
+    if (this.removed?.[py * this.mapWidth + px]) return 0;
     return pristine;
   }
 
@@ -199,6 +226,7 @@ class OpacityMap {
     this.baseAlpha = null;
     this.operations.length = 0;
     this.cells.clear();
+    this.dropRemovedPlane();
     this.topology = new Uint8Array(0);
     this.topologyCols = this.topologyRows = 0;
     this.raster.width = 0;
@@ -219,6 +247,13 @@ class OpacityMap {
     const y0 = Math.max(0, Math.floor(b.y0 / 128));
     const x1 = Math.min(this.cols - 1, Math.floor(b.x1 / 128));
     const y1 = Math.min(Math.ceil(this.height / 128) - 1, Math.floor(b.y1 / 128));
+    if (x1 < x0 || y1 < y0) {
+      // Entirely off the page: no cell will ever query it, drop it now.
+      this.operations[index] = undefined;
+      return;
+    }
+    // The refcount must be final before any flatten below can decrement it.
+    operation.cells = (x1 - x0 + 1) * (y1 - y0 + 1);
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const key = ty * this.cols + tx;
@@ -228,8 +263,84 @@ class OpacityMap {
           this.cells.set(key, list);
         }
         list.push(index);
+        if (list.length > FLATTEN_THRESHOLD) this.flattenCell(key, list);
       }
     }
+  }
+
+  /**
+   * Rasterize a cell's accumulated ops — in insertion order, clipped to the
+   * cell — into the resolved wound plane, then clear the list. Ops no longer
+   * referenced by any cell are freed. Runs off the per-query path, at most
+   * once per `FLATTEN_THRESHOLD` wounds landing in one 128px cell.
+   */
+  private flattenCell(key: number, list: number[]) {
+    if (!this.removedCanvas) {
+      this.removedCanvas = document.createElement("canvas");
+      this.removedCanvas.width = this.mapWidth;
+      this.removedCanvas.height = this.mapHeight;
+      this.removedCtx = this.removedCanvas.getContext("2d", { willReadFrequently: true })!;
+      this.removed = new Uint8Array(this.mapWidth * this.mapHeight);
+    }
+    const ctx = this.removedCtx!;
+    const cellX = (key % this.cols) * 128;
+    const cellY = Math.floor(key / this.cols) * 128;
+    const w = Math.min(128, this.width - cellX);
+    const h = Math.min(128, this.height - cellY);
+    if (w > 0 && h > 0) {
+      ctx.save();
+      ctx.setTransform(this.scaleX, 0, 0, this.scaleY, 0, 0);
+      ctx.beginPath();
+      ctx.rect(cellX, cellY, w, h);
+      ctx.clip();
+      ctx.fillStyle = "#000";
+      ctx.strokeStyle = "#000";
+      ctx.lineCap = "round";
+      for (const index of list) {
+        const op = this.operations[index]!;
+        // Removes accumulate opacity; restores erase it, exactly mirroring the
+        // "latest op wins" walk this plane replaces for flattened history.
+        ctx.globalCompositeOperation = op.restores ? "destination-out" : "source-over";
+        ctx.fill(op.fill);
+        if (op.stroke) {
+          ctx.lineWidth = op.lineWidth ?? 1;
+          ctx.stroke(op.stroke);
+        }
+      }
+      ctx.restore();
+
+      // Mirror the flattened region into the CPU plane `sample()` reads.
+      const mx0 = Math.max(0, Math.floor(cellX * this.scaleX));
+      const my0 = Math.max(0, Math.floor(cellY * this.scaleY));
+      const mx1 = Math.min(this.mapWidth, Math.ceil((cellX + w) * this.scaleX));
+      const my1 = Math.min(this.mapHeight, Math.ceil((cellY + h) * this.scaleY));
+      if (mx1 > mx0 && my1 > my0) {
+        const data = ctx.getImageData(mx0, my0, mx1 - mx0, my1 - my0).data;
+        const removed = this.removed!;
+        for (let y = my0, src = 3; y < my1; y++) {
+          let dst = y * this.mapWidth + mx0;
+          for (let x = mx0; x < mx1; x++, src += 4, dst++) {
+            removed[dst] = data[src] >= 128 ? 255 : 0;
+          }
+        }
+      }
+    }
+    for (const index of list) {
+      const op = this.operations[index]!;
+      op.cells = (op.cells ?? 1) - 1;
+      if (op.cells === 0) this.operations[index] = undefined;
+    }
+    list.length = 0;
+  }
+
+  private dropRemovedPlane() {
+    this.removed = null;
+    if (this.removedCanvas) {
+      this.removedCanvas.width = 0;
+      this.removedCanvas.height = 0;
+    }
+    this.removedCanvas = null;
+    this.removedCtx = null;
   }
 
   private pristineStateAt(x: number, y: number): 0 | 1 {
@@ -384,24 +495,35 @@ function teeContexts(
   visible: CanvasRenderingContext2D,
   decals: CanvasRenderingContext2D,
 ): CanvasRenderingContext2D {
+  // Context methods are stable, so each wrapper (or read-only binding) is
+  // built once. Doing it inside the `get` trap allocated a fresh closure per
+  // property access, and this is the hottest decal path in live mode.
+  const wrappers = new Map<string | symbol, unknown>();
   return new Proxy(visible, {
     get(target, prop) {
+      const cached = wrappers.get(prop);
+      if (cached !== undefined) return cached;
       const value = Reflect.get(target, prop);
-      if (typeof value !== "function" || CTX_READ_ONLY.has(prop as string)) {
-        return typeof value === "function" ? value.bind(target) : value;
-      }
-      return (...args: unknown[]) => {
-        const result = value.apply(target, args);
-        const twin = Reflect.get(decals, prop);
-        if (typeof twin === "function") {
-          try {
-            twin.apply(decals, args);
-          } catch {
-            // A decals-side failure must never break the visible draw.
+      if (typeof value !== "function") return value;
+      let fn: unknown;
+      if (CTX_READ_ONLY.has(prop as string)) {
+        fn = value.bind(target);
+      } else {
+        fn = (...args: unknown[]) => {
+          const result = value.apply(target, args);
+          const twin = Reflect.get(decals, prop);
+          if (typeof twin === "function") {
+            try {
+              twin.apply(decals, args);
+            } catch {
+              // A decals-side failure must never break the visible draw.
+            }
           }
-        }
-        return result;
-      };
+          return result;
+        };
+      }
+      wrappers.set(prop, fn);
+      return fn;
     },
     set(target, prop, value) {
       Reflect.set(target, prop, value);
