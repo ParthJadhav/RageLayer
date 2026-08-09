@@ -23,6 +23,13 @@ export interface DesktopDestroyerProps {
    * `engineOptions.toolStyle`, if set, wins.
    */
   toolStyle?: ToolStyle;
+  /**
+   * Expose the engine as `window.__desktopDestroyer` for debugging, E2E tests
+   * and the profiling harness (`scripts/profile-effects.mjs` waits for this
+   * global on the page it drives). Default false — no globals leak into the
+   * host page unless asked for.
+   */
+  debugGlobal?: boolean;
 }
 
 const barStyle: React.CSSProperties = {
@@ -36,6 +43,10 @@ const barStyle: React.CSSProperties = {
   zIndex: 2147483001,
   display: "flex",
   alignItems: "center",
+  justifyContent: "center",
+  // On narrow viewports the row wraps instead of clipping: every tool stays
+  // reachable without a hidden horizontal scroll.
+  flexWrap: "wrap",
   gap: 3,
   padding: "7px 9px",
   borderRadius: 18,
@@ -48,7 +59,6 @@ const barStyle: React.CSSProperties = {
   userSelect: "none",
   animation: "dd-rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2)",
   maxWidth: "calc(100vw - 24px)",
-  overflowX: "auto",
 };
 
 const buttonBase: React.CSSProperties = {
@@ -152,6 +162,8 @@ const dividerStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
+const STYLE_ATTR = "data-dd-toolbar-styles";
+
 const KEYFRAMES = `
 @keyframes dd-rise {
   from { opacity: 0; transform: translateX(-50%) translateY(24px) scale(0.92); }
@@ -159,6 +171,10 @@ const KEYFRAMES = `
 }
 .dd-tool:hover { background: rgba(255,255,255,0.10); transform: translateY(-2px); }
 .dd-tool:active { transform: translateY(0) scale(0.92); }
+.dd-tool:focus-visible {
+  outline: 2px solid rgba(255, 170, 90, 0.9);
+  outline-offset: 1px;
+}
 .dd-tool[data-active="true"] {
   background: rgba(255, 122, 40, 0.18);
   border-color: rgba(255, 150, 70, 0.55);
@@ -176,22 +192,59 @@ const KEYFRAMES = `
 }
 .dd-hint {
   visibility: visible;
-  position: absolute;
+  position: fixed;
   /* Clears the capture-status chip, which sits at 72px. */
   bottom: 106px;
   left: 50%;
   transform: translateX(-50%);
+  pointer-events: none;
+}
+.dd-hint-pill {
+  display: inline-block;
   padding: 5px 12px;
   border-radius: 999px;
   background: rgba(18,17,16,0.85);
   border: 1px solid rgba(255,255,255,0.12);
   color: rgba(255,255,255,0.85);
+  font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 12px;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dd-tool { transition: none; }
+  .dd-tool:hover { transform: none; }
 }
 `;
+
+// The <style> block is shared by every mounted instance and injected at most
+// once: a module-level refcount adds it with the first toolbar and removes it
+// with the last, instead of stacking one copy per mount.
+let styleUses = 0;
+let styleElement: HTMLStyleElement | null = null;
+
+function acquireStyles() {
+  styleUses += 1;
+  if (styleElement || document.head.querySelector(`style[${STYLE_ATTR}]`)) return;
+  styleElement = document.createElement("style");
+  styleElement.setAttribute(STYLE_ATTR, "");
+  styleElement.textContent = KEYFRAMES;
+  document.head.appendChild(styleElement);
+}
+
+function releaseStyles() {
+  styleUses = Math.max(0, styleUses - 1);
+  if (styleUses > 0 || !styleElement) return;
+  styleElement.remove();
+  styleElement = null;
+}
+
+/** True when the key event started in a place where the user is typing. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
+}
 
 /**
  * Drop-in Desktop Destroyer: mounts the canvas engine, renders the bottom
@@ -204,8 +257,10 @@ export function DesktopDestroyer({
   engineOptions,
   soundDefault = false,
   toolStyle = "3d",
+  debugGlobal = false,
 }: DesktopDestroyerProps) {
   const engineRef = useRef<DestroyerEngine | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
   const [sound, setSound] = useState(soundDefault);
   const [capture, setCapture] = useState<{ status: CaptureStatus; liveUnavailable: boolean }>({
@@ -213,6 +268,20 @@ export function DesktopDestroyer({
     liveUnavailable: false,
   });
   const [flash, setFlash] = useState<string | null>(null);
+  // SSR guard: the portal target (document.body) only exists in the browser,
+  // so the first render — including the server one — produces nothing and the
+  // real UI appears after mount. Consumers don't need `ssr: false` tricks.
+  const [mounted, setMounted] = useState(false);
+  // Sampled once at mount: the OS-level "reduce motion" preference turns off
+  // the toolbar rise animation (hover/transition motion is handled in CSS).
+  const [reducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false),
+  );
+  // Roving tabindex for the toolbar: exactly one button is tabbable, arrows
+  // move focus within the bar.
+  const [focusIndex, setFocusIndex] = useState(0);
   const flashTimerRef = useRef<number | null>(null);
   const toolset = useMemo(() => tools ?? defaultTools, [tools]);
   // One resolved style drives both the engine (pointer art) and the toolbar
@@ -234,6 +303,10 @@ export function DesktopDestroyer({
   }, [toolset, resolvedToolStyle]);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     const engine = new DestroyerEngine({
       soundEnabled: soundDefault,
       ...engineOptions,
@@ -241,9 +314,11 @@ export function DesktopDestroyer({
     });
     for (const tool of toolset) engine.registerTool(tool);
     engineRef.current = engine;
-    // Debug/testing handle — lets host pages and E2E tests poke the engine.
+    acquireStyles();
+    // Opt-in debug/testing handle — lets host pages, E2E tests and the
+    // profiling harness poke the engine.
     const debugWindow = window as unknown as { __desktopDestroyer?: DestroyerEngine };
-    debugWindow.__desktopDestroyer = engine;
+    if (debugGlobal) debugWindow.__desktopDestroyer = engine;
     // The engine starts capturing inside its own constructor, so seed from it
     // rather than waiting for the first event.
     const sync = () =>
@@ -254,6 +329,7 @@ export function DesktopDestroyer({
       off();
       engine.dispose();
       if (debugWindow.__desktopDestroyer === engine) delete debugWindow.__desktopDestroyer;
+      releaseStyles();
       if (flashTimerRef.current !== null) {
         window.clearTimeout(flashTimerRef.current);
         flashTimerRef.current = null;
@@ -269,12 +345,27 @@ export function DesktopDestroyer({
   }, [sound]);
 
   const selectTool = useCallback((id: string | null) => {
-    setActiveToolId((current) => {
-      const next = id === current ? null : id;
-      engineRef.current?.setTool(next);
-      return next;
-    });
+    // Pure state toggle — the engine side effect lives in the sync effect
+    // below, so StrictMode's double-invoked updaters can't fire it twice.
+    setActiveToolId((current) => (id === current ? null : id));
   }, []);
+
+  // Keep the engine's active tool in lockstep with React state. Runs once with
+  // `null` on mount, which the engine treats as a no-op.
+  useEffect(() => {
+    engineRef.current?.setTool(activeToolId);
+  }, [activeToolId]);
+
+  // Focus management: the toolbar takes focus when it appears and hands it
+  // back to whatever had it when the destroyer closes.
+  useEffect(() => {
+    if (!mounted) return;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    toolbarRef.current?.querySelector<HTMLButtonElement>("button.dd-tool")?.focus();
+    return () => {
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [mounted]);
 
   /** Flatten the wreckage to PNG: clipboard if the browser allows, else a download. */
   const saveSnapshot = useCallback(async () => {
@@ -298,6 +389,10 @@ export function DesktopDestroyer({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // No shortcuts while the user is typing (inputs, textareas,
+      // contenteditable, mid-IME-composition) or holding a key down —
+      // otherwise "r" in a search box repairs the page.
+      if (e.isComposing || e.repeat || isTypingTarget(e.target)) return;
       if (e.key === "Escape") {
         if (activeToolId) selectTool(null);
         else onClose?.();
@@ -329,6 +424,37 @@ export function DesktopDestroyer({
     return () => window.removeEventListener("keydown", onKey);
   }, [activeToolId, toolset, selectTool, onClose, saveSnapshot]);
 
+  // 5 fixed action buttons follow the tools: collapse, snapshot, sound,
+  // repair, close.
+  const buttonCount = toolset.length + 5;
+  const rovingIndex = Math.min(focusIndex, buttonCount - 1);
+
+  const toolbarButtons = () =>
+    Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.dd-tool") ?? []);
+
+  const onToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    let next: number | null = null;
+    if (e.key === "ArrowLeft") next = (rovingIndex - 1 + buttonCount) % buttonCount;
+    else if (e.key === "ArrowRight") next = (rovingIndex + 1) % buttonCount;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = buttonCount - 1;
+    if (next === null) return;
+    e.preventDefault();
+    setFocusIndex(next);
+    toolbarButtons()[next]?.focus();
+  };
+
+  // Clicking or shift-tabbing onto any button re-anchors the roving tabindex.
+  const onToolbarFocus = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (!(e.target instanceof HTMLButtonElement)) return;
+    const index = toolbarButtons().indexOf(e.target);
+    if (index >= 0) setFocusIndex(index);
+  };
+
+  const tabIndexFor = (index: number) => (index === rovingIndex ? 0 : -1);
+
+  if (!mounted) return null;
+
   const activeTool = toolset.find((t) => t.id === activeToolId);
   const chip = chipFor(capture.status, capture.liveUnavailable);
 
@@ -336,17 +462,21 @@ export function DesktopDestroyer({
   // whose z-index would trap the toolbar underneath the canvas overlay.
   return createPortal(
     <>
-      {/* biome-ignore lint/security/noDangerouslySetInnerHtml: KEYFRAMES is a static string constant owned by this module */}
-      <style dangerouslySetInnerHTML={{ __html: KEYFRAMES }} />
-      {activeTool && (
-        <div
-          className="dd-hint"
-          data-dd-ignore=""
-          style={{ position: "fixed", zIndex: 2147483001 }}
-        >
-          {activeTool.name} — {activeTool.hint}
-        </div>
-      )}
+      {/* Persistent live region: screen readers announce the tool description
+          as the selection changes; sighted users see the floating pill. */}
+      <div
+        className="dd-hint"
+        data-dd-ignore=""
+        role="status"
+        aria-live="polite"
+        style={{ zIndex: 2147483001 }}
+      >
+        {activeTool && (
+          <span className="dd-hint-pill">
+            {activeTool.name} — {activeTool.hint}
+          </span>
+        )}
+      </div>
 
       {chip && (
         <div
@@ -366,7 +496,16 @@ export function DesktopDestroyer({
         </div>
       )}
 
-      <div style={barStyle} role="toolbar" aria-label="Desktop Destroyer tools" data-dd-ignore="">
+      <div
+        ref={toolbarRef}
+        style={reducedMotion ? { ...barStyle, animation: "none" } : barStyle}
+        role="toolbar"
+        aria-label="Desktop Destroyer tools"
+        aria-orientation="horizontal"
+        data-dd-ignore=""
+        onKeyDown={onToolbarKeyDown}
+        onFocus={onToolbarFocus}
+      >
         {toolset.map((tool, i) => (
           <button
             type="button"
@@ -374,6 +513,7 @@ export function DesktopDestroyer({
             className="dd-tool"
             style={buttonBase}
             data-active={tool.id === activeToolId}
+            tabIndex={tabIndexFor(i)}
             title={`${tool.name} — ${tool.hint}${i < 10 ? ` (${(i + 1) % 10})` : ""}`}
             aria-label={tool.name}
             aria-pressed={tool.id === activeToolId}
@@ -397,6 +537,7 @@ export function DesktopDestroyer({
           type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 19 }}
+          tabIndex={tabIndexFor(toolset.length)}
           title="Collapse the whole page (X)"
           aria-label="Collapse the whole page"
           onClick={() => engineRef.current?.collapse()}
@@ -407,6 +548,7 @@ export function DesktopDestroyer({
           type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
+          tabIndex={tabIndexFor(toolset.length + 1)}
           title="Save a picture of the wreckage (P)"
           aria-label="Save a picture of the wreckage"
           onClick={() => void saveSnapshot()}
@@ -417,8 +559,10 @@ export function DesktopDestroyer({
           type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
+          tabIndex={tabIndexFor(toolset.length + 2)}
           title={sound ? "Mute sound (M)" : "Enable sound (M)"}
           aria-label={sound ? "Mute sound" : "Enable sound"}
+          aria-pressed={sound}
           onClick={() => setSound((s) => !s)}
         >
           {sound ? "🔊" : "🔇"}
@@ -427,6 +571,7 @@ export function DesktopDestroyer({
           type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 18 }}
+          tabIndex={tabIndexFor(toolset.length + 3)}
           title="Repair everything (R)"
           aria-label="Repair everything"
           onClick={() => engineRef.current?.clear()}
@@ -437,6 +582,7 @@ export function DesktopDestroyer({
           type="button"
           className="dd-tool"
           style={{ ...buttonBase, fontSize: 16, color: "rgba(255,255,255,0.8)" }}
+          tabIndex={tabIndexFor(toolset.length + 4)}
           title="Close (Esc)"
           aria-label="Close Desktop Destroyer"
           onClick={() => {

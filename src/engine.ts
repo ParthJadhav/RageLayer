@@ -368,6 +368,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     this.container = document.createElement("div");
     this.container.setAttribute(DD_IGNORE_ATTR, "");
+    // Pure visual overlay: keep the canvases out of the accessibility tree.
+    this.container.setAttribute("aria-hidden", "true");
     Object.assign(this.container.style, {
       position: "absolute",
       top: "0",
