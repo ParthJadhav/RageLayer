@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Analytics — Desktop Destroyer demo</title>
+    <style>
+      :root {
+        --bg: #f6f4ef;
+        --ink: #1c1a17;
+        --muted: #6b6558;
+        --card: #ffffff;
+        --accent: #c2410c;
+        --line: #e4e0d5;
+      }
+      * { box-sizing: border-box; margin: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font: 16px/1.6 system-ui, "Segoe UI", sans-serif;
+        min-height: 100vh;
+      }
+      header {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 18px 40px; border-bottom: 1px solid var(--line); background: var(--card);
+      }
+      .logo { font-weight: 800; letter-spacing: -0.02em; font-size: 20px; }
+      .logo span { color: var(--accent); }
+      nav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-size: 14px; }
+      main { max-width: 1060px; margin: 0 auto; padding: 48px 40px 120px; }
+      h1 { font-size: 44px; line-height: 1.1; letter-spacing: -0.03em; max-width: 640px; }
+      h1 em { color: var(--accent); font-style: normal; }
+      .sub { color: var(--muted); margin: 18px 0 34px; max-width: 560px; }
+      .cta { display: inline-block; background: var(--ink); color: #fff; padding: 12px 22px;
+             border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 15px; }
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 56px; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+      .card h3 { font-size: 16px; margin-bottom: 8px; }
+      .card p { font-size: 14px; color: var(--muted); }
+      .stat { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
+      .stat small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 4px; }
+      .chart {
+        margin-top: 18px; height: 120px; border-radius: 8px;
+        background:
+          repeating-linear-gradient(90deg, transparent 0 39px, var(--line) 39px 40px),
+          linear-gradient(180deg, #fdf3ec 0%, #ffffff 100%);
+        position: relative; overflow: hidden;
+      }
+      .chart::after {
+        content: ""; position: absolute; inset: 0;
+        background: linear-gradient(105deg, transparent 48%, var(--accent) 48.5%, var(--accent) 50%, transparent 50.5%),
+          radial-gradient(circle at 20% 75%, var(--accent) 3px, transparent 4px),
+          radial-gradient(circle at 45% 55%, var(--accent) 3px, transparent 4px),
+          radial-gradient(circle at 70% 62%, var(--accent) 3px, transparent 4px),
+          radial-gradient(circle at 90% 30%, var(--accent) 3px, transparent 4px);
+      }
+      blockquote {
+        margin: 64px auto 0; max-width: 720px; background: var(--card);
+        border: 1px solid var(--line); border-left: 4px solid var(--accent);
+        border-radius: 12px; padding: 26px 30px; font-size: 18px;
+      }
+      blockquote footer { border: 0; padding: 12px 0 0; background: none; color: var(--muted); font-size: 14px; }
+      .footnote { margin-top: 72px; color: var(--muted); font-size: 13px; text-align: center; }
+
+      /* Demo toolbar (vanilla integration example) */
+      #dd-bar {
+        position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+        display: flex; gap: 4px; padding: 8px; border-radius: 14px;
+        background: rgba(24, 22, 20, 0.92); box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+        z-index: 2147483200;
+      }
+      #dd-bar button {
+        width: 40px; height: 40px; border: 0; border-radius: 9px; cursor: pointer;
+        background: transparent; font-size: 20px; display: grid; place-items: center;
+      }
+      #dd-bar button img { width: 30px; height: 30px; }
+      #dd-bar button[data-active="true"] { background: rgba(255, 255, 255, 0.18); }
+      #dd-bar button:hover { background: rgba(255, 255, 255, 0.1); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">acme<span>analytics</span></div>
+      <nav><a href="#">Product</a><a href="#">Pricing</a><a href="#">Docs</a><a href="#">Sign in</a></nav>
+    </header>
+    <main>
+      <h1>Understand your traffic. <em>Then destroy it.</em></h1>
+      <p class="sub">
+        Acme Analytics turns raw events into decisions. This entire page is a live target for the
+        desktop-destroyer engine — every pixel below can be smashed, burned, shot and swept up.
+      </p>
+      <a class="cta" href="#">Start free trial</a>
+
+      <div class="grid">
+        <div class="card"><div class="stat">48,201<small>page views today</small></div></div>
+        <div class="card"><div class="stat">3.4%<small>conversion rate</small></div></div>
+        <div class="card"><div class="stat">99.98%<small>uptime this quarter</small></div></div>
+        <div class="card" style="grid-column: 1 / -1">
+          <h3>Weekly sessions</h3>
+          <p>Organic search continues to climb after the March content push.</p>
+          <div class="chart"></div>
+        </div>
+        <div class="card">
+          <h3>Realtime</h3>
+          <p>212 visitors on the site right now, mostly reading the changelog.</p>
+        </div>
+        <div class="card">
+          <h3>Top referrer</h3>
+          <p>news.ycombinator.com — a launch post is on the front page.</p>
+        </div>
+        <div class="card">
+          <h3>Alerts</h3>
+          <p>No anomalies detected. Error budget 94% remaining.</p>
+        </div>
+      </div>
+
+      <blockquote>
+        “We switched to Acme in an afternoon and immediately understood a churn problem we had been
+        guessing at for months.”
+        <footer>— Dana Whitfield, Head of Growth at Fieldstone</footer>
+      </blockquote>
+
+      <p class="footnote">© 2026 Acme Analytics, Inc. Built as a destructible demo page for desktop-destroyer.</p>
+    </main>
+
+    <script type="module">
+      import { DestroyerEngine, defaultTools, toolIconDataUrl } from "../dist/index.js";
+
+      const engine = new DestroyerEngine({ soundEnabled: false });
+      const tools = defaultTools; // includes the heavy tools
+      for (const tool of tools) engine.registerTool(tool);
+      window.engine = engine;
+
+      // Minimal vanilla toolbar — the same thing the React wrapper does for you.
+      const bar = document.createElement("div");
+      bar.id = "dd-bar";
+      bar.setAttribute("data-dd-ignore", "");
+      const buttons = new Map();
+      const select = (id) => {
+        const next = engine.tool?.id === id ? null : id;
+        engine.setTool(next);
+        for (const [toolId, el] of buttons) el.dataset.active = String(toolId === next);
+      };
+      for (const tool of tools) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.title = `${tool.name} — ${tool.hint}`;
+        const icon = tool.art ? toolIconDataUrl(tool.art, 30) : null;
+        if (icon) {
+          const img = document.createElement("img");
+          img.src = icon;
+          img.alt = tool.name;
+          button.append(img);
+        } else {
+          button.textContent = tool.icon;
+        }
+        button.addEventListener("click", () => select(tool.id));
+        buttons.set(tool.id, button);
+        bar.append(button);
+      }
+      document.body.append(bar);
+
+      window.ddDemo = {
+        select,
+        ready: true,
+      };
+      document.documentElement.dataset.ready = "true";
+    </script>
+  </body>
+</html>

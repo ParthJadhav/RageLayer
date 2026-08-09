@@ -2,6 +2,24 @@
 
 Desktop Destroyer for the web — a nostalgic, fully procedural overlay that lets visitors smash, shoot, burn, soak, saw, paint, freeze, bomb, and then sweep up any page. Inspired by the classic Windows "Desktop Destroyer" stress-relief toy.
 
+![A mixed destruction session on the demo page](./docs/screenshots/aftermath.png)
+
+```sh
+npm install desktop-destroyer            # npm registry (once published)
+npm install github:ParthJadhav/desktop-destroyer   # straight from the repo
+```
+
+**Docs:** [Getting started](./docs/getting-started.md) ·
+[Integrations](./docs/integrations.md) (React, Next.js, Vue, Svelte, Astro, vanilla) ·
+[API reference](./docs/api.md) ·
+[Tool gallery](./docs/tools.md) (screenshots) ·
+[Architecture](./docs/architecture.md) ·
+[Performance](./docs/performance.md) ·
+[Contributing](./CONTRIBUTING.md)
+
+**Try it:** `bun install && bun run build`, serve the repo root with any static server, and
+open `/demo/` — a complete destructible page with a vanilla toolbar.
+
 - **Destroys the real page** — inspired by [canvasui.dev](https://canvasui.dev)'s html-in-canvas approach: on activation the live DOM is rasterized into a destructible canvas (via `html-to-image`'s foreignObject technique — no experimental browser flags) and the real DOM is hidden with `visibility` so layout and scrolling survive. Bullets punch transparent holes through the actual content revealing the void behind the page, fire erodes content pixels away with charred rims, and the chainsaw severs text mid-word. A pristine snapshot is kept so the broom and repair genuinely restore content.
 - **Real rigid-body physics** — struck regions don't just vanish, they *come off*. A hand-rolled sequential-impulse solver ([`physics.ts`](./src/physics.ts)) turns them into convex bodies carrying their own slice of the page, which tumble, collide with each other, and pile up at the bottom of the window.
 - **DOM-aware demolition** — before the page is hidden, every heading, paragraph, image and card is measured ([`elements.ts`](./src/elements.ts)). The demolition tool knocks a *whole element* loose as one object, and `collapse()` brings the visible page down element by element in a wave.
