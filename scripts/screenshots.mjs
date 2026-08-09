@@ -121,6 +121,9 @@ const chrome = spawn(
   chromePath,
   [
     "--headless=new",
+    // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which the
+    // Chrome sandbox needs; these harnesses only ever load their own local files.
+    ...(process.env.CI || process.env.DD_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
