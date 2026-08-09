@@ -198,7 +198,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private flashJetCount = 0;
   /** Round-robin slot to recycle when the particle cap is reached. */
   private recycleCursor = 0;
-  /** Flat x,y pairs for splashes queued during the particle step. */
+  /**
+   * Flat x,y,vx triplets for splashes queued during the particle step. The
+   * incoming horizontal velocity rides along so splashback leaves the impact
+   * biased downstream, the way water actually glances off a surface.
+   */
   private pendingSplashes: number[] = [];
   /** Paint drips that finished sliding this frame and owe the page a streak. */
   private pendingStamps: Particle[] = [];
@@ -246,6 +250,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private nextTink = 0;
   private nextHiss = 0;
   private nextPop = 0;
+  /**
+   * Rate gate for debris-landing dust. A single chunk thudding down gets its
+   * puff; a 150-body rain gets a sparse drizzle of them instead of a dust
+   * storm that costs more than the debris it decorates.
+   */
+  private nextImpactDust = 0;
   private dpr = 1;
   private w = 0;
   private h = 0;
@@ -1399,6 +1409,24 @@ export class DestroyerEngine implements DestroyerEngineApi {
           spin: (Math.random() - 0.5) * 22,
         });
       }
+      // Crystalline glint: breaking glass catches the light for an instant.
+      // A handful of twinkles over the shatter site — brief, weightless, and
+      // gone before the shards land — is the difference between ice breaking
+      // and pale paper breaking.
+      for (let i = 0; i < 8; i++) {
+        this.spawnParticle({
+          kind: "sparkle",
+          x: x + (Math.random() - 0.5) * radius * 1.7,
+          y: y + (Math.random() - 0.5) * radius * 1.3,
+          vx: (Math.random() - 0.5) * 50,
+          vy: -16 - Math.random() * 44,
+          life: 0,
+          maxLife: 0.45 + Math.random() * 0.45,
+          size: 5 + Math.random() * 7,
+          gravity: 0,
+          phase: Math.random() * TAU,
+        });
+      }
     }
     return made;
   }
@@ -2284,6 +2312,38 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const floorY = Math.min(this.h, this.scrollY + this.viewportH) - 1;
     this.physics.setBounds(this.w, floorY);
     this.physics.step(dt);
+
+    // Dust where debris landed hard. Wood chunks slamming into the floor (or
+    // each other) knock a breath of pale paper dust loose — the cheap half of
+    // an impact that sells the heavy half. The solver already found and capped
+    // these contacts; only the strongest few per frame become particles, and
+    // the count degrades with the quality profile like every other effect.
+    const impacts = this.physics.impacts;
+    if (impacts.length > 0 && this.lastTime > this.nextImpactDust) {
+      this.nextImpactDust = this.lastTime + 55;
+      const events = Math.min(impacts.length, 6);
+      const puffs = Math.max(1, Math.round(2 * this.qualityProfile.particleScale));
+      for (let i = 0; i < events; i += 3) {
+        const ix = impacts[i];
+        const iy = impacts[i + 1];
+        // Impact speed scales the puff: a clatter breathes, a slam erupts.
+        const force = Math.min(1, impacts[i + 2] / 900);
+        for (let d = 0; d < puffs; d++) {
+          this.spawnParticle({
+            kind: "dust",
+            x: ix + (Math.random() - 0.5) * 14,
+            y: iy - Math.random() * 6,
+            vx: (Math.random() - 0.5) * (50 + 90 * force),
+            vy: -14 - Math.random() * 55 * force,
+            life: 0,
+            maxLife: 0.5 + Math.random() * (0.5 + force * 0.6),
+            size: 4 + Math.random() * (5 + 8 * force),
+            gravity: 16,
+            drag: 2.4,
+          });
+        }
+      }
+    }
   }
 
   /** Feed the collapse queue: one element every ~55 ms, so the page falls in a wave. */
@@ -2916,16 +2976,24 @@ export class DestroyerEngine implements DestroyerEngineApi {
           });
         }
         if (Math.random() < f.intensity * 6 * dt) {
+          // A third of the shed embers are *drifters*: caught in the thermal
+          // plume, they ride up and sideways for a couple of seconds, cooling
+          // through the whole white-orange → red → dark arc before they die
+          // (the render pass keys the sprite and sway off `phase`/age). The
+          // rest stay the quick, heavy pops that arc down and wink out.
+          const drifter = Math.random() < 0.35;
           this.spawnParticle({
             kind: "ember",
             x: f.x + (Math.random() - 0.5) * f.radius * 0.8,
             y: f.y - f.radius * 0.5,
-            vx: (Math.random() - 0.5) * 50,
-            vy: -60 - Math.random() * 80,
+            vx: (Math.random() - 0.5) * (drifter ? 34 : 50),
+            vy: drifter ? -40 - Math.random() * 55 : -60 - Math.random() * 80,
             life: 0,
-            maxLife: 0.7 + Math.random() * 0.9,
+            maxLife: drifter ? 1.7 + Math.random() * 1.1 : 0.7 + Math.random() * 0.9,
             size: 1.5 + Math.random() * 2,
-            gravity: 60,
+            gravity: drifter ? -22 : 60,
+            drag: drifter ? 0.7 : undefined,
+            phase: drifter ? Math.random() * TAU : undefined,
           });
         }
       }
@@ -2952,6 +3020,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
               size: 1.2 + Math.random() * 1.6,
               gravity: -2,
               drag: 2.2,
+              phase: Math.random() * TAU,
             });
           }
         }
@@ -2983,6 +3052,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
             maxLife: 1.1 + Math.random() * 1.4,
             size: 1.6 + Math.random() * 2.2,
             gravity: -4,
+            phase: Math.random() * TAU,
           });
         }
         this.flames.splice(i, 1);
@@ -3054,7 +3124,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         // mid-compaction could land a new particle in a slot this pass has
         // already walked past.
         if (p.life > p.maxLife * 0.85) {
-          if (this.onPage(p.x, p.y)) this.pendingSplashes.push(p.x, p.y);
+          if (this.onPage(p.x, p.y)) this.pendingSplashes.push(p.x, p.y, p.vx);
           continue;
         }
       }
@@ -3067,8 +3137,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.flashJetCount = hotSurvivors;
     if (this.recycleCursor >= write) this.recycleCursor = 0;
 
-    for (let i = 0; i < this.pendingSplashes.length; i += 2) {
-      this.spawnSplash(this.pendingSplashes[i], this.pendingSplashes[i + 1]);
+    for (let i = 0; i < this.pendingSplashes.length; i += 3) {
+      this.spawnSplash(
+        this.pendingSplashes[i],
+        this.pendingSplashes[i + 1],
+        this.pendingSplashes[i + 2],
+      );
     }
     this.pendingSplashes.length = 0;
 
@@ -3083,17 +3157,36 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
   }
 
-  private spawnSplash(x: number, y: number) {
+  private spawnSplash(x: number, y: number, inVx = 0) {
     for (let i = 0; i < 3; i++) {
       this.spawnParticle({
         kind: "splash",
         x,
         y,
-        vx: (Math.random() - 0.5) * 90,
+        // Splashback keeps a quarter of the arriving sideways speed: the spray
+        // glances downstream off the page instead of blooming symmetrically.
+        vx: inVx * 0.25 + (Math.random() - 0.5) * 90,
         vy: -Math.random() * 70,
         life: 0,
         maxLife: 0.25 + Math.random() * 0.2,
         size: 1 + Math.random() * 2,
+      });
+    }
+    // One droplet in three genuinely bounces: it leaps back off the surface,
+    // arcs, and lands again a short way downstream — the "rain on pavement"
+    // half of a hose stream hitting something solid.
+    if (Math.random() < 0.34) {
+      this.spawnParticle({
+        kind: "water",
+        x,
+        y,
+        vx: inVx * 0.3 + (Math.random() - 0.5) * 60,
+        vy: -90 - Math.random() * 130,
+        life: 0,
+        maxLife: 0.3 + Math.random() * 0.2,
+        size: 1.6 + Math.random() * 1.8,
+        gravity: 900,
+        drag: 0.6,
       });
     }
     // Lingering wet mark.
@@ -3346,8 +3439,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
         continue;
       }
       // Smoke: born lit by the fire it came off, cooling to grey as it climbs,
-      // and swaying so a column rolls rather than sliding straight up.
-      const sway = Math.sin(time * 1.6 + (p.phase ?? 0)) * p.size * 0.5 * t;
+      // and swaying so a column rolls rather than sliding straight up. Two
+      // incommensurate frequencies — the second keyed off the puff's height so
+      // neighbours shear against each other — give the slow sway a turbulent
+      // curl for the cost of one extra sin, no per-frame state.
+      const ph = p.phase ?? 0;
+      const sway =
+        (Math.sin(time * 1.6 + ph) + 0.55 * Math.sin(time * 3.9 + ph * 1.7 + p.y * 0.013)) *
+        p.size *
+        0.45 *
+        t;
       const fade = (1 - t) * Math.min(1, t * 5);
       if (t < 0.35)
         blit(
@@ -3479,16 +3580,27 @@ export class DestroyerEngine implements DestroyerEngineApi {
     for (const p of hot) {
       const t = p.life / p.maxLife;
       switch (p.kind) {
-        case "ember":
+        case "ember": {
+          // Cooling arc: white-orange while fresh, orange in the middle of the
+          // flight, dull red at the end — the way a real ember dims rather
+          // than fading at one colour. Drifters (spawned with a `phase`) also
+          // sway on the thermal and breathe: two cheap sins, no state.
+          let ex = p.x;
+          let glow = 1 - t;
+          if (p.phase !== undefined) {
+            ex += Math.sin(time * 2.2 + p.phase) * (3 + p.size) * t;
+            glow *= 0.78 + 0.22 * Math.sin(time * 15 + p.phase);
+          }
           blit(
             ctx,
-            t < 0.5 ? sprite.emberHot : sprite.emberCool,
-            p.x,
+            t < 0.38 ? sprite.emberHot : t < 0.72 ? sprite.emberCool : sprite.emberDark,
+            ex,
             p.y,
             p.size * (1 - t * 0.5) * 1.6,
-            1 - t,
+            glow,
           );
           break;
+        }
         case "spark":
           // Fast sparks smear into a streak; slow ones stay points.
           if (Math.abs(p.vx) + Math.abs(p.vy) > 260) {

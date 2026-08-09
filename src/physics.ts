@@ -516,6 +516,14 @@ export class PhysicsWorld {
    */
   private activeCache = false;
 
+  /**
+   * Hard contacts recorded during the last `step`, as flat (x, y, speed)
+   * triplets — a chunk slamming into the floor or another chunk. The engine
+   * turns these into a puff of paper dust at the impact point. Bounded (see
+   * `step`), reused across frames, and free when nothing is falling.
+   */
+  readonly impacts: number[] = [];
+
   /** Static geometry: a floor that tracks the viewport, plus side walls. */
   private floor: Body | null = null;
   private leftWall: Body | null = null;
@@ -702,6 +710,7 @@ export class PhysicsWorld {
 
   step(dt: number) {
     const bodies = this.bodies;
+    this.impacts.length = 0;
 
     // Retire finished bodies (faded out, eaten, or fallen far past the floor).
     let write = 0;
@@ -800,6 +809,10 @@ export class PhysicsWorld {
         // Only a real approach speed bounces; slow settling contacts must not,
         // or a heap breathes forever.
         p.bias = rvn < -55 ? m.restitution * rvn : 0;
+        // A genuinely hard arrival kicks up dust. The threshold keeps resting
+        // and settling contacts silent, and the cap bounds a mass landing to a
+        // fixed handful of entries rather than one per chunk.
+        if (rvn < -260 && this.impacts.length < 24) this.impacts.push(p.px, p.py, -rvn);
         p.pn = 0;
         p.pt = 0;
       }

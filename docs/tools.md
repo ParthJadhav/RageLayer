@@ -60,6 +60,13 @@ crawlers, a crater, and fires.
 
 ![Lightning strike with forked branches](./screenshots/lightning.png)
 
+## Freeze ray + hammer: frost shatter
+
+A frozen patch doesn't tear like paper — it comes apart like glass: more, lighter,
+blue-tinted shards with a crystalline glint twinkling over the break for an instant.
+
+![Frozen page shattering under the hammer](./screenshots/frost-shatter.png)
+
 ## A mixed session
 
 Gun, hammer, flamethrower and paintball together — smoke plumes, live fires, crack webs,

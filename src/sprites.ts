@@ -103,6 +103,8 @@ export interface Sprites {
   flashWhite: HTMLCanvasElement;
   emberHot: HTMLCanvasElement;
   emberCool: HTMLCanvasElement;
+  /** The last stage of an ember's life: dull red, barely holding its glow. */
+  emberDark: HTMLCanvasElement;
   spark: HTMLCanvasElement;
   /**
    * Hollow rings. The transparent core matters: these ride *over* holes, and a
@@ -181,6 +183,11 @@ export function sprites(): Sprites {
       [0, "rgba(255, 150, 50, 1)"],
       [0.5, "rgba(255, 115, 32, 0.9)"],
       [1, "rgba(210, 75, 15, 0)"],
+    ]),
+    emberDark: radial(32, [
+      [0, "rgba(205, 72, 26, 1)"],
+      [0.5, "rgba(150, 46, 16, 0.85)"],
+      [1, "rgba(88, 26, 10, 0)"],
     ]),
     spark: radial(32, [
       [0, "rgba(255, 245, 200, 1)"],

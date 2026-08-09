@@ -383,6 +383,45 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
       restY: sy + 40 + Math.random() * 90,
     });
   }
+
+  // Every few rounds one glances off instead of biting clean: a tight fan of
+  // hot sparks leaves along the deflected barrel line — the round's incoming
+  // direction kicked sideways off the surface — with a bright exit streak and
+  // an extra breath of dust where it grazed. The `tink` is the ricochet's
+  // whine standing in over the shot's bark.
+  if (Math.random() < 0.26) {
+    const out = incoming + (Math.random() < 0.5 ? 1 : -1) * (0.55 + Math.random() * 0.75);
+    engine.spawnParticle({
+      kind: "streak",
+      x: sx,
+      y: sy,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.12,
+      size: 5,
+      angle: out,
+      len: 90 + Math.random() * 110,
+    });
+    for (let i = 0; i < 5; i++) {
+      const a = out + (Math.random() - 0.5) * 0.42;
+      const speed = 380 + Math.random() * 380;
+      engine.spawnParticle({
+        kind: "spark",
+        x: sx,
+        y: sy,
+        vx: Math.cos(a) * speed,
+        vy: Math.sin(a) * speed,
+        life: 0,
+        maxLife: 0.2 + Math.random() * 0.24,
+        size: 1.4 + Math.random() * 1.6,
+        gravity: 300,
+        drag: 0.5,
+      });
+    }
+    dustPuff(engine, sx, sy, 3, 8, 0.8);
+    engine.sound.tink();
+  }
   engine.spawnParticle({
     kind: "casing",
     x: sx - aim.y * 8,

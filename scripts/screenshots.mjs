@@ -334,7 +334,24 @@ try {
   await wait(90);
   await shoot("lightning");
 
-  // ── 9. Aftermath — a mixed session with the debris heap ─────────────────
+  // ── 9. Frost shatter — frozen page breaking as glass, glints in the air ─
+  await loadDemo();
+  await selectTool("freeze");
+  await hold(620, 340, 2000);
+  await release(620, 340);
+  await wait(150);
+  await selectTool("hammer");
+  // Work the site up to the breaking blow, then capture immediately so the
+  // ice shards and crystalline glints are still in the air.
+  for (let hit = 0; hit < 3; hit++) {
+    await click(620 + hit * 2, 340 + hit);
+    await wait(110);
+  }
+  await click(626, 344);
+  await wait(70);
+  await shoot("frost-shatter");
+
+  // ── 10. Aftermath — a mixed session with the debris heap ────────────────
   await loadDemo();
   await selectTool("gun");
   await drag(
