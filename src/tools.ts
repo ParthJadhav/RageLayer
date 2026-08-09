@@ -103,6 +103,12 @@ function makeAim(defaultX: number, defaultY: number) {
     reset() {
       this.lastX = this.lastY = -10000;
     },
+    /** Full reset for `Tool.reset`: forget the direction as well. */
+    hardReset() {
+      this.x = defaultX;
+      this.y = defaultY;
+      this.reset();
+    },
   };
 }
 
@@ -131,6 +137,9 @@ export const hammer: Tool = {
   hint: "smash — tough spots take a few blows",
   cursor: emojiCursor("🔨", { flip: true }),
   art: hammerArt,
+  reset() {
+    sites.length = 0;
+  },
   onDown(engine, e) {
     // Swinging into the void: the head meets nothing. No crack, no dust, no
     // shudder — just the swish of a blow that didn't land.
@@ -415,6 +424,11 @@ export const gun: Tool & { cooldown: number; heldFor: number; smokeDebt: number 
   cooldown: 0,
   heldFor: 0,
   smokeDebt: 0,
+  reset() {
+    gun.cooldown = 0;
+    gun.heldFor = 0;
+    gun.smokeDebt = 0;
+  },
   onDown(engine, e) {
     gun.heldFor = 0;
     // The first round is aimed, not sprayed.
@@ -479,6 +493,12 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
   cooldown: 0,
   emberDebt: 0,
   blobDebt: 0,
+  reset() {
+    flamethrower.cooldown = 0;
+    flamethrower.emberDebt = 0;
+    flamethrower.blobDebt = 0;
+    aim.hardReset();
+  },
   tick(engine, dt, held, pointer) {
     const self = flamethrower;
     self.cooldown -= dt;
@@ -594,6 +614,10 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
   spawnDebt: 0,
   streamDebt: 0,
   mistDebt: 0,
+  reset() {
+    waterHose.spawnDebt = waterHose.streamDebt = waterHose.mistDebt = 0;
+    waterAim.hardReset();
+  },
   tick(engine, dt, held, pointer) {
     const self = waterHose;
     engine.sound.loop("water", held ? 0.3 : 0);
@@ -740,6 +764,12 @@ export const chainsaw: Tool & {
   stripDebt: 0,
   scanDebt: 0,
   cutBounds: null,
+  reset() {
+    chainsaw.lastCut = null;
+    chainsaw.stripDebt = 0;
+    chainsaw.scanDebt = 0;
+    chainsaw.cutBounds = null;
+  },
   onDown(_engine, e) {
     this.lastCut = { x: e.x, y: e.y };
     this.stripDebt = 0;
@@ -944,6 +974,9 @@ export const broom: Tool & { sweepDebt: number } = {
   cursor: emojiCursor("🧹"),
   art: broomArt,
   sweepDebt: 0,
+  reset() {
+    broom.sweepDebt = 0;
+  },
   onDown(engine, e) {
     engine.eraseDamage(e.x, e.y, 42);
     engine.dowseFlames(e.x, e.y, 50, 1);

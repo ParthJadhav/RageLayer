@@ -45,6 +45,9 @@ export const blackHole: Tool & { rumble: number } = {
   cursor: emojiCursor("🕳️"),
   art: blackHoleArt,
   rumble: 0,
+  reset() {
+    blackHole.rumble = 0;
+  },
   onDown(engine, e) {
     engine.setSingularity({ x: e.x, y: e.y, radius: 24, power: 900, charge: 0 });
     engine.sound.hiss();
@@ -117,6 +120,11 @@ export const rocketLauncher: Tool = {
   hint: "click to launch",
   cursor: emojiCursor("🚀"),
   art: rocketArt,
+  reset() {
+    // Anything still flying belonged to the engine that launched it — a new
+    // engine must not detonate stale rockets at coordinates it never saw.
+    rockets.length = 0;
+  },
   onDown(engine, e) {
     if (rockets.length > 5) return;
     // Out of the tube, along its axis. The rocket departs the cursor fast —
@@ -330,6 +338,9 @@ export const lightning: Tool = {
   hint: "click to strike",
   cursor: emojiCursor("⚡"),
   art: lightningArt,
+  reset() {
+    restrikes.length = 0;
+  },
   onDown(engine, e) {
     // A bolt aimed at a hole never grounds: it passes through the empty space
     // where the page used to be and is gone. The strike itself still happens —
@@ -489,6 +500,10 @@ export const freezeRay: Tool & { crystalDebt: number } = {
   cursor: emojiCursor("❄️"),
   art: freezeArt,
   crystalDebt: 0,
+  reset() {
+    freezeRay.crystalDebt = 0;
+    lastFreezeSound = 0;
+  },
   tick(engine, dt, held, pointer) {
     engine.sound.loop("water", held ? 0.16 : 0);
     if (!held || pointer.x <= -100) {
@@ -570,6 +585,9 @@ export const demolition: Tool = {
   hint: "click elements to knock them loose",
   cursor: emojiCursor("🏗️"),
   art: demolitionArt,
+  reset() {
+    lastDemolish = null;
+  },
   onDown(engine, e) {
     lastDemolish = { x: e.x, y: e.y };
     if (!engine.demolish(e.x, e.y)) {

@@ -135,7 +135,12 @@ export class PerformanceMonitor {
   private readonly surface = new Float32Array(MAX_FRAME_SAMPLES);
   private readonly render = new Float32Array(MAX_FRAME_SAMPLES);
   private readonly postFX = new Float32Array(MAX_FRAME_SAMPLES);
+  /** Valid samples in the ring buffers (≤ MAX_FRAME_SAMPLES). */
   private count = 0;
+  /** Next ring slot to write; wraps so long windows keep a rolling sample. */
+  private writeIndex = 0;
+  /** Frames observed this window — may exceed the ring capacity. */
+  private frames = 0;
   private sampleStartedAt = performance.now();
   private lastRafAt = 0;
   private displayIntervalMs = SIXTY_FPS_BUDGET;
@@ -204,6 +209,8 @@ export class PerformanceMonitor {
     this.disposed = true;
     this.callbacks.clear();
     this.count = 0;
+    this.writeIndex = 0;
+    this.frames = 0;
     this.captureMs = null;
   }
 
@@ -228,19 +235,25 @@ export class PerformanceMonitor {
 
   record(measurement: FrameMeasurement): PerformanceQualityTier | null {
     if (!this.enabled || this.disposed) return null;
-    const index = Math.min(this.count, MAX_FRAME_SAMPLES - 1);
+    // Ring buffer: past capacity the oldest sample is overwritten, so a long
+    // sample interval keeps a rolling window instead of freezing one slot.
+    const index = this.writeIndex;
     this.cadence[index] = measurement.cadenceMs;
     this.frame[index] = measurement.frameMs;
     this.update[index] = measurement.updateMs;
     this.surface[index] = measurement.surfaceMs;
     this.render[index] = measurement.renderMs;
     this.postFX[index] = measurement.postFXMs;
+    this.writeIndex = (this.writeIndex + 1) % MAX_FRAME_SAMPLES;
     if (this.count < MAX_FRAME_SAMPLES) this.count++;
+    this.frames++;
 
     const now = performance.now();
     if (now - this.sampleStartedAt < this.sampleIntervalMs) return null;
     const recommendation = this.publish(now, measurement);
     this.count = 0;
+    this.writeIndex = 0;
+    this.frames = 0;
     this.sampleStartedAt = now;
     return recommendation;
   }
@@ -266,9 +279,9 @@ export class PerformanceMonitor {
     this.latest = {
       timestamp: now,
       windowMs,
-      fps: (this.count * 1_000) / Math.max(1, windowMs),
+      fps: (this.frames * 1_000) / Math.max(1, windowMs),
       targetFps: measurement.targetFps,
-      frames: this.count,
+      frames: this.frames,
       // Executed-frame cadence is derived from the publication window. CPU is
       // separately measured around the engine work, which is the actionable part.
       frame,

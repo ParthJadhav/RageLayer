@@ -203,6 +203,10 @@ class OpacityMap {
     this.topologyCols = this.topologyRows = 0;
     this.raster.width = 0;
     this.raster.height = 0;
+    // The hit-test context's backing canvas (browser-default 300×150) holds
+    // pixels too; zero it like the raster so a disposed map retains nothing.
+    this.testCtx.canvas.width = 0;
+    this.testCtx.canvas.height = 0;
     this.mapWidth = this.mapHeight = this.width = this.height = 0;
   }
 

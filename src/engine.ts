@@ -267,8 +267,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private liveSource: LiveContentSource | null = null;
   private refreshTimer = 0;
   private refreshing = false;
+  /** Extra delay before the next live refresh after a failure; 0 when healthy. */
+  private refreshBackoffMs = 0;
   private _captureStatus: CaptureStatus = "idle";
   private _liveUnavailable = false;
+  /** One-shot: the MAX_CAPTURE_HEIGHT truncation is warned about only once. */
+  private captureHeightWarned = false;
   /** Post-processing chain. Null when disabled or WebGL is unavailable. */
   private postfx: PostFX | null = null;
   /** Whether the selected quality profile allows post-processing work. */
@@ -450,6 +454,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.onScroll();
     window.addEventListener("resize", this.onWindowResize);
     window.addEventListener("scroll", this.onScroll, { passive: true });
+    // Safety net: if the page navigates away (or is bfcached) while the real
+    // DOM is hidden behind the destroyed copy, put its visibility back so a
+    // restored document is never blank.
+    window.addEventListener("pagehide", this.onPageHide);
 
     this.container.addEventListener("pointerdown", this.onPointerDown);
     this.container.addEventListener("pointermove", this.onPointerMove);
@@ -569,6 +577,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   registerTool(tool: Tool) {
+    // Tools are module-level singletons: shed whatever a previous engine (or a
+    // previous mount of this one) left in them before this engine ticks them.
+    tool.reset?.();
     this.tools.set(tool.id, tool);
   }
 
@@ -616,6 +627,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.bugs = [];
     this._singularity = null;
     this.collapseQueue.length = 0;
+    // Rockets in flight, queued restrikes, hammer sites: a repaired page owes
+    // nothing to the destruction that was still in progress.
+    for (const tool of this.tools.values()) tool.reset?.();
     // Elements go back on the board — the page they described is whole again.
     for (const el of this.pageElements) el.taken = false;
     this.emit("clear");
@@ -714,6 +728,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.refreshTimer = 0;
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("scroll", this.onScroll);
+    window.removeEventListener("pagehide", this.onPageHide);
     window.removeEventListener("pointerup", this.onPointerUp);
     this.container.removeEventListener("pointerdown", this.onPointerDown);
     this.container.removeEventListener("pointermove", this.onPointerMove);
@@ -749,6 +764,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
     this.heatCanvas = null;
     this.heatCtx = null;
+    this._damageToolCtx = null;
     this.damageReady = false;
     this.fxPainted = false;
 
@@ -763,6 +779,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.bugs.length = 0;
     this.collapseQueue.length = 0;
     this.pageElements.length = 0;
+    // Module-level tool state (in-flight rockets, restrikes, strike sites)
+    // must not survive into whatever engine registers these tools next.
+    for (const tool of this.tools.values()) tool.reset?.();
     this.tools.clear();
     this.activeTool = null;
     this.pointerDown = false;
@@ -909,9 +928,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private scheduleRefresh() {
     clearTimeout(this.refreshTimer);
     if (this.opts.liveRefreshMs <= 0 || this.disposed) return;
-    this.refreshTimer = window.setTimeout(() => {
-      void this.refreshLive().then(() => this.scheduleRefresh());
-    }, this.opts.liveRefreshMs);
+    this.refreshTimer = window.setTimeout(
+      () => {
+        void this.refreshLive().then(() => this.scheduleRefresh());
+      },
+      Math.max(this.opts.liveRefreshMs, this.refreshBackoffMs),
+    );
   }
 
   /**
@@ -943,6 +965,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
           y0: this.scrollY - this.viewportH,
           y1: this.scrollY + this.viewportH * 2,
         });
+        this.refreshBackoffMs = 0;
         return;
       }
 
@@ -965,12 +988,17 @@ export class DestroyerEngine implements DestroyerEngineApi {
         y0: this.scrollY - this.viewportH,
         y1: this.scrollY + this.viewportH * 2,
       });
+      this.refreshBackoffMs = 0;
     } catch (err) {
       // A failed refresh just means the base is a little stale — the existing
-      // pixels and all the destruction are still on screen. Stop retrying.
+      // pixels and all the destruction are still on screen. Back off (doubling
+      // up to a minute) and keep retrying rather than giving up forever; a
+      // success resets the backoff. The configured interval is never mutated.
+      this.refreshBackoffMs = Math.min(
+        60_000,
+        Math.max(this.opts.liveRefreshMs * 4, this.refreshBackoffMs * 2),
+      );
       console.warn("[desktop-destroyer] live refresh failed, keeping last capture:", err);
-      clearTimeout(this.refreshTimer);
-      this.opts.liveRefreshMs = 0;
     } finally {
       this.refreshing = false;
     }
@@ -1022,6 +1050,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.requestFrame();
   }
 
+  /** Effective flame cap after quality scaling — every spawn path shares it. */
+  private flameLimit() {
+    return Math.max(4, Math.round(this.opts.maxFlames * this.qualityProfile.flameScale));
+  }
+
   spawnFlame(x: number, y: number, intensity = 0.35) {
     this.ensureFuel();
     // Frost fights fire. A well-iced region simply refuses to light, which is
@@ -1056,8 +1089,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         return;
       }
     }
-    const limit = Math.max(4, Math.round(this.opts.maxFlames * this.qualityProfile.flameScale));
-    if (this.flames.length >= limit) return;
+    if (this.flames.length >= this.flameLimit()) return;
     this.flames.push({
       x,
       y,
@@ -1769,10 +1801,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.particles.splice(0, this.particles.length - particleLimit);
       this.recycleCursor %= this.particles.length;
     }
-    const flameLimit = Math.max(
-      4,
-      Math.round(this.opts.maxFlames * this.qualityProfile.flameScale),
-    );
+    const flameLimit = this.flameLimit();
     if (this.flames.length > flameLimit) this.flames.length = flameLimit;
     this.physics.setIterations(this.qualityProfile.physicsIterations);
     this.physics.setBodyLimit(Math.max(24, Math.round(MAX_BODIES * this.qualityProfile.bodyScale)));
@@ -1818,12 +1847,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private docSize() {
+    const height = Math.max(
+      document.documentElement.scrollHeight,
+      document.documentElement.clientHeight,
+    );
+    if (height > MAX_CAPTURE_HEIGHT && !this.captureHeightWarned) {
+      this.captureHeightWarned = true;
+      console.warn(
+        `[desktop-destroyer] document is ${Math.round(height)}px tall; the destructible surface is capped at ${MAX_CAPTURE_HEIGHT}px, so content below that stays intact.`,
+      );
+    }
     return {
       width: document.documentElement.clientWidth,
-      height: Math.min(
-        Math.max(document.documentElement.scrollHeight, document.documentElement.clientHeight),
-        MAX_CAPTURE_HEIGHT,
-      ),
+      height: Math.min(height, MAX_CAPTURE_HEIGHT),
     };
   }
 
@@ -1907,6 +1943,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.scrollX = window.scrollX;
     this.scrollY = window.scrollY;
     this.requestFrame();
+  };
+
+  /**
+   * The document is going away (navigation, or into the bfcache) while the
+   * real DOM may still be hidden behind the destroyed copy. Restore its
+   * visibility so a bfcache-restored page never comes back blank.
+   */
+  private onPageHide = () => {
+    this.exitContentMode();
   };
 
   private onWindowResize = () => {
@@ -2392,6 +2437,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // A bug needs page to stand on. Released over the void it has nothing to
     // crawl across or eat — so nothing is released, and nothing chirps.
     if (!this.onPage(x, y, 0.5)) return;
+    const before = this.bugs.length;
     for (let i = 0; i < count && this.bugs.length < MAX_BUGS; i++) {
       this.bugs.push({
         x: x + (Math.random() - 0.5) * 18,
@@ -2405,6 +2451,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
         seed: Math.random() * TAU,
       });
     }
+    // At the population cap nothing was released — so nothing chirps either.
+    if (this.bugs.length === before) return;
     this.sound.pop();
     this.requestFrame();
   }
@@ -2770,7 +2818,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
       // Fire spreads: strong flames seed children nearby.
       f.spreadCooldown -= dt;
-      if (f.spreadCooldown <= 0 && f.intensity > 0.75 && this.flames.length < this.opts.maxFlames) {
+      if (f.spreadCooldown <= 0 && f.intensity > 0.75 && this.flames.length < this.flameLimit()) {
         f.spreadCooldown = 2 + Math.random() * 3;
         const angle = Math.random() * TAU;
         const dist = f.radius * (1.2 + Math.random());

@@ -70,6 +70,14 @@ export interface Tool {
   onUp?(engine: DestroyerEngineApi, e: ToolPointerEvent): void;
   /** Called every frame while the tool is selected. `held` = pointer down. */
   tick?(engine: DestroyerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
+  /**
+   * Drop any retained state — in-flight projectiles, strike sites, spawn
+   * debts. Tools are module-level singletons shared by every engine, so the
+   * engine calls this on `registerTool`, `clear()` and `dispose()` to keep one
+   * instance's leftovers (a rocket mid-flight, a half-worked hammer site) from
+   * leaking into the next.
+   */
+  reset?(): void;
 }
 
 export type ParticleKind =
