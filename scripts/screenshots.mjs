@@ -42,7 +42,10 @@ async function startServer() {
       if (!filepath.startsWith(`${packageRoot}/`)) throw new Error("outside package root");
       const info = await stat(filepath);
       if (!info.isFile()) throw new Error("not a file");
-      response.writeHead(200, { "Content-Type": contentType(filepath), "Cache-Control": "no-store" });
+      response.writeHead(200, {
+        "Content-Type": contentType(filepath),
+        "Cache-Control": "no-store",
+      });
       createReadStream(filepath).pipe(response);
     } catch {
       response.writeHead(404, { "Content-Type": "text/plain" });
@@ -168,7 +171,9 @@ try {
       sessionId,
     );
     if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+      throw new Error(
+        result.exceptionDetails.exception?.description ?? result.exceptionDetails.text,
+      );
     }
     return result.result.value;
   };
@@ -342,7 +347,13 @@ try {
     await wait(110);
   }
   await selectTool("flamethrower");
-  await drag([{ x: 820, y: 430 }, { x: 900, y: 430 }], { stepMs: 200, settleMs: 500 });
+  await drag(
+    [
+      { x: 820, y: 430 },
+      { x: 900, y: 430 },
+    ],
+    { stepMs: 200, settleMs: 500 },
+  );
   await selectTool("paintball");
   await click(380, 540);
   await click(720, 560);
