@@ -1,16 +1,36 @@
 # Contributing
 
+Thanks for helping improve Desktop Destroyer. For usage questions, start in
+[GitHub Discussions](https://github.com/ParthJadhav/desktop-destroyer/discussions); use an issue for
+a reproducible defect or a scoped feature proposal. Participation is covered by the
+[code of conduct](./CODE_OF_CONDUCT.md).
+
 ## Setup
 
 ```sh
 bun install
 bun run build      # tsdown → dist/
 bun run check      # typecheck + lint + tests + build + package checks — CI runs the same
+bun run docs:dev   # documentation site at a local URL
+bun run audit      # dependency advisory check
 ```
 
 Toolchain: [Bun](https://bun.sh) (runtime + tests), [tsdown](https://tsdown.dev) (Rolldown
 build), [Biome](https://biomejs.dev) (lint + format), publint + arethetypeswrong (package
-correctness), [Changesets](https://github.com/changesets/changesets) (versioning).
+correctness), [VitePress](https://vitepress.dev) (documentation), and
+[Changesets](https://github.com/changesets/changesets) (versioning).
+
+## Project layout
+
+| Path | Purpose |
+| --- | --- |
+| `src/` | Framework-neutral engine and rendering primitives |
+| `src/react`, `src/vue`, `src/svelte` | Thin framework bindings; keep engine behavior in core |
+| `tests/` | Fast unit tests run by Bun |
+| `demo/` | Vanilla integration and live GitHub Pages demo |
+| `docs/` | VitePress guides and reference |
+| `harness*.html` | Focused browser/visual diagnostics |
+| `benchmarks/` and `scripts/` | Chrome performance, memory, screenshot, and docs tooling |
 
 ## Working on the engine
 
@@ -39,6 +59,11 @@ bun run memory:check       # if you touched lifecycle/dispose paths
 bun run screenshots        # if you changed anything visual — docs screenshots regenerate
 ```
 
+Please keep framework adapters thin. A behavior that can live in `src/mount.ts` or the engine should
+not be reimplemented independently in React, Vue, and Svelte. New public APIs need types, docs, and
+a Changeset. Package checks compile consumer fixtures under bundler and Node16 module resolution and
+enforce per-entry gzip budgets; raise a budget only with a written justification.
+
 ## Releasing
 
 Every user-facing change lands with a changeset:
@@ -47,6 +72,6 @@ Every user-facing change lands with a changeset:
 bun run changeset          # pick patch/minor/major, describe the change
 ```
 
-On push to `main`, the release workflow opens/updates a **Version Packages** PR. Merging it
-tags `vX.Y.Z`, creates a GitHub Release with the changelog and an installable tarball, and
-publishes to npm when the `NPM_TOKEN` secret is configured.
+On push to `main`, the release workflow opens or updates a **chore: version packages** PR. Merging
+it publishes to npm, tags `vX.Y.Z`, creates a GitHub Release, and attaches an installable tarball.
+Maintainer setup and recovery steps are in the [release guide](./docs/releasing.md).

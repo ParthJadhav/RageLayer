@@ -13,13 +13,8 @@
  *   its sprite, and the physics never has to know about textures.
  */
 
+import { rand, TAU } from "./math";
 import { Body } from "./physics";
-
-const TAU = Math.PI * 2;
-
-function rand(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
 
 export interface ChunkSource {
   /** The pristine page raster (ContentLayer's base). */

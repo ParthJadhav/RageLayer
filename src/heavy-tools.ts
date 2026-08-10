@@ -13,6 +13,7 @@
 
 import { emojiCursor } from "./cursors";
 import { drawBurnChannel, drawFrost } from "./decals";
+import { emit, rand, TAU } from "./math";
 import {
   blackHoleArt,
   bugsArt,
@@ -22,12 +23,6 @@ import {
   rocketArt,
 } from "./toolart";
 import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
-
-const TAU = Math.PI * 2;
-
-function rand(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
 
 // ── Black hole ──────────────────────────────────────────────────────────────
 
@@ -102,6 +97,9 @@ interface Rocket {
   life: number;
   smokeDebt: number;
 }
+
+/** Motor smoke and embers per second while a rocket is under power. */
+const ROCKET_SMOKE_PER_SECOND = 90;
 
 /** In flight. Module-scoped so rockets keep travelling between pointer events. */
 const rockets: Rocket[] = [];
@@ -216,10 +214,7 @@ export const rocketLauncher: Tool = {
         angle,
         len: -60,
       });
-      r.smokeDebt += dt * 90;
-      const puffs = Math.floor(r.smokeDebt);
-      r.smokeDebt -= puffs;
-      for (let p = 0; p < puffs; p++) {
+      r.smokeDebt = emit(r.smokeDebt, dt, ROCKET_SMOKE_PER_SECOND, () => {
         engine.spawnParticle({
           kind: "smoke",
           x: r.x - Math.cos(angle) * 10,
@@ -244,7 +239,7 @@ export const rocketLauncher: Tool = {
           size: rand(1.5, 3.5),
           gravity: 0,
         });
-      }
+      });
       engine.heat(r.x, r.y, 70, 0.4);
 
       // Detonate on arrival — but only once armed. The rocket starts life at
@@ -348,6 +343,7 @@ export const lightning: Tool = {
     // nothing on the surface is touched: no channel, no crater, no crawlers,
     // no fires. Just light, and thunder.
     const grounded = engine.onPage(e.x, e.y);
+    if (grounded) engine.signalInteraction("electricity", e.x, e.y);
     const startX = e.x + rand(-220, 220);
     const startY = e.y - rand(520, 860);
     const main = boltPath(startX, startY, e.x, e.y, 18, 96);
@@ -394,6 +390,7 @@ export const lightning: Tool = {
     }
 
     if (grounded) {
+      const material = engine.materialAt(e.x, e.y);
       // Burn the channel into the page itself, and cut through the last stretch
       // of it so the strike leaves a real wound and not just a scorch.
       drawBurnChannel(engine.surfaceCtx, main);
@@ -410,7 +407,7 @@ export const lightning: Tool = {
 
       // Ground crawlers: short arcs that skitter outward from the strike point
       // along the surface, the way a strike grounds itself in every direction.
-      for (let c = 0; c < 6; c++) {
+      for (let c = 0; c < 6 + Math.round(material.conductivity * 4); c++) {
         const a = rand(0, TAU);
         const len = rand(40, 130);
         const crawler = boltPath(
@@ -438,7 +435,14 @@ export const lightning: Tool = {
       size: 640,
     });
     if (grounded) {
-      engine.explode(e.x, e.y, 64, { power: 460, incendiary: true });
+      const material = engine.materialAt(e.x, e.y);
+      const conduction = 1 + material.conductivity * 0.4;
+      engine.explode(e.x, e.y, 64 * Math.sqrt(conduction), {
+        power: 460 * conduction,
+        // The channel below owns ignition. Letting the generic explosion also
+        // seed fires duplicated the persistent flame population on every hit.
+        incendiary: false,
+      });
       // Fires scattered up the strike path — the bolt lit everything it touched.
       for (let i = 8; i < main.length - 2; i += 4) {
         if (Math.random() < 0.45) engine.spawnFlame(main[i], main[i + 1], 0.4);
@@ -492,6 +496,9 @@ let lastFreezeSound = 0;
  * differently: hit ice with the hammer or a rocket and it comes apart into far
  * more, far lighter, blue-white shards that skitter when they land.
  */
+/** Rime stamps per second — bursts, not a continuous paint (see the tick). */
+const RIME_STAMPS_PER_SECOND = 22;
+
 export const freezeRay: Tool & { crystalDebt: number } = {
   id: "freeze",
   name: "Freeze ray",
@@ -517,17 +524,14 @@ export const freezeRay: Tool & { crystalDebt: number } = {
 
     // Rime is stamped in bursts rather than every frame: continuous painting
     // saturates to a flat white sheet and loses the crystalline structure.
-    freezeRay.crystalDebt += dt * 22;
-    const stamps = Math.floor(freezeRay.crystalDebt);
-    freezeRay.crystalDebt -= stamps;
-    for (let i = 0; i < stamps; i++) {
+    freezeRay.crystalDebt = emit(freezeRay.crystalDebt, dt, RIME_STAMPS_PER_SECOND, () => {
       const a = Math.random() * TAU;
       const d = Math.random() * radius * 0.9;
       const fx = pointer.x + Math.cos(a) * d;
       const fy = pointer.y + Math.sin(a) * d;
       // Cold aimed into a hole freezes nothing: rime needs a surface to creep
       // across. Stamps that land in the void simply never happen.
-      if (!engine.onPage(fx, fy)) continue;
+      if (!engine.onPage(fx, fy)) return;
       drawFrost(engine.surfaceCtx, fx, fy, rand(14, 34), 0.5);
       // Rime spreads across the whole cone, which is wider than the pointer net.
       engine.markSurface(pointer.x, pointer.y, radius + 34);
@@ -556,7 +560,7 @@ export const freezeRay: Tool & { crystalDebt: number } = {
         gravity: 30,
         drag: 2.2,
       });
-    }
+    });
 
     const now = performance.now();
     if (now - lastFreezeSound > 420) {

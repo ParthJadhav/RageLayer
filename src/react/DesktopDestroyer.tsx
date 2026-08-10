@@ -2,17 +2,30 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { defaultTools } from "../default-tools";
 import { DestroyerEngine } from "../engine";
+import type { HistoryState } from "../history";
+import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "../loadouts";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "../share";
 import { toolIconDataUrl } from "../toolart";
-import { defaultTools } from "../tools";
 import type { CaptureStatus, DestroyerOptions, Tool, ToolStyle } from "../types";
+import {
+  acquireStyles,
+  barStyle,
+  buttonBase,
+  chipStyle,
+  dividerStyle,
+  dotStyle,
+  releaseStyles,
+} from "./toolbar-styles";
 
 export interface DesktopDestroyerProps {
   /** Called when the user closes the toolbar. */
   onClose?: () => void;
   /** Extra or replacement tools. Defaults to the full built-in set. */
   tools?: Tool[];
+  /** Named or custom preset. Explicit `tools` take precedence. */
+  loadout?: BuiltInLoadoutId | ToolLoadout;
   /** Engine options (zIndex, caps, physics, post-FX, target element). */
   engineOptions?: DestroyerOptions;
   /** Start with sound on. Default false — visitors get to opt in. */
@@ -31,94 +44,6 @@ export interface DesktopDestroyerProps {
    */
   debugGlobal?: boolean;
 }
-
-const barStyle: React.CSSProperties = {
-  // Explicit visibility: while content-destruction mode hides the real page
-  // (visibility: hidden on <body>), the toolbar re-enables itself.
-  visibility: "visible",
-  position: "fixed",
-  left: "50%",
-  bottom: 18,
-  transform: "translateX(-50%)",
-  zIndex: 2147483001,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  // On narrow viewports the row wraps instead of clipping: every tool stays
-  // reachable without a hidden horizontal scroll.
-  flexWrap: "wrap",
-  gap: 3,
-  padding: "7px 9px",
-  borderRadius: 18,
-  background: "rgba(18, 17, 16, 0.82)",
-  backdropFilter: "blur(14px)",
-  WebkitBackdropFilter: "blur(14px)",
-  border: "1px solid rgba(255,255,255,0.14)",
-  boxShadow: "0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
-  fontFamily: "ui-sans-serif, system-ui, sans-serif",
-  userSelect: "none",
-  animation: "dd-rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2)",
-  maxWidth: "calc(100vw - 24px)",
-};
-
-const buttonBase: React.CSSProperties = {
-  appearance: "none",
-  border: "1px solid transparent",
-  background: "transparent",
-  borderRadius: 12,
-  width: 42,
-  height: 42,
-  fontSize: 22,
-  lineHeight: 1,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  transition: "transform 0.12s ease, background 0.12s ease, border-color 0.12s ease",
-  flexShrink: 0,
-};
-
-/**
- * Capture-status chip, floated just above the toolbar. Page rasterization takes
- * 0.5–2 s in snapshot mode and used to happen with no feedback at all; this says
- * what is happening and which mode you ended up in.
- */
-const chipStyle: React.CSSProperties = {
-  // Same reason as the toolbar: content mode hides the real page via
-  // `visibility: hidden` on <body>, and this portal is a body descendant.
-  visibility: "visible",
-  position: "fixed",
-  left: "50%",
-  bottom: 72,
-  transform: "translateX(-50%)",
-  zIndex: 2147483001,
-  display: "flex",
-  alignItems: "center",
-  gap: 7,
-  padding: "5px 11px",
-  borderRadius: 999,
-  background: "rgba(18, 17, 16, 0.82)",
-  backdropFilter: "blur(14px)",
-  WebkitBackdropFilter: "blur(14px)",
-  border: "1px solid rgba(255,255,255,0.14)",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
-  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-  fontSize: 10,
-  letterSpacing: "0.09em",
-  textTransform: "uppercase",
-  color: "rgba(255,255,255,0.82)",
-  whiteSpace: "nowrap",
-  userSelect: "none",
-  pointerEvents: "auto",
-  cursor: "help",
-};
-
-const dotStyle: React.CSSProperties = {
-  width: 6,
-  height: 6,
-  borderRadius: "50%",
-  flexShrink: 0,
-};
 
 /** Chip label, dot colour and tooltip for each capture state. */
 function chipFor(status: CaptureStatus, liveUnavailable: boolean) {
@@ -154,89 +79,75 @@ function chipFor(status: CaptureStatus, liveUnavailable: boolean) {
   return null;
 }
 
-const dividerStyle: React.CSSProperties = {
-  width: 1,
-  height: 28,
-  background: "rgba(255,255,255,0.15)",
-  margin: "0 3px",
-  flexShrink: 0,
-};
-
-const STYLE_ATTR = "data-dd-toolbar-styles";
-
-const KEYFRAMES = `
-@keyframes dd-rise {
-  from { opacity: 0; transform: translateX(-50%) translateY(24px) scale(0.92); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
-}
-.dd-tool:hover { background: rgba(255,255,255,0.10); transform: translateY(-2px); }
-.dd-tool:active { transform: translateY(0) scale(0.92); }
-.dd-tool:focus-visible {
-  outline: 2px solid rgba(255, 170, 90, 0.9);
-  outline-offset: 1px;
-}
-.dd-tool[data-active="true"] {
-  background: rgba(255, 122, 40, 0.18);
-  border-color: rgba(255, 150, 70, 0.55);
-  box-shadow: 0 0 14px rgba(255, 130, 50, 0.25) inset;
-}
-@keyframes dd-spin { to { transform: rotate(360deg); } }
-.dd-spinner {
-  width: 9px;
-  height: 9px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.22);
-  border-top-color: rgba(255,255,255,0.85);
-  animation: dd-spin 0.7s linear infinite;
-}
-.dd-hint {
-  visibility: visible;
-  position: fixed;
-  /* Clears the capture-status chip, which sits at 72px. */
-  bottom: 106px;
-  left: 50%;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-.dd-hint-pill {
-  display: inline-block;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: rgba(18,17,16,0.85);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.85);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-@media (prefers-reduced-motion: reduce) {
-  .dd-tool { transition: none; }
-  .dd-tool:hover { transform: none; }
-}
-`;
-
-// The <style> block is shared by every mounted instance and injected at most
-// once: a module-level refcount adds it with the first toolbar and removes it
-// with the last, instead of stacking one copy per mount.
-let styleUses = 0;
-let styleElement: HTMLStyleElement | null = null;
-
-function acquireStyles() {
-  styleUses += 1;
-  if (styleElement || document.head.querySelector(`style[${STYLE_ATTR}]`)) return;
-  styleElement = document.createElement("style");
-  styleElement.setAttribute(STYLE_ATTR, "");
-  styleElement.textContent = KEYFRAMES;
-  document.head.appendChild(styleElement);
+/** One of the fixed buttons that follow the tools in the bar. */
+interface ToolbarAction {
+  glyph: string;
+  /** Accessible name; the glyph alone means nothing to a screen reader. */
+  label: string;
+  /** Keyboard shortcut, appended to the tooltip. */
+  hint?: string;
+  /** Tooltip, when the label alone would not do. Defaults to `label (hint)`. */
+  title?: string;
+  fontSize: number;
+  color?: string;
+  pressed?: boolean;
+  disabled?: boolean;
+  run(): void;
 }
 
-function releaseStyles() {
-  styleUses = Math.max(0, styleUses - 1);
-  if (styleUses > 0 || !styleElement) return;
-  styleElement.remove();
-  styleElement = null;
+/** Tooltips are the accessible name plus the shortcut, unless one says otherwise. */
+function actionTitle(action: ToolbarAction): string {
+  if (action.title) return action.title;
+  return action.hint ? `${action.label} (${action.hint})` : action.label;
+}
+
+/**
+ * One toolbar button.
+ *
+ * Tools and the fixed actions differ only in what they show and what they do,
+ * so they share this: the chrome, the roving `tabIndex`, and the disabled
+ * treatment (dimmed and `aria-disabled`, never `disabled` — a removed button
+ * would silently renumber the roving tabindex under the user's fingers).
+ */
+function ToolbarButton({
+  tabIndex,
+  title,
+  label,
+  onSelect,
+  children,
+  active,
+  pressed,
+  disabled,
+  style,
+}: {
+  tabIndex: number;
+  title: string;
+  label: string;
+  onSelect: () => void;
+  children: React.ReactNode;
+  active?: boolean;
+  pressed?: boolean;
+  disabled?: boolean;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <button
+      type="button"
+      className="dd-tool"
+      style={{ ...buttonBase, ...style, ...(disabled ? { opacity: 0.35 } : null) }}
+      data-active={active}
+      tabIndex={tabIndex}
+      title={title}
+      aria-label={label}
+      aria-pressed={pressed}
+      aria-disabled={disabled}
+      onClick={() => {
+        if (!disabled) onSelect();
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
 /** True when the key event started in a place where the user is typing. */
@@ -254,6 +165,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 export function DesktopDestroyer({
   onClose,
   tools,
+  loadout,
   engineOptions,
   soundDefault = false,
   toolStyle = "3d",
@@ -267,23 +179,36 @@ export function DesktopDestroyer({
     status: "idle",
     liveUnavailable: false,
   });
+  const [historyState, setHistoryState] = useState<HistoryState>({
+    canUndo: false,
+    canRedo: false,
+    undoDepth: 0,
+    redoDepth: 0,
+  });
   const [flash, setFlash] = useState<string | null>(null);
   // SSR guard: the portal target (document.body) only exists in the browser,
   // so the first render — including the server one — produces nothing and the
   // real UI appears after mount. Consumers don't need `ssr: false` tricks.
   const [mounted, setMounted] = useState(false);
-  // Sampled once at mount: the OS-level "reduce motion" preference turns off
-  // the toolbar rise animation (hover/transition motion is handled in CSS).
-  const [reducedMotion] = useState(
-    () =>
+  // Sampled once at mount: the explicit engine option or OS-level preference
+  // turns off the toolbar rise animation (hover motion is handled in CSS).
+  const [reducedMotion] = useState(() => {
+    if (engineOptions?.reducedMotion === true) return true;
+    if (engineOptions?.reducedMotion === false) return false;
+    return (
       typeof window !== "undefined" &&
-      (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false),
-  );
+      (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
+    );
+  });
   // Roving tabindex for the toolbar: exactly one button is tabbable, arrows
   // move focus within the bar.
   const [focusIndex, setFocusIndex] = useState(0);
   const flashTimerRef = useRef<number | null>(null);
-  const toolset = useMemo(() => tools ?? defaultTools, [tools]);
+  const toolset = useMemo(
+    () => tools ?? (loadout ? resolveToolLoadout(loadout) : defaultTools),
+    [tools, loadout],
+  );
+  const historyEnabled = engineOptions?.history !== undefined && engineOptions.history !== false;
   // One resolved style drives both the engine (pointer art) and the toolbar
   // (icon source), so the two can never disagree.
   const resolvedToolStyle = engineOptions?.toolStyle ?? toolStyle;
@@ -325,8 +250,12 @@ export function DesktopDestroyer({
       setCapture({ status: engine.captureStatus, liveUnavailable: engine.liveUnavailable });
     sync();
     const off = engine.on("statuschange", sync);
+    const syncHistory = () => setHistoryState(engine.historyState);
+    syncHistory();
+    const offHistory = engine.on("historychange", syncHistory);
     return () => {
       off();
+      offHistory();
       engine.dispose();
       if (debugWindow.__desktopDestroyer === engine) delete debugWindow.__desktopDestroyer;
       releaseStyles();
@@ -388,6 +317,12 @@ export function DesktopDestroyer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "z" && historyEnabled) {
+        e.preventDefault();
+        if (e.shiftKey) engineRef.current?.redo();
+        else engineRef.current?.undo();
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       // No shortcuts while the user is typing (inputs, textareas,
       // contenteditable, mid-IME-composition) or holding a key down —
@@ -422,11 +357,74 @@ export function DesktopDestroyer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [activeToolId, toolset, selectTool, onClose, saveSnapshot]);
+  }, [activeToolId, toolset, selectTool, onClose, saveSnapshot, historyEnabled]);
 
-  // 5 fixed action buttons follow the tools: collapse, snapshot, sound,
-  // repair, close.
-  const buttonCount = toolset.length + 5;
+  // Everything after the tools: the optional history pair, then the fixed
+  // actions. Declared as data so the roving tabindex is derived from position
+  // rather than from hand-maintained offsets.
+  const actions: ToolbarAction[] = [
+    ...(historyEnabled
+      ? ([
+          {
+            glyph: "↶",
+            label: "Undo destruction",
+            hint: "Cmd/Ctrl+Z",
+            fontSize: 20,
+            disabled: !historyState.canUndo,
+            run: () => engineRef.current?.undo(),
+          },
+          {
+            glyph: "↷",
+            label: "Redo destruction",
+            hint: "Cmd/Ctrl+Shift+Z",
+            fontSize: 20,
+            disabled: !historyState.canRedo,
+            run: () => engineRef.current?.redo(),
+          },
+        ] satisfies ToolbarAction[])
+      : []),
+    {
+      glyph: "💥",
+      label: "Collapse the whole page",
+      hint: "X",
+      fontSize: 19,
+      run: () => engineRef.current?.collapse(),
+    },
+    {
+      glyph: "📸",
+      label: "Save a picture of the wreckage",
+      hint: "P",
+      fontSize: 18,
+      run: () => void saveSnapshot(),
+    },
+    {
+      glyph: sound ? "🔊" : "🔇",
+      label: sound ? "Mute sound" : "Enable sound",
+      hint: "M",
+      fontSize: 18,
+      pressed: sound,
+      run: () => setSound((s) => !s),
+    },
+    {
+      glyph: "🩹",
+      label: "Repair everything",
+      hint: "R",
+      fontSize: 18,
+      run: () => engineRef.current?.clear(),
+    },
+    {
+      glyph: "✕",
+      label: "Close Desktop Destroyer",
+      title: "Close (Esc)",
+      fontSize: 16,
+      color: "rgba(255,255,255,0.8)",
+      run: () => {
+        selectTool(null);
+        onClose?.();
+      },
+    },
+  ];
+  const buttonCount = toolset.length + actions.length;
   const rovingIndex = Math.min(focusIndex, buttonCount - 1);
 
   const toolbarButtons = () =>
@@ -507,17 +505,14 @@ export function DesktopDestroyer({
         onFocus={onToolbarFocus}
       >
         {toolset.map((tool, i) => (
-          <button
-            type="button"
+          <ToolbarButton
             key={tool.id}
-            className="dd-tool"
-            style={buttonBase}
-            data-active={tool.id === activeToolId}
             tabIndex={tabIndexFor(i)}
             title={`${tool.name} — ${tool.hint}${i < 10 ? ` (${(i + 1) % 10})` : ""}`}
-            aria-label={tool.name}
-            aria-pressed={tool.id === activeToolId}
-            onClick={() => selectTool(tool.id)}
+            label={tool.name}
+            active={tool.id === activeToolId}
+            pressed={tool.id === activeToolId}
+            onSelect={() => selectTool(tool.id)}
           >
             {artIcons[tool.id] ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -530,68 +525,23 @@ export function DesktopDestroyer({
             ) : (
               tool.icon
             )}
-          </button>
+          </ToolbarButton>
         ))}
         <div style={dividerStyle} />
-        <button
-          type="button"
-          className="dd-tool"
-          style={{ ...buttonBase, fontSize: 19 }}
-          tabIndex={tabIndexFor(toolset.length)}
-          title="Collapse the whole page (X)"
-          aria-label="Collapse the whole page"
-          onClick={() => engineRef.current?.collapse()}
-        >
-          💥
-        </button>
-        <button
-          type="button"
-          className="dd-tool"
-          style={{ ...buttonBase, fontSize: 18 }}
-          tabIndex={tabIndexFor(toolset.length + 1)}
-          title="Save a picture of the wreckage (P)"
-          aria-label="Save a picture of the wreckage"
-          onClick={() => void saveSnapshot()}
-        >
-          📸
-        </button>
-        <button
-          type="button"
-          className="dd-tool"
-          style={{ ...buttonBase, fontSize: 18 }}
-          tabIndex={tabIndexFor(toolset.length + 2)}
-          title={sound ? "Mute sound (M)" : "Enable sound (M)"}
-          aria-label={sound ? "Mute sound" : "Enable sound"}
-          aria-pressed={sound}
-          onClick={() => setSound((s) => !s)}
-        >
-          {sound ? "🔊" : "🔇"}
-        </button>
-        <button
-          type="button"
-          className="dd-tool"
-          style={{ ...buttonBase, fontSize: 18 }}
-          tabIndex={tabIndexFor(toolset.length + 3)}
-          title="Repair everything (R)"
-          aria-label="Repair everything"
-          onClick={() => engineRef.current?.clear()}
-        >
-          🩹
-        </button>
-        <button
-          type="button"
-          className="dd-tool"
-          style={{ ...buttonBase, fontSize: 16, color: "rgba(255,255,255,0.8)" }}
-          tabIndex={tabIndexFor(toolset.length + 4)}
-          title="Close (Esc)"
-          aria-label="Close Desktop Destroyer"
-          onClick={() => {
-            selectTool(null);
-            onClose?.();
-          }}
-        >
-          ✕
-        </button>
+        {actions.map((action, i) => (
+          <ToolbarButton
+            key={action.label}
+            tabIndex={tabIndexFor(toolset.length + i)}
+            title={actionTitle(action)}
+            label={action.label}
+            pressed={action.pressed}
+            disabled={action.disabled}
+            style={{ fontSize: action.fontSize, color: action.color }}
+            onSelect={action.run}
+          >
+            {action.glyph}
+          </ToolbarButton>
+        ))}
       </div>
     </>,
     document.body,

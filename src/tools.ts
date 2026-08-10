@@ -1,6 +1,7 @@
 import { emojiCursor } from "./cursors";
 import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
-import { heavyTools } from "./heavy-tools";
+import { emit, TAU } from "./math";
+import { debris, dustPuff, makeAim } from "./tool-kit";
 import {
   broomArt,
   chainsawArt,
@@ -12,105 +13,6 @@ import {
 } from "./toolart";
 import { surfaceRuns, type TopologyBounds } from "./topology";
 import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
-
-const TAU = Math.PI * 2;
-
-function debris(engine: DestroyerEngineApi, x: number, y: number, count: number, color?: string) {
-  for (let i = 0; i < count; i++) {
-    const a = Math.random() * TAU;
-    const speed = 60 + Math.random() * 220;
-    engine.spawnParticle({
-      kind: "debris",
-      x,
-      y,
-      vx: Math.cos(a) * speed,
-      vy: Math.sin(a) * speed - 120,
-      life: 0,
-      maxLife: 0.7 + Math.random() * 0.9,
-      size: 1.5 + Math.random() * 3.5,
-      color,
-      angle: Math.random() * TAU,
-      spin: (Math.random() - 0.5) * 20,
-      // Chips of page fall out and come to rest instead of sinking forever.
-      bounce: 0.35 + Math.random() * 0.25,
-      restY: y + 60 + Math.random() * 180,
-    });
-  }
-}
-
-/**
- * Pale powdered page thrown up by an impact. Rises with the blast, then hangs
- * and drifts down — it is the slow part of a hit, and what keeps a wound
- * looking fresh for a second after the fast debris is gone.
- */
-function dustPuff(
-  engine: DestroyerEngineApi,
-  x: number,
-  y: number,
-  count: number,
-  spread: number,
-  force = 1,
-) {
-  for (let i = 0; i < count; i++) {
-    const a = Math.random() * TAU;
-    const d = Math.random() * spread;
-    engine.spawnParticle({
-      kind: "dust",
-      x: x + Math.cos(a) * d,
-      y: y + Math.sin(a) * d,
-      vx: Math.cos(a) * (20 + Math.random() * 90) * force,
-      vy: Math.sin(a) * (14 + Math.random() * 60) * force - 24,
-      life: 0,
-      maxLife: 0.8 + Math.random() * 1.3,
-      size: 5 + Math.random() * 11,
-      gravity: 14,
-      drag: 2.2,
-    });
-  }
-}
-
-/**
- * A smoothed aim direction taken from pointer motion.
- *
- * The jet tools need to point *somewhere*; a cone that always sprays straight
- * up ignores where you are actually painting. Motion direction is the only
- * signal a mouse gives, and smoothing it stops the cone snapping around on
- * every jittery pixel of movement.
- */
-function makeAim(defaultX: number, defaultY: number) {
-  return {
-    x: defaultX,
-    y: defaultY,
-    lastX: -10000,
-    lastY: -10000,
-    update(pointer: Vec2, dt: number) {
-      const dx = pointer.x - this.lastX;
-      const dy = pointer.y - this.lastY;
-      const moved = Math.hypot(dx, dy);
-      if (this.lastX > -9999 && moved > 1.5) {
-        // Snap harder the faster the pointer is moving, so a decisive sweep
-        // redirects the jet immediately but a twitch barely nudges it.
-        const k = Math.min(1, dt * (6 + moved * 0.6));
-        this.x += (dx / moved - this.x) * k;
-        this.y += (dy / moved - this.y) * k;
-        const m = Math.hypot(this.x, this.y) || 1;
-        this.x /= m;
-        this.y /= m;
-      }
-      this.lastX = pointer.x;
-      this.lastY = pointer.y;
-    },
-    reset() {
-      this.lastX = this.lastY = -10000;
-    },
-    /** Full reset for `Tool.reset`: forget the direction as well. */
-    hardReset() {
-      this.x = defaultX;
-      this.y = defaultY;
-      this.reset();
-    },
-  };
-}
 
 /**
  * A spot the hammer is working on. The page doesn't give way on the first
@@ -163,7 +65,11 @@ export const hammer: Tool = {
         x: e.x,
         y: e.y,
         hits: 0,
-        needed: 1 + Math.floor(Math.random() * 4),
+        needed: Math.min(
+          6,
+          1 +
+            Math.floor(Math.random() * 4 + Math.max(0, engine.materialAt(e.x, e.y).toughness - 1)),
+        ),
         scale: 0.8 + Math.random() * 0.4,
       };
       sites.push(site);
@@ -260,6 +166,41 @@ export const hammer: Tool = {
   },
 };
 
+/** The bright filament down the barrel line. Every shot leaves one, hit or miss. */
+function tracer(engine: DestroyerEngineApi, x: number, y: number, angle: number) {
+  engine.spawnParticle({
+    kind: "streak",
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    life: 0,
+    maxLife: 0.07,
+    size: 7,
+    angle,
+    len: -(150 + Math.random() * 160),
+  });
+}
+
+/** A shell out of the ejection port on the barrel's right side. */
+function ejectCasing(engine: DestroyerEngineApi, x: number, y: number, aim: Vec2) {
+  const speed = 140 + Math.random() * 110;
+  engine.spawnParticle({
+    kind: "casing",
+    x: x - aim.y * 8,
+    y: y + aim.x * 8,
+    vx: -aim.y * speed,
+    vy: aim.x * speed - 80,
+    life: 0,
+    maxLife: 1.6,
+    size: 3,
+    angle: Math.random() * TAU,
+    spin: 18,
+    bounce: 0.5,
+    restY: y + 120 + Math.random() * 160,
+  });
+}
+
 function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) {
   const sx = x + (Math.random() - 0.5) * spread;
   const sy = y + (Math.random() - 0.5) * spread;
@@ -270,39 +211,13 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
   // jitter per shot — the gun wanders, the physics doesn't.
   const aim = engine.toolAim;
   const incoming = Math.atan2(aim.y, aim.x) + (Math.random() - 0.5) * 0.16;
-  // Casings kick out of the ejection port on the barrel's right side.
-  const eject = 140 + Math.random() * 110;
 
   // A round fired into the void hits nothing: the gun still barks and kicks
   // and ejects its casing — that all happens at the muzzle — but there is no
   // impact. The tracer vanishes through the hole and the night keeps it.
   if (!engine.onPage(sx, sy)) {
-    engine.spawnParticle({
-      kind: "streak",
-      x: sx,
-      y: sy,
-      vx: 0,
-      vy: 0,
-      life: 0,
-      maxLife: 0.07,
-      size: 7,
-      angle: incoming,
-      len: -(150 + Math.random() * 160),
-    });
-    engine.spawnParticle({
-      kind: "casing",
-      x: sx - aim.y * 8,
-      y: sy + aim.x * 8,
-      vx: -aim.y * eject,
-      vy: aim.x * eject - 80,
-      life: 0,
-      maxLife: 1.6,
-      size: 3,
-      angle: Math.random() * TAU,
-      spin: 18,
-      bounce: 0.5,
-      restY: sy + 120 + Math.random() * 160,
-    });
+    tracer(engine, sx, sy, incoming);
+    ejectCasing(engine, sx, sy, aim);
     engine.shake(3, Math.cos(incoming), Math.sin(incoming));
     engine.sound.shot();
     return;
@@ -310,26 +225,18 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
 
   // Dress the rim first, then punch clean through the real page content —
   // order matters: punching last keeps the hole genuinely transparent.
-  drawBulletHole(engine.surfaceCtx, sx, sy, 0.9 + Math.random() * 0.4);
-  engine.content?.punch(sx, sy, 5);
+  const material = engine.materialAt(sx, sy);
+  const penetrates = material.toughness < 2;
+  drawBulletHole(engine.surfaceCtx, sx, sy, penetrates ? 0.9 + Math.random() * 0.4 : 0.65);
+  if (penetrates) engine.content?.punch(sx, sy, 5);
+  else drawCrack(engine.surfaceCtx, sx, sy, 0.45);
   // A round is a perfectly good fly-swatter.
   engine.squashBugs(sx, sy, 12);
 
   // The round came from somewhere — from the gun: a tracer streak down the
   // barrel line, and a muzzle flare aligned with it, sell the shot as
   // travelling rather than just appearing.
-  engine.spawnParticle({
-    kind: "streak",
-    x: sx,
-    y: sy,
-    vx: 0,
-    vy: 0,
-    life: 0,
-    maxLife: 0.07,
-    size: 7,
-    angle: incoming,
-    len: -(150 + Math.random() * 160),
-  });
+  tracer(engine, sx, sy, incoming);
   engine.spawnParticle({
     kind: "flash",
     x: sx,
@@ -422,20 +329,7 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
     dustPuff(engine, sx, sy, 3, 8, 0.8);
     engine.sound.tink();
   }
-  engine.spawnParticle({
-    kind: "casing",
-    x: sx - aim.y * 8,
-    y: sy + aim.x * 8,
-    vx: -aim.y * eject,
-    vy: aim.x * eject - 80,
-    life: 0,
-    maxLife: 1.6,
-    size: 3,
-    angle: Math.random() * TAU,
-    spin: 18,
-    bounce: 0.5,
-    restY: sy + 120 + Math.random() * 160,
-  });
+  ejectCasing(engine, sx, sy, aim);
   debris(engine, sx, sy, 5);
   // Plaster: hangs in the air and settles long after the crack of the shot.
   dustPuff(engine, sx, sy, 6, 9);
@@ -492,10 +386,7 @@ export const gun: Tool & { cooldown: number; heldFor: number; smokeDebt: number 
       engine.shake(9);
     }
     // Powder smoke pouring off a barrel that is not getting a chance to cool.
-    self.smokeDebt += dt * BARREL_SMOKE_PER_SECOND;
-    const puffs = Math.floor(self.smokeDebt);
-    self.smokeDebt -= puffs;
-    for (let i = 0; i < puffs; i++) {
+    self.smokeDebt = emit(self.smokeDebt, dt, BARREL_SMOKE_PER_SECOND, () => {
       engine.spawnParticle({
         kind: "smoke",
         x: pointer.x + (Math.random() - 0.5) * 30,
@@ -509,7 +400,7 @@ export const gun: Tool & { cooldown: number; heldFor: number; smokeDebt: number 
         drag: 1.9,
         phase: Math.random() * TAU,
       });
-    }
+    });
   },
 };
 
@@ -588,10 +479,7 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
 
     // The jet itself: fuel launched hard along the aim, dragged down and lifted
     // by its own heat, so the spray fans into a cone that curls up at the tip.
-    self.blobDebt += dt * JET_BLOBS_PER_SECOND;
-    const blobs = Math.floor(self.blobDebt);
-    self.blobDebt -= blobs;
-    for (let i = 0; i < blobs; i++) {
+    self.blobDebt = emit(self.blobDebt, dt, JET_BLOBS_PER_SECOND, () => {
       const a = Math.atan2(aim.y, aim.x) + (Math.random() - 0.5) * 0.62;
       const speed = 300 + Math.random() * 380;
       engine.spawnParticle({
@@ -606,13 +494,10 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
         gravity: -260,
         drag: 3.6,
       });
-    }
+    });
 
     // Jet sparks streaming from the nozzle for feedback.
-    self.emberDebt += dt * JET_EMBERS_PER_SECOND;
-    const embers = Math.floor(self.emberDebt);
-    self.emberDebt -= embers;
-    for (let i = 0; i < embers; i++) {
+    self.emberDebt = emit(self.emberDebt, dt, JET_EMBERS_PER_SECOND, () => {
       const a = Math.atan2(aim.y, aim.x) + (Math.random() - 0.5) * 1;
       engine.spawnParticle({
         kind: "ember",
@@ -626,7 +511,7 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
         gravity: -60,
         drag: 1.4,
       });
-    }
+    });
   },
 };
 
@@ -673,12 +558,9 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
     // follows — position and angle both come from projectile math — so the
     // hose reads as one curved rope of water leaving the nozzle, not a
     // straight laser of disconnected dashes.
-    self.streamDebt += dt * STREAM_PER_SECOND;
-    const segments = Math.floor(self.streamDebt);
-    self.streamDebt -= segments;
     const jetSpeed = 430;
     const jetGravity = 780;
-    for (let i = 0; i < segments; i++) {
+    self.streamDebt = emit(self.streamDebt, dt, STREAM_PER_SECOND, () => {
       const t = Math.random() * 0.28;
       const a = base + (Math.random() - 0.5) * 0.14;
       const vx = Math.cos(a) * jetSpeed;
@@ -697,13 +579,10 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
         angle: Math.atan2(vy, vx),
         len: 34 + Math.random() * 30,
       });
-    }
+    });
 
     // Mist blowing back off the nozzle.
-    self.mistDebt += dt * MIST_PER_SECOND;
-    const mist = Math.floor(self.mistDebt);
-    self.mistDebt -= mist;
-    for (let i = 0; i < mist; i++) {
+    self.mistDebt = emit(self.mistDebt, dt, MIST_PER_SECOND, () => {
       const a = base + (Math.random() - 0.5) * 2.4;
       engine.spawnParticle({
         kind: "steam",
@@ -716,15 +595,11 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
         size: 4 + Math.random() * 7,
         drag: 2.6,
       });
-    }
+    });
 
-    // Accumulate fractional droplets so the rate is the same at 60 and 120Hz.
     // The cone is tight at the nozzle — pressure holds a hose stream together —
     // and only fans out where the arc's droplets naturally spread.
-    self.spawnDebt += dt * DROPS_PER_SECOND;
-    const drops = Math.floor(self.spawnDebt);
-    self.spawnDebt -= drops;
-    for (let i = 0; i < drops; i++) {
+    self.spawnDebt = emit(self.spawnDebt, dt, DROPS_PER_SECOND, () => {
       const a = base + (Math.random() - 0.5) * 0.4;
       const speed = 330 + Math.random() * 280;
       engine.spawnParticle({
@@ -739,7 +614,7 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
         gravity: 780,
         drag: 1.1,
       });
-    }
+    });
     // Direct dowse under the nozzle so aiming at a flame feels responsive. The
     // reach is generous because the droplets now leave the nozzle fast enough to
     // arc clear over a fire sitting right under the cursor.
@@ -1069,13 +944,9 @@ export const broom: Tool & { sweepDebt: number } = {
   },
 };
 
-export const defaultTools: Tool[] = [
-  hammer,
-  gun,
-  flamethrower,
-  waterHose,
-  chainsaw,
-  paintball,
-  ...heavyTools,
-  broom,
-];
+/**
+ * The everyday tools without physics-heavy ordnance. Import this set from
+ * `desktop-destroyer/tools` when startup size matters more than having every
+ * effect available immediately.
+ */
+export const baseTools: Tool[] = [hammer, gun, flamethrower, waterHose, chainsaw, paintball, broom];

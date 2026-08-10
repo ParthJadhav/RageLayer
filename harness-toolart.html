@@ -22,18 +22,9 @@
 <h2>toolbar icons (baked)</h2>
 <div id="icons"></div>
 <script type="module">
-  import {blackHoleArt,
-    broomArt, 
-    bugsArt, chainsawArt, demolitionArt, flamethrowerArt, freezeArt, gunArt, 
-    hammerArt, lightningArt, paintballArt,rocketArt, toolIconDataUrl,waterHoseArt, 
-  } from "./dist/index.js";
+  import { defaultTools, toolIconDataUrl } from "./dist/index.js";
 
-  const arts = {
-    hammer: hammerArt, gun: gunArt, flamethrower: flamethrowerArt,
-    water: waterHoseArt, chainsaw: chainsawArt, paintball: paintballArt,
-    broom: broomArt, demolition: demolitionArt, rocket: rocketArt,
-    lightning: lightningArt, freeze: freezeArt, blackhole: blackHoleArt, bugs: bugsArt,
-  };
+  const arts = Object.fromEntries(defaultTools.map((tool) => [tool.id, tool.art]));
 
   const grid = document.getElementById("grid");
   const cells = [];
@@ -77,9 +68,10 @@
       ctx.fillStyle = "rgba(255,0,0,0.7)";
       ctx.fillRect(60.5, 42.5, 3, 3);
     }
-    requestAnimationFrame(frame);
+    if (qt === null) requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  if (qt === null) requestAnimationFrame(frame);
+  else frame(performance.now());
 
   const icons = document.getElementById("icons");
   for (const art of Object.values(arts)) {

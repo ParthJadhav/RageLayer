@@ -39,7 +39,7 @@
     </main>
 
     <script type="module">
-      import { Body, DestroyerEngine } from "../dist/index.js";
+      import { Body, defaultTools, DestroyerEngine } from "../dist/index.js";
 
       const SCENARIOS = ["idle", "particles", "fire", "physics", "mixed"];
       const TAU = Math.PI * 2;
@@ -126,7 +126,7 @@
       }
 
       function createEngine() {
-        return new DestroyerEngine({
+        const next = new DestroyerEngine({
           captureContent: false,
           soundEnabled: false,
           harvestElements: false,
@@ -137,6 +137,8 @@
           maxParticles: 1400,
           toolStyle: "emoji",
         });
+        next.registerTools(defaultTools);
+        return next;
       }
 
       let lastDisposeState = null;

@@ -40,15 +40,15 @@ export const QUALITY_PROFILES: Record<PerformanceQualityTier, QualityProfile> = 
     bodyScale: 0.8,
     physicsIterations: 6,
     flameLayers: 4,
-    postFX: true,
+    postFX: false,
   },
   low: {
     minFrameIntervalMs: 10,
-    particleScale: 0.45,
-    flameScale: 0.5,
-    bodyScale: 0.6,
+    particleScale: 0.32,
+    flameScale: 0.35,
+    bodyScale: 0.5,
     physicsIterations: 4,
-    flameLayers: 3,
+    flameLayers: 2,
     postFX: false,
   },
 };
@@ -63,6 +63,7 @@ export interface FrameMeasurement {
   entities: PerformanceEntities;
   quality: PerformanceQualityTier;
   pixelRatio: number;
+  effectsPixelRatio: number;
   targetFps: number;
 }
 
@@ -113,7 +114,12 @@ function memorySnapshot(): PerformanceSnapshot["memory"] {
 
 export function detectInitialQuality(mode: PerformanceQuality): PerformanceQualityTier {
   if (mode !== "auto") return mode;
-  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const capabilities = navigator as Navigator & {
+    deviceMemory?: number;
+    connection?: { saveData?: boolean };
+  };
+  if (capabilities.connection?.saveData) return "low";
+  const memory = capabilities.deviceMemory;
   const cores = navigator.hardwareConcurrency;
   if ((memory != null && memory <= 2) || (cores > 0 && cores <= 2)) return "low";
   if ((memory != null && memory <= 4) || (cores > 0 && cores <= 4)) return "balanced";
@@ -181,6 +187,7 @@ export class PerformanceMonitor {
       quality,
       qualityReason: this.qualityReason,
       pixelRatio: 1,
+      effectsPixelRatio: 1,
       entities: { particles: 0, flames: 0, bodies: 0, bugs: 0 },
       captureMs: null,
       memory: memorySnapshot(),
@@ -293,6 +300,7 @@ export class PerformanceMonitor {
       quality: measurement.quality,
       qualityReason: this.qualityReason,
       pixelRatio: measurement.pixelRatio,
+      effectsPixelRatio: measurement.effectsPixelRatio,
       entities: measurement.entities,
       captureMs: this.captureMs,
       memory: memorySnapshot(),
@@ -300,7 +308,17 @@ export class PerformanceMonitor {
     for (const callback of this.callbacks) callback(this.latest);
 
     if (!this.adaptive || this.count < 12) return null;
-    const sustainedOverload = cpu.p95 > targetBudget * 0.72;
+    const cpuOverload = cpu.p95 > targetBudget * 0.72;
+    // Canvas2D rasterization and texture uploads may complete after the JS call
+    // returns, so `frameMs` alone can under-report their cost. Treat cadence as
+    // engine pressure only when frames are persistently late *and* the engine
+    // itself is doing meaningful work; a busy host page with a cheap destroyer
+    // must not lower our quality.
+    const cadenceOverload =
+      frame.p95 > targetBudget * 1.8 &&
+      longFrames / Math.max(1, this.count) > 0.1 &&
+      cpu.p95 > targetBudget * 0.3;
+    const sustainedOverload = cpuOverload || cadenceOverload;
     const peakOverload = cpu.max > targetBudget * 1.2;
     if (sustainedOverload || peakOverload) {
       this.coolSamples = 0;
@@ -310,10 +328,19 @@ export class PerformanceMonitor {
       // sample before it is allowed to reduce visual quality.
       if (!sustainedOverload && ++this.peakSamples < 2) return null;
       this.peakSamples = 0;
-      const pressure = sustainedOverload
+      const pressure = cpuOverload
         ? `p95 engine cost ${cpu.p95.toFixed(1)}ms`
-        : `peak engine cost ${cpu.max.toFixed(1)}ms`;
+        : cadenceOverload
+          ? `p95 cadence ${frame.p95.toFixed(1)}ms with ${cpu.p95.toFixed(1)}ms engine cost`
+          : `peak engine cost ${cpu.max.toFixed(1)}ms`;
       if (measurement.quality === "high") {
+        const catastrophic =
+          cpu.p95 > targetBudget * 1.5 ||
+          (cadenceOverload && frame.p95 > targetBudget * 3 && cpu.p95 > targetBudget * 0.5);
+        if (catastrophic) {
+          this.qualityReason = `${pressure} required an immediate low-end profile`;
+          return "low";
+        }
         this.qualityReason = `${pressure} exceeded the safe share of a ${targetBudget.toFixed(1)}ms frame budget`;
         return "balanced";
       }

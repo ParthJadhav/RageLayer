@@ -17,13 +17,8 @@
  * transparent decals buffer) translate atop back to plain drawing themselves.
  */
 
+import { rand, TAU } from "./math";
 import { blit, sprites } from "./sprites";
-
-const TAU = Math.PI * 2;
-
-function rand(min: number, max: number) {
-  return min + Math.random() * (max - min);
-}
 
 /**
  * Stroke the current path twice: a dark shadow offset away from the light, then
