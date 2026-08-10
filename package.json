@@ -1,17 +1,21 @@
 {
   "name": "desktop-destroyer",
   "version": "0.3.0",
-  "description": "Desktop Destroyer for the web — an interactive overlay that lets visitors physically demolish any page. Real rigid-body debris, Voronoi shattering, DOM-aware demolition, fire that spreads, black holes, and a WebGL bloom pass.",
+  "description": "A framework-neutral web toy that lets visitors smash, burn, freeze, and physically demolish any page.",
   "license": "MIT",
   "author": "Parth Jadhav <jadhavparth99@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ParthJadhav/desktop-destroyer.git"
   },
-  "homepage": "https://github.com/ParthJadhav/desktop-destroyer#readme",
-  "bugs": "https://github.com/ParthJadhav/desktop-destroyer/issues",
+  "homepage": "https://parthjadhav.github.io/desktop-destroyer/",
+  "bugs": {
+    "url": "https://github.com/ParthJadhav/desktop-destroyer/issues"
+  },
   "type": "module",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/element/index.js"
+  ],
   "packageManager": "bun@1.3.9",
   "engines": {
     "node": ">=20"
@@ -21,39 +25,152 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./engine": {
+      "types": "./dist/engine/index.d.ts",
+      "import": "./dist/engine/index.js",
+      "default": "./dist/engine/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js",
+      "default": "./dist/tools/index.js"
+    },
+    "./tools/heavy": {
+      "types": "./dist/tools/heavy.d.ts",
+      "import": "./dist/tools/heavy.js",
+      "default": "./dist/tools/heavy.js"
+    },
+    "./tools/advanced": {
+      "types": "./dist/tools/advanced.d.ts",
+      "import": "./dist/tools/advanced.js",
+      "default": "./dist/tools/advanced.js"
+    },
+    "./lazy": {
+      "types": "./dist/lazy/index.d.ts",
+      "import": "./dist/lazy/index.js",
+      "default": "./dist/lazy/index.js"
+    },
+    "./loadouts": {
+      "types": "./dist/loadouts/index.d.ts",
+      "import": "./dist/loadouts/index.js",
+      "default": "./dist/loadouts/index.js"
+    },
+    "./sdk": {
+      "types": "./dist/sdk/index.d.ts",
+      "import": "./dist/sdk/index.js",
+      "default": "./dist/sdk/index.js"
     },
     "./react": {
       "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
       "default": "./dist/react/index.js"
+    },
+    "./vue": {
+      "types": "./dist/vue/index.d.ts",
+      "import": "./dist/vue/index.js",
+      "default": "./dist/vue/index.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "import": "./dist/svelte/index.js",
+      "default": "./dist/svelte/index.js"
+    },
+    "./element": {
+      "types": "./dist/element/index.d.ts",
+      "import": "./dist/element/index.js",
+      "default": "./dist/element/index.js"
+    },
+    "./toolbar": {
+      "types": "./dist/toolbar/index.d.ts",
+      "import": "./dist/toolbar/index.js",
+      "default": "./dist/toolbar/index.js"
     },
     "./package.json": "./package.json"
   },
+  "typesVersions": {
+    "*": {
+      "react": [
+        "./dist/react/index.d.ts"
+      ],
+      "vue": [
+        "./dist/vue/index.d.ts"
+      ],
+      "svelte": [
+        "./dist/svelte/index.d.ts"
+      ],
+      "engine": [
+        "./dist/engine/index.d.ts"
+      ],
+      "tools": [
+        "./dist/tools/index.d.ts"
+      ],
+      "tools/heavy": [
+        "./dist/tools/heavy.d.ts"
+      ],
+      "tools/advanced": [
+        "./dist/tools/advanced.d.ts"
+      ],
+      "lazy": [
+        "./dist/lazy/index.d.ts"
+      ],
+      "loadouts": [
+        "./dist/loadouts/index.d.ts"
+      ],
+      "sdk": [
+        "./dist/sdk/index.d.ts"
+      ],
+      "element": [
+        "./dist/element/index.d.ts"
+      ],
+      "toolbar": [
+        "./dist/toolbar/index.d.ts"
+      ]
+    }
+  },
   "files": [
     "dist",
-    "src",
     "README.md",
-    "LICENSE"
+    "CHANGELOG.md",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "overrides": {
+    "vite": "6.4.3"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
     "test": "bun test",
+    "test:coverage": "bun test --coverage && node scripts/check-coverage.mjs",
+    "test:browser": "bun run build && node scripts/browser-test.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:consumers": "tsc -p tests/fixtures/consumer/tsconfig.json && tsc -p tests/fixtures/consumer/tsconfig.node16.json",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "check:package": "publint && attw --pack . --profile esm-only",
-    "check": "bun run typecheck && bun run lint && bun test && bun run build && bun run check:package",
+    "audit": "bun audit",
+    "check:package": "node scripts/check-dist.mjs && publint && attw --pack . --profile esm-only",
+    "check": "bun run typecheck && bun run lint && bun run test:coverage && bun run build && bun run typecheck:consumers && bun run check:package",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "node scripts/build-docs.mjs",
+    "docs:preview": "vitepress preview docs",
     "benchmark": "bun run build && node scripts/benchmark.mjs",
     "benchmark:low-end": "bun run build && node scripts/benchmark.mjs --cpu 6",
-    "profile:effects": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,broom",
-    "profile:effects:low-end": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,broom --cpu 6",
+    "profile:effects": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,wrecking-ball,sticky-bombs,glitch-gun,broom",
+    "profile:effects:low-end": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,wrecking-ball,sticky-bombs,glitch-gun,broom --cpu 6",
     "memory:check": "bun run build && node scripts/benchmark.mjs --scenarios idle --duration 250 --warmup 100 --leak-cycles 80",
     "screenshots": "bun run build && node scripts/screenshots.mjs",
     "changeset": "changeset",
     "version": "changeset version",
-    "prepublishOnly": "tsdown"
+    "release": "bun run check && changeset publish",
+    "prepack": "bun run build"
   },
   "keywords": [
     "canvas",
@@ -68,17 +185,24 @@
     "webgl",
     "bloom",
     "interactive",
-    "react"
+    "react",
+    "vue",
+    "svelte",
+    "javascript"
   ],
   "peerDependencies": {
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "vue": ">=3.3"
   },
   "peerDependenciesMeta": {
     "react": {
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "vue": {
       "optional": true
     }
   },
@@ -87,13 +211,19 @@
     "@biomejs/biome": "^2.4.0",
     "@changesets/changelog-github": "^0.7.0",
     "@changesets/cli": "^2.29.5",
+    "@happy-dom/global-registrator": "^20.11.2",
+    "@napi-rs/canvas": "^1.0.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.11.2",
+    "html-to-image": "^1.11.13",
     "publint": "^0.3.14",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsdown": "^0.22.14",
-    "typescript": "^7.0.2"
-  },
-  "dependencies": {
-    "html-to-image": "^1.11.13"
+    "typescript": "^7.0.2",
+    "vite": "6.4.3",
+    "vitepress": "^1.6.4",
+    "vue": "^3.5.41"
   }
 }

@@ -1,3 +1,6 @@
+import type { ComboEvent, ComboTrackerOptions, InteractionKind } from "./combos";
+import type { HistoryOptions, HistoryState } from "./history";
+import type { MaterialDefinition, MaterialSystem } from "./materials";
 import type { SurfaceParams } from "./surface";
 
 export type { SurfaceParams };
@@ -273,7 +276,10 @@ export interface PerformanceSnapshot {
   estimatedDroppedFrames: number;
   quality: PerformanceQualityTier;
   qualityReason: string;
+  /** Device/capture backing ratio used by the destructible page. */
   pixelRatio: number;
+  /** Backing ratio used by transient effects and pointer tool art. */
+  effectsPixelRatio: number;
   entities: PerformanceEntities;
   /** Most recent page-capture duration, or null before capture. */
   captureMs: number | null;
@@ -299,7 +305,14 @@ export interface DestroyerOptions {
   /** Element the overlay attaches to. Defaults to document.body. */
   target?: HTMLElement;
   zIndex?: number;
+  /** Procedural WebAudio effects. Defaults to false so visitors opt in. */
   soundEnabled?: boolean;
+  /**
+   * Disable camera shake and nonessential UI transitions. `"system"` (the
+   * default) follows `prefers-reduced-motion`; pass a boolean to override it.
+   * Tool and physics motion remain because they are the product's core output.
+   */
+  reducedMotion?: boolean | "system";
   /** Rendering profile. `auto` (default) adapts from measured frame cost. */
   quality?: PerformanceQuality;
   /** Runtime telemetry and adaptive-quality settings. Pass false to disable metrics. */
@@ -310,6 +323,14 @@ export interface DestroyerOptions {
    * tool art. See `ToolStyle`.
    */
   toolStyle?: ToolStyle;
+  /** Scale of procedural tool models at the pointer. Clamped to 0.5..2; default 1. */
+  toolScale?: number;
+  /** Suspend animation, simulation, and looped audio while the document is hidden. Default true. */
+  pauseWhenHidden?: boolean;
+  /** Additional or overriding material definitions used by `[data-dd-material]` regions. */
+  materials?: Iterable<MaterialDefinition>;
+  /** Cross-tool combo detection. Pass false to disable or options to tune its bounds. */
+  combos?: boolean | ComboTrackerOptions;
   /** Hard cap on simultaneous flames (fire spread respects this). */
   maxFlames?: number;
   maxParticles?: number;
@@ -358,6 +379,16 @@ export interface DestroyerOptions {
    */
   captureFilter?(node: Node): boolean;
   /**
+   * Called when part of the engine degrades — capture failed, the text mask
+   * could not be built, and so on. Nothing here throws, so this is the only
+   * way a host can notice and report that visitors are getting a reduced
+   * experience.
+   *
+   * Registering a handler (here or via `onError`) also silences the matching
+   * `console.warn`, so a host that reports these does not get them twice.
+   */
+  onError?(error: EngineError): void;
+  /**
    * Simulate torn-off chunks of the page as rigid bodies that tumble, collide
    * and pile up at the bottom of the viewport. Default true; turning it off
    * leaves every tool working, just without the debris.
@@ -371,6 +402,13 @@ export interface DestroyerOptions {
    * browser has no usable WebGL context.
    */
   postFX?: boolean;
+  /**
+   * Maximum backing-store pixel ratio for transient effects and tool art.
+   * Defaults to 1 because supersampling the soft effects layer multiplies its
+   * Canvas2D-to-WebGL upload cost without improving the captured page itself.
+   * Set up to 2 when visual supersampling matters more than frame rate.
+   */
+  effectsPixelRatio?: number;
   /**
    * Record the document-space rect of every heading/paragraph/image/card before
    * the DOM is hidden, so the demolition tool can knock real page elements
@@ -397,6 +435,11 @@ export interface DestroyerOptions {
    * torn edges.
    */
   textMask?: boolean;
+  /**
+   * Retain reversible destruction checkpoints. Disabled by default because a
+   * full-page snapshot can be large; `true` uses bounded defaults.
+   */
+  history?: boolean | HistoryOptions;
 }
 
 /** Destructive operations on the rasterized page content. */
@@ -422,6 +465,18 @@ export interface DestroyerEngineApi {
    */
   readonly surfaceCtx: CanvasRenderingContext2D;
   readonly fxCtx: CanvasRenderingContext2D;
+  /** Material registry and the pre-capture map of `[data-dd-material]` regions. */
+  readonly materials: MaterialSystem;
+  materialAt(x: number, y: number): MaterialDefinition;
+  /** Record a tool interaction and trigger any matching bounded combo. */
+  signalInteraction(kind: InteractionKind, x: number, y: number): ComboEvent[];
+  onCombo(callback: (event: ComboEvent) => void): () => void;
+  readonly historyState: HistoryState;
+  /** Save the current persistent page state as an undo checkpoint. */
+  checkpoint(label?: string): boolean;
+  undo(): boolean;
+  redo(): boolean;
+  clearHistory(): void;
   /** Real-content destruction ops; null until the page capture is ready. */
   readonly content: ContentApi | null;
   /** Latest once-per-second runtime measurement. */
@@ -504,6 +559,17 @@ export interface DestroyerEngineApi {
    * blow, not just vibrate it.
    */
   shake(strength?: number, dirX?: number, dirY?: number): void;
+  /** Pull loose rigid-body debris toward a document point. Returns the number affected. */
+  pullDebris(x: number, y: number, radius: number, strength: number, dt: number): number;
+  /** Launch the nearest loose chunk. Returns false when no debris is in range. */
+  launchDebris(
+    x: number,
+    y: number,
+    radius: number,
+    dirX: number,
+    dirY: number,
+    speed: number,
+  ): boolean;
   clear(): void;
   random(): number;
 
@@ -571,4 +637,41 @@ export interface SoundApi {
   loop(name: "fire" | "water" | "saw" | "flamethrower" | "void", gain: number): void;
 }
 
-export type EngineEvent = "toolchange" | "clear" | "dispose" | "statuschange";
+export type EngineEvent =
+  | "toolchange"
+  | "clear"
+  | "dispose"
+  | "statuschange"
+  | "pausechange"
+  | "historychange"
+  | "error";
+
+/**
+ * Which part of the engine degraded.
+ *
+ * Every one of these is survivable — the toy keeps working with less — which
+ * is exactly why they are worth reporting: nothing throws, so without this
+ * channel a host has no way to tell that visitors are silently getting the
+ * overlay-only experience.
+ */
+export type EngineErrorScope =
+  /** Page capture failed; damage falls back to an overlay over the live DOM. */
+  | "capture"
+  /** Live mode was unavailable or failed; snapshot mode is used instead. */
+  | "live-capture"
+  /** A live re-capture failed; the previous capture stays on screen. */
+  | "live-refresh"
+  /** Page furniture could not be measured; the demolition tool has no targets. */
+  | "element-harvest"
+  /** The text mask could not be built; the shader shades type uniformly. */
+  | "text-mask"
+  /** The document is taller than the capture cap; content below stays intact. */
+  | "page-height";
+
+export interface EngineError {
+  scope: EngineErrorScope;
+  /** Human-readable summary of what stopped working, and what happens now. */
+  message: string;
+  /** The underlying failure, when there was one. */
+  cause?: unknown;
+}

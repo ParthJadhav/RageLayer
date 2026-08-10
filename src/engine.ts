@@ -1,4 +1,5 @@
 import { SoundEngine } from "./audio";
+import { BugSwarm } from "./bugs-sim";
 import {
   DD_IGNORE_ATTR,
   defaultCaptureFilter,
@@ -6,9 +7,13 @@ import {
   pickPixelRatio,
   resolvePageBackdrop,
 } from "./capture";
-import { ContentLayer } from "./content";
-import { drawPaintStreak, drawScorch } from "./decals";
+import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
+import { type ContentCheckpoint, ContentLayer } from "./content";
+import { atopAsOver } from "./ctx-proxy";
+import { drawPaintStreak } from "./decals";
 import { elementAt, elementsInBand, harvestElements, type PageElement } from "./elements";
+import { type FieldSnapshot, ScalarField } from "./fields";
+import { FlameField } from "./flames";
 import {
   type ChunkSource,
   convexHull,
@@ -17,7 +22,18 @@ import {
   shardBudget,
   voronoiCells,
 } from "./fracture";
+import {
+  drawAccretionDisc,
+  drawAimCursor,
+  drawEventHorizon,
+  drawFlame,
+  FxPainter,
+} from "./fx-render";
+import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
 import { LiveContentSource, supportsLiveCapture } from "./live";
+import { type MaterialDefinition, MaterialSystem } from "./materials";
+import { TAU } from "./math";
+import { ParticleSystem, type ParticleWorld } from "./particles";
 import {
   detectInitialQuality,
   PerformanceMonitor,
@@ -26,7 +42,7 @@ import {
 } from "./performance";
 import { MAX_BODIES, PhysicsWorld } from "./physics";
 import { PostFX } from "./postfx";
-import { blit, blitRect, blitStreak, clearSpriteCache, sprites } from "./sprites";
+import { blit, clearSpriteCache, sprites } from "./sprites";
 import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
 import { buildTextMask } from "./textmask";
 import { polygonArea2 } from "./topology";
@@ -36,6 +52,8 @@ import type {
   ContentApi,
   DestroyerEngineApi,
   DestroyerOptions,
+  EngineError,
+  EngineErrorScope,
   EngineEvent,
   ExplodeOptions,
   Flame,
@@ -49,22 +67,22 @@ import type {
   Vec2,
 } from "./types";
 
-const TAU = Math.PI * 2;
-
 /** Engines currently alive in this document — refcount for the sprite cache. */
 let liveEngines = 0;
 
 const MAX_CAPTURE_HEIGHT = 12000;
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
 const FX_MARGIN = 120;
+/** Soft transient effects default to CSS-pixel resolution; hosts can explicitly supersample. */
+const DEFAULT_FX_DPR = 1;
+/** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
+const HEAT_SCALE = 8;
 /**
  * Frost is tracked on a coarse document-wide grid rather than per pixel: the
  * only questions asked of it are "does fire take here" and "does this shatter
  * like glass", and both are regional.
  */
 const FROST_CELL = 32;
-/** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
-const HEAT_SCALE = 8;
 /**
  * Wood-fuel grid resolution, CSS px per cell.
  *
@@ -75,25 +93,6 @@ const HEAT_SCALE = 8;
  * it", both regional, same reasoning as the frost grid.
  */
 const FUEL_CELL = 26;
-/** Crawling-bug population cap. */
-const MAX_BUGS = 36;
-
-/** One crawling bug: position, heading, and an appetite timer. */
-interface BugState {
-  x: number;
-  y: number;
-  /** Heading, radians. */
-  a: number;
-  speed: number;
-  size: number;
-  ttl: number;
-  /** Countdown to the next bite taken out of the page. */
-  chew: number;
-  /** Countdown to the next deliberate change of direction. */
-  turn: number;
-  seed: number;
-}
-
 /**
  * Radius (CSS px) around the cursor re-shaded every frame a tool is held down.
  *
@@ -105,6 +104,15 @@ interface BugState {
  * land further out (paint splashes, lightning channels) call `markSurface`.
  */
 const TOOL_DECAL_REACH = 96;
+
+interface EngineHistoryEntry extends DestructionHistoryEntry {
+  content: ContentCheckpoint | null;
+  damage: HTMLCanvasElement | null;
+  frost: FieldSnapshot | null;
+  fuel: FieldSnapshot | null;
+  destruction: number;
+  takenElements: boolean[];
+}
 
 /**
  * DestroyerEngine owns the overlay DOM, the rAF loop, pointer input, and all
@@ -126,49 +134,23 @@ const TOOL_DECAL_REACH = 96;
  *   transform; particles are simulated in document coordinates and the canvas
  *   transform maps them into view.
  */
-/**
- * Wrap a context so `source-atop` degrades to plain drawing.
- *
- * Decals hard-code `source-atop` — a mark is damage to the page, so it can only
- * exist where page pixels do (see decals.ts). The overlay damage canvas has no
- * page pixels at all: it is a transparent sheet over the intact DOM, used when
- * capture is off, and atop against it would draw nothing. There is also no void
- * to respect there — the page underneath is whole — so the translation loses
- * nothing. Mirrors the atop→over translation `teeContexts` does for live
- * mode's transparent decals buffer.
- */
-function atopAsOver(ctx: CanvasRenderingContext2D): CanvasRenderingContext2D {
-  // Context methods are stable, so each is bound once. Rebinding inside the
-  // `get` trap allocated a fresh closure per property access, and decal-heavy
-  // tools touch the context hundreds of times a frame.
-  const bound = new Map<string | symbol, unknown>();
-  return new Proxy(ctx, {
-    get(target, prop) {
-      const cached = bound.get(prop);
-      if (cached !== undefined) return cached;
-      const value = Reflect.get(target, prop);
-      if (typeof value !== "function") return value;
-      const fn = value.bind(target);
-      bound.set(prop, fn);
-      return fn;
-    },
-    set(target, prop, value) {
-      Reflect.set(
-        target,
-        prop,
-        prop === "globalCompositeOperation" && value === "source-atop" ? "source-over" : value,
-      );
-      return true;
-    },
-  });
-}
-
 export class DestroyerEngine implements DestroyerEngineApi {
+  readonly materials = new MaterialSystem();
+  private comboTracker: ComboTracker | null;
+  private comboListeners = new Set<(event: ComboEvent) => void>();
+  private errorListeners = new Set<(error: EngineError) => void>();
+  private lastError: EngineError | null = null;
+  /** Keyboard aiming cursor, in document coordinates. */
+  private aimCursor: Vec2 | null = null;
+  private applyingCombo = false;
+  private readonly history: DestructionHistory<EngineHistoryEntry> | null;
+  private restoringHistory = false;
   readonly container: HTMLDivElement;
   readonly sound = new SoundEngine();
   /** Rigid-body debris: chunks of page that have physically come off. */
   readonly physics: PhysicsWorld;
-  flames: Flame[] = [];
+  /** Fire and the wood-fuel grid it consumes. */
+  private readonly fire = new FlameField();
 
   /** Document-space rects of the real page's furniture (see `elements.ts`). */
   pageElements: PageElement[] = [];
@@ -191,28 +173,30 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private _fxCtx: CanvasRenderingContext2D;
   /** The damage canvas only gets a backing store once something draws on it. */
   private damageReady = false;
-  private particles: Particle[] = [];
-  /**
-   * Live "flash"/"jet" particles. Kinds never mutate after spawn, so exact
-   * bookkeeping at the few lifecycle sites replaces the full-array scans the
-   * post-FX demand and bloom checks used to make every frame.
-   */
-  private flashJetCount = 0;
-  /** Round-robin slot to recycle when the particle cap is reached. */
-  private recycleCursor = 0;
-  /**
-   * Flat x,y,vx triplets for splashes queued during the particle step. The
-   * incoming horizontal velocity rides along so splashback leaves the impact
-   * biased downstream, the way water actually glances off a surface.
-   */
-  private pendingSplashes: number[] = [];
-  /** Paint drips that finished sliding this frame and owe the page a streak. */
-  private pendingStamps: Particle[] = [];
-  /** Per-frame render buckets, reused to keep the render path allocation-free. */
-  private bucketWet: Particle[] = [];
-  private bucketPuff: Particle[] = [];
-  private bucketBit: Particle[] = [];
-  private bucketHot: Particle[] = [];
+  /** Every transient effect: sparks, smoke, water, drips, flying page shards. */
+  private readonly particles = new ParticleSystem();
+  /** What the particle step reaches for outside itself; built once. */
+  private readonly particleWorld: ParticleWorld = {
+    onPage: (x, y) => this.onPage(x, y),
+    flameCount: () => this.fire.count,
+    dowse: (x, y, radius, amount) => this.dowseFlames(x, y, radius, amount),
+    stampPaintRun: (p) => {
+      drawPaintStreak(
+        this.surfaceCtx,
+        p.x,
+        p.y,
+        p.len ?? 8,
+        p.size,
+        p.color ?? "#e63946",
+        p.color2,
+      );
+      // Splashes land wherever the paint flew, not under the cursor.
+      this.contentLayer?.markSurface(p.x, p.y, (p.len ?? 8) + p.size);
+    },
+    tink: () => this.sound.tink(),
+  };
+  /** Drawing for the effects layer; owns the per-frame render buckets. */
+  private readonly fx = new FxPainter();
   private tools = new Map<string, Tool>();
   private activeTool: Tool | null = null;
   private pointer: Vec2 = { x: -1000, y: -1000 };
@@ -241,6 +225,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private kickX = 0;
   private kickY = 0;
   private shakeRoll = 0;
+  /** Resolved once at mount from the explicit option or the OS preference. */
+  private reducedMotion = false;
   /**
    * 0..1 running total of how wrecked the page is, fed by every `shake()` (which
    * every destructive tool already calls, scaled by how hard it hit). Drives the
@@ -248,10 +234,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
    */
   private destruction = 0;
   private vignetteShown = -1;
-  /** Rate gates so repeated impacts don't stack into a buzz. */
-  private nextTink = 0;
-  private nextHiss = 0;
-  private nextPop = 0;
   /**
    * Rate gate for debris-landing dust. A single chunk thudding down gets its
    * puff; a 150-body rain gets a sparse drizzle of them instead of a dust
@@ -264,6 +246,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   /** Viewport size the fx canvas is currently sized for. */
   private fxW = 0;
   private fxH = 0;
+  /** Effects have an independent DPR cap; page capture and damage retain full fidelity. */
+  private fxDpr = 1;
   private viewportH = 0;
   private fxOffsetX = -1;
   private fxOffsetY = -1;
@@ -286,8 +270,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private originX = 0;
   private originY = 0;
   private disposed = false;
+  private pausedByHost = false;
+  private pausedByVisibility = false;
+  private activePointerId: number | null = null;
   private listeners = new Map<EngineEvent, Set<() => void>>();
   private resizeTimer = 0;
+  private resizeObserver: ResizeObserver | null = null;
   private capturing = false;
   private captureFilter: (node: Node) => boolean;
   /** Non-null only while live mode is actually in use. */
@@ -315,21 +303,29 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private heatCtx: CanvasRenderingContext2D | null = null;
   /** Whether the heat field has anything in it (skips an upload when cold). */
   private heatLevel = 0;
+  /** Cell-centre page test, hoisted so freezing allocates no closure per call. */
+  private readonly onPageCell = (x: number, y: number) => this.onPage(x, y);
   /** Coarse frost grid over the document; lazily allocated on first freeze. */
-  private frost: Float32Array | null = null;
-  private frostCols = 0;
-  private frostRows = 0;
+  private readonly frost = new ScalarField({
+    cell: FROST_CELL,
+    max: 1,
+    initial: 0,
+    outside: "zero",
+  });
   private _singularity: Singularity | null = null;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
   /** Countdown to the next page element the singularity rips loose. */
   private singularityFeed = 0;
   /** Wood fuel per grid cell, 0..255. Built lazily at the first flame. */
-  private fuel: Uint8Array | null = null;
-  private fuelCols = 0;
-  private fuelRows = 0;
+  private readonly fuel = new ScalarField({
+    cell: FUEL_CELL,
+    max: 255,
+    initial: 255,
+    outside: "edge",
+  });
   /** Crawling bugs eating the page. */
-  private bugs: BugState[] = [];
+  private readonly bugs = new BugSwarm();
   /** Fractional accumulator for infalling-matter strands. */
   private spaghettiDebt = 0;
   /** Elements still queued to fall during a `collapse()`. */
@@ -346,13 +342,30 @@ export class DestroyerEngine implements DestroyerEngineApi {
       | "liveRefreshMs"
       | "physics"
       | "postFX"
+      | "effectsPixelRatio"
       | "harvestElements"
       | "textMask"
       | "toolStyle"
+      | "pauseWhenHidden"
     >
-  >;
+  > & { toolScale: number };
 
   constructor(options: DestroyerOptions = {}) {
+    if (options.materials) {
+      for (const material of options.materials) this.materials.register(material);
+    }
+    this.comboTracker =
+      options.combos === false
+        ? null
+        : new ComboTracker(typeof options.combos === "object" ? options.combos : undefined);
+    this.history =
+      options.history === undefined || options.history === false
+        ? null
+        : new DestructionHistory(typeof options.history === "object" ? options.history : undefined);
+    this.reducedMotion =
+      options.reducedMotion === true ||
+      (options.reducedMotion !== false &&
+        (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false));
     this.qualityMode = options.quality ?? "auto";
     this.qualityTier = detectInitialQuality(this.qualityMode);
     this.qualityProfile = QUALITY_PROFILES[this.qualityTier];
@@ -375,9 +388,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
       liveRefreshMs: options.liveRefreshMs ?? 1000,
       physics: options.physics ?? true,
       postFX: options.postFX ?? true,
+      effectsPixelRatio: Math.min(2, Math.max(0.5, options.effectsPixelRatio ?? DEFAULT_FX_DPR)),
       harvestElements: options.harvestElements ?? true,
       textMask: options.textMask ?? true,
       toolStyle: options.toolStyle ?? "3d",
+      toolScale: Math.min(2, Math.max(0.5, options.toolScale ?? 1)),
+      pauseWhenHidden: options.pauseWhenHidden ?? true,
     };
     if (options.surface === false) this.surfaceShading = false;
     else if (options.surface) {
@@ -389,13 +405,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
       gravity: options.gravity,
       iterations: this.qualityProfile.physicsIterations,
     });
-    this.physics.setBodyLimit(Math.max(24, Math.round(MAX_BODIES * this.qualityProfile.bodyScale)));
+    this.applyEntityLimits();
     // Asked for live on a browser without the flag: record it up front so the
     // toolbar can say *why* it is in snapshot mode.
     this._liveUnavailable = this.opts.captureMode === "live" && !supportsLiveCapture();
     this.captureFilter = options.captureFilter ?? defaultCaptureFilter;
-    this.sound.enabled = options.soundEnabled ?? true;
+    // Registered before the constructor's `captureContent()` call, so a host
+    // that passes `onError` sees capture failures — the most likely failure of
+    // all, and the one that happens before it could subscribe afterwards.
+    if (options.onError) this.errorListeners.add(options.onError);
+    this.sound.enabled = options.soundEnabled ?? false;
     this.contentRoot = options.contentRoot ?? document.body;
+    this.materials.scan(this.contentRoot);
+    this.pausedByVisibility = this.opts.pauseWhenHidden && document.visibilityState === "hidden";
 
     this.container = document.createElement("div");
     this.container.setAttribute(DD_IGNORE_ATTR, "");
@@ -463,7 +485,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       pointerEvents: "none",
       transformOrigin: "0 0",
       willChange: "opacity, transform",
-      transition: "opacity 0.6s ease-out",
+      transition: this.reducedMotion ? "none" : "opacity 0.6s ease-out",
       background:
         "radial-gradient(ellipse 76% 70% at 50% 50%, rgba(0,0,0,0) 32%, rgba(0,0,0,0.45) 74%, rgba(0,0,0,0.88) 100%)",
     } satisfies Partial<CSSStyleDeclaration>);
@@ -485,15 +507,25 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // DOM is hidden behind the destroyed copy, put its visibility back so a
     // restored document is never blank.
     window.addEventListener("pagehide", this.onPageHide);
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(this.onObservedResize);
+      this.resizeObserver.observe(document.documentElement);
+      if (this.contentRoot !== document.documentElement) {
+        this.resizeObserver.observe(this.contentRoot);
+      }
+    }
 
     this.container.addEventListener("pointerdown", this.onPointerDown);
     this.container.addEventListener("pointermove", this.onPointerMove);
     window.addEventListener("pointerup", this.onPointerUp);
+    window.addEventListener("pointercancel", this.onPointerCancel);
     this.container.addEventListener("pointerleave", this.onPointerLeave);
     this.container.addEventListener("contextmenu", this.onContextMenu);
 
     this.lastTime = performance.now();
-    this.requestFrame();
+    if (!this.paused) this.requestFrame();
 
     // Refcount the process-wide sprite cache: `dispose` frees it only when the
     // last engine goes away, so overlapping engines never rebuild mid-flight.
@@ -519,6 +551,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   get fxCtx() {
     return this._fxCtx;
   }
+  get flames(): Flame[] {
+    return this.fire.list;
+  }
   get surfaceCtx() {
     // `toolCtx`, not `ctx`: in live mode it tees every mark into the decals
     // buffer as well, which is what lets a crack outlive the next base refresh.
@@ -533,6 +568,55 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
   onPerformance(callback: (snapshot: PerformanceSnapshot) => void): () => void {
     return this.monitor.onSample(callback);
+  }
+
+  get historyState(): HistoryState {
+    return this.history?.state ?? { canUndo: false, canRedo: false, undoDepth: 0, redoDepth: 0 };
+  }
+
+  /**
+   * Whether undo/redo was enabled for this engine.
+   *
+   * Distinct from `historyState.canUndo`: history that is on but still empty
+   * looks identical from the state alone, and a toolbar needs to show its
+   * undo controls (disabled) from the start rather than having them appear
+   * after the first blow.
+   */
+  get historyEnabled(): boolean {
+    return this.history !== null;
+  }
+
+  checkpoint(label?: string): boolean {
+    if (!this.history || this.disposed || this.restoringHistory) return false;
+    if (!this.history.canStore(this.estimateHistoryPixelCost())) return false;
+    if (!this.history.push(this.createHistoryEntry(label))) return false;
+    this.emit("historychange");
+    return true;
+  }
+
+  undo(): boolean {
+    if (!this.history?.state.canUndo) return false;
+    const target = this.history.undo(this.createHistoryEntry("redo"));
+    if (!target) return false;
+    this.restoreHistoryEntry(target);
+    target.dispose();
+    this.emit("historychange");
+    return true;
+  }
+
+  redo(): boolean {
+    if (!this.history?.state.canRedo) return false;
+    const target = this.history.redo(this.createHistoryEntry("undo"));
+    if (!target) return false;
+    this.restoreHistoryEntry(target);
+    target.dispose();
+    this.emit("historychange");
+    return true;
+  }
+
+  clearHistory() {
+    this.history?.clear();
+    this.emit("historychange");
   }
 
   /**
@@ -555,6 +639,65 @@ export class DestroyerEngine implements DestroyerEngineApi {
    */
   onPage(x: number, y: number, threshold = 0.3): boolean {
     return this.pageOpacityAt(x, y) >= threshold;
+  }
+
+  materialAt(x: number, y: number): MaterialDefinition {
+    return this.materials.at(x, y);
+  }
+
+  signalInteraction(kind: InteractionKind, x: number, y: number): ComboEvent[] {
+    if (!this.comboTracker || this.applyingCombo) return [];
+    const events = this.comboTracker.record(kind, x, y);
+    for (const event of events) {
+      this.applyingCombo = true;
+      try {
+        this.applyCombo(event);
+      } finally {
+        this.applyingCombo = false;
+      }
+      for (const callback of this.comboListeners) callback(event);
+    }
+    return events;
+  }
+
+  onCombo(callback: (event: ComboEvent) => void): () => void {
+    this.comboListeners.add(callback);
+    return () => this.comboListeners.delete(callback);
+  }
+
+  /**
+   * Subscribe to degradation reports — capture failure, a missing text mask,
+   * an unmeasurable layout. None of these throw, so this is the only way a
+   * host can tell that visitors are getting a reduced experience.
+   *
+   * While at least one handler is registered the matching `console.warn` is
+   * suppressed, so a host that forwards these to its own logging does not see
+   * every failure twice.
+   */
+  onError(callback: (error: EngineError) => void): () => void {
+    this.errorListeners.add(callback);
+    return () => this.errorListeners.delete(callback);
+  }
+
+  /**
+   * Report a survivable failure to the host, or to the console if nobody is
+   * listening. `emit("error")` fires as well so plain `on()` subscribers
+   * (framework adapters that only need to re-render) see it too.
+   */
+  private reportError(scope: EngineErrorScope, message: string, cause?: unknown) {
+    this.lastError = { scope, message, ...(cause === undefined ? {} : { cause }) };
+    if (this.errorListeners.size === 0) {
+      if (cause === undefined) console.warn(`[desktop-destroyer] ${message}`);
+      else console.warn(`[desktop-destroyer] ${message}`, cause);
+    } else {
+      for (const callback of this.errorListeners) callback(this.lastError);
+    }
+    this.emit("error");
+  }
+
+  /** The most recent degradation, or null if nothing has gone wrong. */
+  get error(): EngineError | null {
+    return this.lastError;
   }
 
   /**
@@ -614,6 +757,21 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.tools.set(tool.id, tool);
   }
 
+  /** Register a toolset in one operation; useful with the split and lazy entry points. */
+  registerTools(tools: Iterable<Tool>): this {
+    for (const tool of tools) this.registerTool(tool);
+    return this;
+  }
+
+  /** Remove a tool at runtime. An active tool is safely released and deselected first. */
+  unregisterTool(id: string): boolean {
+    const tool = this.tools.get(id);
+    if (!tool) return false;
+    if (this.activeTool === tool) this.setTool(null);
+    tool.reset?.();
+    return this.tools.delete(id);
+  }
+
   getTools(): Tool[] {
     return [...this.tools.values()];
   }
@@ -625,10 +783,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   setTool(id: string | null) {
     const next = id ? (this.tools.get(id) ?? null) : null;
     if (next === this.activeTool) return;
-    if (this.pointerDown && this.activeTool?.onUp) {
-      this.activeTool.onUp(this, { ...this.pointer, dx: 0, dy: 0, buttons: 0 });
-    }
-    this.pointerDown = false;
+    if (this.pointerDown) this.endPointer();
     this.activeTool = next;
     this.container.style.pointerEvents = next ? "auto" : "none";
     // A tool with drawn art becomes its own cursor; the CSS one would be a
@@ -645,20 +800,104 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.requestFrame();
   }
 
+  private createHistoryEntry(label?: string): EngineHistoryEntry {
+    const content = this.contentLayer?.createCheckpoint() ?? null;
+    let damage: HTMLCanvasElement | null = null;
+    if (this.damageReady) {
+      damage = document.createElement("canvas");
+      damage.width = this.damageCanvas.width;
+      damage.height = this.damageCanvas.height;
+      damage.getContext("2d")?.drawImage(this.damageCanvas, 0, 0);
+    }
+    const frost = this.frost.snapshot();
+    const fuel = this.fire.snapshotFuel();
+    const pixelCost =
+      (content?.pixelCost ?? 0) +
+      (damage ? damage.width * damage.height : 0) +
+      this.fieldPixelCost();
+    return {
+      label,
+      timestamp: Date.now(),
+      pixelCost,
+      content,
+      damage,
+      frost,
+      fuel,
+      destruction: this.destruction,
+      takenElements: this.pageElements.map((element) => element.taken),
+      dispose() {
+        content?.dispose();
+        if (damage) {
+          damage.width = 0;
+          damage.height = 0;
+        }
+      },
+    };
+  }
+
+  private estimateHistoryPixelCost(): number {
+    return (
+      (this.contentLayer?.checkpointPixelCost ?? 0) +
+      (this.damageReady ? this.damageCanvas.width * this.damageCanvas.height : 0) +
+      this.fieldPixelCost()
+    );
+  }
+
+  /** The frost and fuel grids' share of a checkpoint, in notional RGBA pixels. */
+  private fieldPixelCost(): number {
+    return Math.ceil((this.frost.byteLength + this.fire.fuelBytes) / 4);
+  }
+
+  private restoreHistoryEntry(entry: EngineHistoryEntry) {
+    this.restoringHistory = true;
+    try {
+      if (entry.content) this.contentLayer?.restoreCheckpoint(entry.content);
+      else this.contentLayer?.restoreAll();
+      if (entry.damage) {
+        this.ensureDamage();
+        this._damageCtx.save();
+        this._damageCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this._damageCtx.clearRect(0, 0, this.damageCanvas.width, this.damageCanvas.height);
+        this._damageCtx.drawImage(entry.damage, 0, 0);
+        this._damageCtx.restore();
+      } else if (this.damageReady) {
+        this._damageCtx.clearRect(0, 0, this.w, this.h);
+      }
+      this.frost.restore(entry.frost);
+      this.fire.restoreFuel(entry.fuel);
+      this.destruction = entry.destruction;
+      for (let i = 0; i < this.pageElements.length; i++) {
+        this.pageElements[i].taken = entry.takenElements[i] ?? false;
+      }
+      this.fire.clear();
+      this.particles.clear();
+      this.physics.clear();
+      this.bugs.clear();
+      this._singularity = null;
+      this.collapseQueue.length = 0;
+      this.comboTracker?.clear();
+      for (const tool of this.tools.values()) tool.reset?.();
+      this.requestFrame();
+    } finally {
+      this.restoringHistory = false;
+    }
+  }
+
   clear() {
+    if (!this.restoringHistory) this.checkpoint("clear");
     if (this.damageReady) this._damageCtx.clearRect(0, 0, this.w, this.h);
     this.contentLayer?.restoreAll();
-    this.flames = [];
-    this.particles.length = 0;
-    this.flashJetCount = 0;
+    this.fire.clear();
+    this.particles.clear();
     this.destruction = 0;
     this.physics.clear();
-    this.frost = null;
+    this.frost.release();
     // Repaired page, fresh wood: the fuel comes back with the pixels.
-    this.fuel?.fill(255);
-    this.bugs = [];
+    this.fire.refuel();
+    this.bugs.clear();
     this._singularity = null;
     this.collapseQueue.length = 0;
+    this.comboTracker?.clear();
     // Rockets in flight, queued restrikes, hammer sites: a repaired page owes
     // nothing to the destruction that was still in progress.
     for (const tool of this.tools.values()) tool.reset?.();
@@ -670,13 +909,28 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   setSound(enabled: boolean) {
     this.sound.enabled = enabled;
-    if (!enabled) {
-      this.sound.loop("fire", 0);
-      this.sound.loop("water", 0);
-      this.sound.loop("saw", 0);
-      this.sound.loop("flamethrower", 0);
-      this.sound.loop("void", 0);
-    }
+    if (!enabled) this.silenceLoops();
+  }
+
+  /** True while explicitly paused or automatically suspended in a hidden tab. */
+  get paused(): boolean {
+    return this.pausedByHost || this.pausedByVisibility;
+  }
+
+  /** Freeze simulation and rendering without discarding the current destruction state. */
+  pause() {
+    if (this.pausedByHost || this.disposed) return;
+    const wasPaused = this.paused;
+    this.pausedByHost = true;
+    this.applyPauseTransition(wasPaused);
+  }
+
+  /** Continue from a host-requested pause. Hidden tabs remain automatically suspended. */
+  resume() {
+    if (!this.pausedByHost || this.disposed) return;
+    const wasPaused = this.paused;
+    this.pausedByHost = false;
+    this.applyPauseTransition(wasPaused);
   }
 
   /**
@@ -761,7 +1015,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("scroll", this.onScroll);
     window.removeEventListener("pagehide", this.onPageHide);
+    document.removeEventListener("visibilitychange", this.onVisibilityChange);
     window.removeEventListener("pointerup", this.onPointerUp);
+    window.removeEventListener("pointercancel", this.onPointerCancel);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     this.container.removeEventListener("pointerdown", this.onPointerDown);
     this.container.removeEventListener("pointermove", this.onPointerMove);
     this.container.removeEventListener("pointerleave", this.onPointerLeave);
@@ -778,6 +1036,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.container.remove();
     this.container.replaceChildren();
     this.sound.dispose();
+    this.history?.clear();
     this.emit("dispose");
     this.listeners.clear();
     this.monitor.dispose();
@@ -800,26 +1059,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.damageReady = false;
     this.fxPainted = false;
 
-    this.flames.length = 0;
-    this.particles.length = 0;
-    this.flashJetCount = 0;
-    this.pendingSplashes.length = 0;
-    this.pendingStamps.length = 0;
-    this.bucketWet.length = 0;
-    this.bucketPuff.length = 0;
-    this.bucketBit.length = 0;
-    this.bucketHot.length = 0;
-    this.bugs.length = 0;
+    this.fire.clear();
+    this.particles.clear();
+    this.fx.clear();
+    this.bugs.clear();
     this.collapseQueue.length = 0;
     this.pageElements.length = 0;
+    this.comboTracker?.clear();
+    this.comboTracker = null;
+    this.comboListeners.clear();
+    this.errorListeners.clear();
+    this.materials.clearRegions();
     // Module-level tool state (in-flight rockets, restrikes, strike sites)
     // must not survive into whatever engine registers these tools next.
     for (const tool of this.tools.values()) tool.reset?.();
     this.tools.clear();
     this.activeTool = null;
     this.pointerDown = false;
-    this.frost = null;
-    this.fuel = null;
+    this.activePointerId = null;
+    this.frost.release();
+    this.fire.dispose();
     this._singularity = null;
     this.contentRoot = null;
     this.prevRootVisibility = null;
@@ -854,6 +1113,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       const doc = this.docSize();
       const geometry = measureCapture(this.contentRoot, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
       const backdrop = resolvePageBackdrop(this.contentRoot);
+      this.materials.scan(this.contentRoot);
 
       // Map the page's furniture while the real layout still exists — after
       // `enterContentMode` there is nothing left to measure.
@@ -862,7 +1122,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
           this.pageElements = harvestElements(this.contentRoot, this.captureFilter);
         } catch (err) {
           // A hostile layout shouldn't cost the user the whole toy.
-          console.warn("[desktop-destroyer] element harvest failed, demolition disabled:", err);
+          this.reportError("element-harvest", "element harvest failed, demolition disabled", err);
           this.pageElements = [];
         }
       }
@@ -877,8 +1137,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
           // a broken one, so drop to the snapshot path.
           if (this.opts.captureMode === "live") {
             this._liveUnavailable = true;
-            console.warn(
-              "[desktop-destroyer] live capture failed, falling back to snapshot mode:",
+            this.reportError(
+              "live-capture",
+              "live capture failed, falling back to snapshot mode",
               err,
             );
           }
@@ -912,19 +1173,22 @@ export class DestroyerEngine implements DestroyerEngineApi {
           );
         } catch (err) {
           // Purely an enhancement; a page that resists measurement still works.
-          console.warn("[desktop-destroyer] text mask failed, shading uniformly:", err);
+          this.reportError("text-mask", "text mask failed, shading uniformly", err);
         }
       }
 
       // Content canvas sits between the void backdrop and the damage canvas.
       this.container.insertBefore(layer.canvas, this.damageCanvas);
       this.enterContentMode();
+      // A fresh full capture can have different geometry and invalidates old
+      // pixel checkpoints. Live refreshes do not pass through this path.
+      if (this.history) this.clearHistory();
       this.setStatus(live ? "live" : "snapshot");
       if (live) this.scheduleRefresh();
     } catch (err) {
       // Capture can fail (e.g. CORS-tainted resources). Fall back to
       // overlay-only damage rather than breaking the toy.
-      console.warn("[desktop-destroyer] page capture failed, using overlay mode:", err);
+      this.reportError("capture", "page capture failed, using overlay mode", err);
       this.contentLayer?.dispose();
       this.contentLayer = null;
       this.setStatus("idle");
@@ -987,6 +1251,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (document.hidden) return;
     this.refreshing = true;
     try {
+      this.materials.scan(this.contentRoot);
       const doc = this.docSize();
       const geometry = measureCapture(this.contentRoot, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
       // A reflow invalidates the whole capture; the resize handler owns that.
@@ -1035,7 +1300,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
         60_000,
         Math.max(this.opts.liveRefreshMs * 4, this.refreshBackoffMs * 2),
       );
-      console.warn("[desktop-destroyer] live refresh failed, keeping last capture:", err);
+      this.reportError("live-refresh", "live refresh failed, keeping last capture", err);
     } finally {
       this.refreshing = false;
     }
@@ -1069,121 +1334,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   spawnParticle(p: Particle) {
-    const limit = Math.max(
-      64,
-      Math.round(this.opts.maxParticles * this.qualityProfile.particleScale),
-    );
-    const hot = p.kind === "flash" || p.kind === "jet";
-    if (this.particles.length >= limit) {
-      // At the cap, recycle a slot round-robin instead of `shift()`-ing the
-      // array (which memmoves every remaining particle, on every spawn, at the
-      // exact moment the system is already saturated). Render order is decided
-      // by particle kind, not array order, so the swap is invisible.
-      this.recycleCursor = (this.recycleCursor + 1) % this.particles.length;
-      const old = this.particles[this.recycleCursor];
-      if (old.kind === "flash" || old.kind === "jet") this.flashJetCount--;
-      if (hot) this.flashJetCount++;
-      this.particles[this.recycleCursor] = p;
-      this.requestFrame();
-      return;
-    }
-    if (hot) this.flashJetCount++;
-    this.particles.push(p);
+    this.particles.spawn(p);
     this.requestFrame();
-  }
-
-  /** Effective flame cap after quality scaling — every spawn path shares it. */
-  private flameLimit() {
-    return Math.max(4, Math.round(this.opts.maxFlames * this.qualityProfile.flameScale));
   }
 
   spawnFlame(x: number, y: number, intensity = 0.35) {
-    this.ensureFuel();
-    // Frost fights fire. A well-iced region simply refuses to light, which is
-    // what makes the freeze ray a defensive tool rather than a reskinned brush.
-    const frost = this.frostAt(x, y);
-    if (frost > 0.15) {
-      intensity *= Math.max(0, 1 - frost * 1.4);
-      this.meltFrost(x, y, 40);
-      this.spawnParticle({
-        kind: "steam",
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 40,
-        vy: -50 - Math.random() * 50,
-        life: 0,
-        maxLife: 0.7 + Math.random() * 0.6,
-        size: 8 + Math.random() * 10,
-        drag: 1.5,
-      });
-      if (intensity <= 0.02) return;
-    }
-    // Fire needs a page to burn. Where the content is mostly gone the void
-    // shows through, and the void is not a place — a flame floating on it
-    // reads as a rendering bug, not as fire. Strict on purpose: half-eroded
-    // ground barely holds a flame's footprint, and the render mask would clip
-    // most of it away anyway.
-    if (this.contentLayer?.ready && this.contentLayer.opacityAt(x, y) < 0.35) return;
-    // Merge into a nearby flame instead of stacking duplicates.
-    for (const f of this.flames) {
-      if (Math.hypot(f.x - x, f.y - y) < f.radius * 0.6) {
-        f.intensity = Math.min(1, f.intensity + intensity * 0.5);
-        return;
-      }
-    }
-    if (this.flames.length >= this.flameLimit()) return;
-    this.flames.push({
-      x,
-      y,
-      intensity,
-      radius: 17 + Math.random() * 21,
-      age: 0,
-      seed: Math.random() * 1000,
-      spreadCooldown: 1.5 + Math.random() * 2,
-      scorchCooldown: 0.4,
-      popCooldown: 1 + Math.random() * 3,
-    });
-    this.requestFrame();
+    if (this.fire.spawn(this, x, y, intensity)) this.requestFrame();
   }
 
   dowseFlames(x: number, y: number, radius: number, amount: number): number {
-    let hits = 0;
-    for (const f of this.flames) {
-      // Called once per water droplet per frame against every flame, so the
-      // reject path has to be cheap: axis test first, then squared distance —
-      // no `Math.hypot`, no square root.
-      const reach = radius + f.radius;
-      const dx = f.x - x;
-      if (dx > reach || dx < -reach) continue;
-      const dy = f.y - y;
-      if (dy > reach || dy < -reach) continue;
-      if (dx * dx + dy * dy < reach * reach) {
-        f.intensity -= amount;
-        hits++;
-        if (Math.random() < 0.4) {
-          // Quenching steam boils *upward and outward* off the flame, so it gets
-          // real lateral spread rather than the near-vertical wisp it had.
-          this.spawnParticle({
-            kind: "steam",
-            x: f.x + (Math.random() - 0.5) * f.radius * 1.4,
-            y: f.y - Math.random() * 10,
-            vx: (Math.random() - 0.5) * 90,
-            vy: -70 - Math.random() * 90,
-            life: 0,
-            maxLife: 1 + Math.random() * 1.1,
-            size: 10 + Math.random() * 18,
-            drag: 1.4,
-          });
-        }
-      }
-    }
-    // The hiss belongs to the *event* of water meeting fire, not to each of the
-    // hundred droplet/flame pairs that can register in a single frame.
-    if (hits > 0 && this.lastTime > this.nextHiss) {
-      this.nextHiss = this.lastTime + 260;
-      this.sound.hiss();
-    }
-    return hits;
+    return this.fire.dowse(this, this.lastTime, x, y, radius, amount);
   }
 
   eraseDamage(x: number, y: number, radius: number) {
@@ -1219,6 +1379,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
     this.meltFrost(x, y, radius, strength);
     this.markSurface(x, y, radius);
+    this.signalInteraction("water", x, y);
   }
 
   /** Knock chunks of real page content loose: hole + tumbling shards. */
@@ -1265,19 +1426,36 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   shake(strength = 6, dirX = 0, dirY = 0) {
-    this.shakeAmount = Math.max(this.shakeAmount, strength);
-    if (dirX !== 0 || dirY !== 0) {
-      const mag = Math.hypot(dirX, dirY) || 1;
-      this.kickX += (dirX / mag) * strength * 0.5;
-      this.kickY += (dirY / mag) * strength * 0.5;
+    if (!this.reducedMotion) {
+      this.shakeAmount = Math.max(this.shakeAmount, strength);
+      if (dirX !== 0 || dirY !== 0) {
+        const mag = Math.hypot(dirX, dirY) || 1;
+        this.kickX += (dirX / mag) * strength * 0.5;
+        this.kickY += (dirY / mag) * strength * 0.5;
+      }
+      // A little roll on every hit: pure translation reads as a rattle, a tilt
+      // reads as the page taking the blow.
+      this.shakeRoll += (Math.random() - 0.5) * strength * 0.00035;
     }
-    // A little roll on every hit: pure translation reads as a rattle, a tilt
-    // reads as the page taking the blow.
-    this.shakeRoll += (Math.random() - 0.5) * strength * 0.00035;
     // Every destructive tool already calls shake(), scaled by how hard it hit —
     // which makes it the one honest measure of accumulated damage.
     this.destruction = Math.min(1, this.destruction + strength * 0.0012);
     this.requestFrame();
+  }
+
+  pullDebris(x: number, y: number, radius: number, strength: number, dt: number): number {
+    return this.opts.physics ? this.physics.pull(x, y, radius, strength, dt) : 0;
+  }
+
+  launchDebris(
+    x: number,
+    y: number,
+    radius: number,
+    dirX: number,
+    dirY: number,
+    speed: number,
+  ): boolean {
+    return this.opts.physics ? this.physics.launchNearest(x, y, radius, dirX, dirY, speed) : false;
   }
 
   // ── Physical destruction ──────────────────────────────────────────────────
@@ -1303,6 +1481,64 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   /**
+   * Where the keyboard cursor is, or null when nothing is aiming.
+   *
+   * Drawn by the engine rather than by the toolbar because it has to sit over
+   * the destruction, in document space, on the same canvas that scrolls with
+   * the page — a DOM element would have to chase all of that.
+   */
+  get aim(): Vec2 | null {
+    return this.aimCursor;
+  }
+
+  setAim(point: Vec2 | null) {
+    this.aimCursor = point ? { x: point.x, y: point.y } : null;
+    this.requestFrame();
+  }
+
+  /**
+   * Use the active tool at a document point without a pointing device.
+   *
+   * The toolbar is fully keyboard-operable, but the canvas is not: without
+   * this, a keyboard-only visitor can select the hammer and then do nothing
+   * with it. `strike` runs the same `onDown`/`onUp` pair a click produces, so
+   * a tool needs no special handling to be reachable this way.
+   *
+   * `holdMs` drives tools that do their work in `tick` while held — a
+   * flamethrower or a freeze ray needs to be on for a moment to do anything.
+   * The hold is simulated against the engine's own frame loop rather than
+   * being wall-clock, so it behaves the same on a slow machine.
+   *
+   * Returns false when there is no tool selected or the engine is paused.
+   */
+  strike(x: number, y: number, { holdMs = 0 }: { holdMs?: number } = {}): boolean {
+    const tool = this.activeTool;
+    if (!tool || this.paused || this.disposed) return false;
+
+    this.checkpoint(tool.id);
+    const event = { x, y, dx: 0, dy: 0, buttons: 1 };
+    this.pointer.x = x;
+    this.pointer.y = y;
+    this.lastPointer.x = x;
+    this.lastPointer.y = y;
+    this.artDownAt = performance.now() / 1000;
+    this.pointerDown = true;
+    tool.onDown?.(this, event);
+
+    if (holdMs > 0) {
+      const dt = 1 / 60;
+      const steps = Math.min(600, Math.round(holdMs / (dt * 1000)));
+      for (let i = 0; i < steps; i++) tool.tick?.(this, dt, true, this.pointer);
+    }
+
+    this.pointerDown = false;
+    this.artUpAt = performance.now() / 1000;
+    tool.onUp?.(this, { ...event, buttons: 0 });
+    this.requestFrame();
+    return true;
+  }
+
+  /**
    * Where chunk textures come from: the *visible* content canvas, not the
    * pristine base. A shard broken off a scorched, half-burnt region should
    * carry that damage with it as it falls.
@@ -1323,14 +1559,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   fracture(x: number, y: number, radius: number, options: FractureOptions = {}): number {
     // Anything crawling in the struck region is crushed along with it.
-    if (this.bugs.length > 0) this.squashBugs(x, y, radius);
+    if (this.bugs.count > 0) this.squashBugs(x, y, radius);
     const src = this.chunkSource;
     if (!src) return 0;
-    const icy = options.icy ?? this.frostAt(x, y) > 0.3;
+    const material = this.materialAt(x, y);
+    const icy = options.icy ?? (material.id === "ice" || this.frostAt(x, y) > 0.3);
     // Ice shatters finer and lighter than paper does.
-    const count = options.count ?? shardBudget(radius, icy ? 2.2 : 1.4);
+    const count =
+      options.count ?? shardBudget(radius, icy ? 2.2 : Math.max(0.55, 1.4 / material.toughness));
     const cells = voronoiCells(x, y, radius, count);
-    const power = options.power ?? 240;
+    const power = (options.power ?? 240) / Math.sqrt(material.density);
     const carve = new Path2D();
     const carvedCells: number[][] = [];
     let made = 0;
@@ -1346,8 +1584,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
         src,
         cell,
         {
-          density: icy ? 0.0011 : 0.0018,
-          restitution: icy ? 0.36 : 0.14,
+          density: (icy ? 0.0011 : 0.0018) * material.density,
+          restitution: icy ? 0.36 : Math.max(0.14, material.restitution),
           friction: icy ? 0.26 : 0.62,
           ttl: options.ttl ?? 10 + Math.random() * 8,
         },
@@ -1377,6 +1615,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       made++;
     }
     if (made === 0) return 0;
+    this.signalInteraction("impact", x, y);
 
     // The page loses exactly what the physics world gained.
     this.contentLayer?.carveShape(
@@ -1432,24 +1671,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   explode(x: number, y: number, radius: number, options: ExplodeOptions = {}) {
+    this.signalInteraction("explosion", x, y);
     const power = options.power ?? 560;
     // The blast reaches further than the crater; so does what it does to bugs.
-    if (this.bugs.length > 0) this.squashBugs(x, y, radius * 1.6);
+    if (this.bugs.count > 0) this.squashBugs(x, y, radius * 1.6);
     if (options.fracture !== false) {
       this.fracture(x, y, radius * 0.9, { power: power * 0.8, count: shardBudget(radius, 1.7) });
     }
     // Everything already loose gets thrown, including debris from earlier hits.
     this.physics.blast(x, y, radius * 2.2, power * 1.1);
-    for (const p of this.particles) {
-      const dx = p.x - x;
-      const dy = p.y - y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 > radius * radius * 6) continue;
-      const d = Math.sqrt(d2) || 1;
-      const f = (power * 2.2) / Math.max(40, d);
-      p.vx += (dx / d) * f;
-      p.vy += (dy / d) * f;
-    }
+    this.particles.blast(x, y, radius, power * 2.2);
     this.contentLayer?.char(x, y, radius * 1.7, 0.55);
 
     // Fireball: a white core, an expanding shock ring, then the boiling
@@ -1759,44 +1990,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   // ── Frost ─────────────────────────────────────────────────────────────────
 
-  private ensureFrost() {
-    if (this.frost) return;
-    this.frostCols = Math.max(1, Math.ceil(this.w / FROST_CELL));
-    this.frostRows = Math.max(1, Math.ceil(this.h / FROST_CELL));
-    this.frost = new Float32Array(this.frostCols * this.frostRows);
-  }
-
   freeze(x: number, y: number, radius: number, amount: number) {
-    this.ensureFrost();
-    this.paintFrost(x, y, radius, amount, true);
-  }
-
-  private paintFrost(x: number, y: number, radius: number, amount: number, surfaceOnly = false) {
-    const grid = this.frost!;
-    const c0 = Math.max(0, Math.floor((x - radius) / FROST_CELL));
-    const c1 = Math.min(this.frostCols - 1, Math.floor((x + radius) / FROST_CELL));
-    const r0 = Math.max(0, Math.floor((y - radius) / FROST_CELL));
-    const r1 = Math.min(this.frostRows - 1, Math.floor((y + radius) / FROST_CELL));
-    for (let r = r0; r <= r1; r++) {
-      for (let c = c0; c <= c1; c++) {
-        const dx = (c + 0.5) * FROST_CELL - x;
-        const dy = (r + 0.5) * FROST_CELL - y;
-        const d = Math.hypot(dx, dy);
-        if (d > radius) continue;
-        if (surfaceOnly && !this.onPage((c + 0.5) * FROST_CELL, (r + 0.5) * FROST_CELL)) continue;
-        const i = r * this.frostCols + c;
-        const next = grid[i] + amount * (1 - d / radius);
-        grid[i] = Math.max(0, Math.min(1, next));
-      }
-    }
+    this.frost.ensure(this.w, this.h);
+    // Rime belongs on the page, not floating in a hole.
+    this.frost.paintDisc(x, y, radius, amount, this.onPageCell);
+    this.signalInteraction("freeze", x, y);
   }
 
   frostAt(x: number, y: number): number {
-    if (!this.frost) return 0;
-    const c = Math.floor(x / FROST_CELL);
-    const r = Math.floor(y / FROST_CELL);
-    if (c < 0 || r < 0 || c >= this.frostCols || r >= this.frostRows) return 0;
-    return this.frost[r * this.frostCols + c];
+    return this.frost.at(x, y);
   }
 
   /**
@@ -1805,8 +2007,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * consumes it, and the flamethrower's jet does it deliberately.
    */
   meltFrost(x: number, y: number, radius: number, amount = 1) {
-    if (!this.frost) return;
-    this.paintFrost(x, y, radius, -amount);
+    this.frost.paintDisc(x, y, radius, -amount);
   }
 
   // ── Heat field (drives the post-processing shimmer) ───────────────────────
@@ -1830,6 +2031,99 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   // ── Internals ─────────────────────────────────────────────────────────────
 
+  private applyCombo(event: ComboEvent) {
+    const { x, y } = event;
+    const burst = (kind: Particle["kind"], count: number, color?: string) => {
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * TAU;
+        const speed = 60 + Math.random() * 180;
+        this.spawnParticle({
+          kind,
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 60,
+          life: 0,
+          maxLife: 0.45 + Math.random() * 0.65,
+          size: 2 + Math.random() * 5,
+          color,
+          gravity: kind === "steam" ? -35 : 260,
+          phase: Math.random() * TAU,
+        });
+      }
+    };
+
+    switch (event.id) {
+      case "steam-shock":
+        this.dowseFlames(x, y, 72, 0.55);
+        burst("steam", 12);
+        this.sound.hiss();
+        break;
+      case "flash-freeze":
+        this.freeze(x, y, 58, 0.65);
+        burst("ice", 14, "#dff7ff");
+        this.sound.freeze();
+        break;
+      case "conductive-surge":
+        burst("spark", 18, "#bdeaff");
+        this.squashBugs(x, y, 62);
+        this.sound.zap();
+        break;
+      case "thermal-shock":
+        this.fracture(x, y, 42, { power: 260, icy: true });
+        burst("ice", 10, "#e8fbff");
+        break;
+      case "volatile-corrosion":
+        this.explode(x, y, 42, { power: 390, incendiary: false });
+        burst("smoke", 10, "#8bcf65");
+        break;
+      case "orbital-bomb":
+        this.physics.blast(x, y, 180, 760);
+        this.shake(12);
+        break;
+      case "reality-overload":
+        burst("spark", 24, "#d68cff");
+        this.shake(15);
+        this.contentLayer?.char(x, y, 70, 0.35);
+        this.markSurface(x, y, 80);
+        break;
+    }
+    this.spawnParticle({
+      kind: "ring",
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0.5,
+      size: 76,
+    });
+  }
+
+  private applyPauseTransition(wasPaused: boolean) {
+    if (wasPaused === this.paused) return;
+    if (this.paused) {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      this.endPointer();
+      this.silenceLoops();
+    } else {
+      // Do not integrate the time spent suspended as one enormous simulation step.
+      this.lastTime = performance.now();
+      this.lastRenderedAt = 0;
+      this.requestFrame();
+    }
+    this.emit("pausechange");
+  }
+
+  private silenceLoops() {
+    this.sound.loop("fire", 0);
+    this.sound.loop("water", 0);
+    this.sound.loop("saw", 0);
+    this.sound.loop("flamethrower", 0);
+    this.sound.loop("void", 0);
+  }
+
   private emit(event: EngineEvent) {
     this.listeners.get(event)?.forEach((cb) => {
       cb();
@@ -1841,26 +2135,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.qualityTier = tier;
     this.qualityProfile = QUALITY_PROFILES[tier];
 
-    const particleLimit = Math.max(
-      64,
-      Math.round(this.opts.maxParticles * this.qualityProfile.particleScale),
-    );
-    if (this.particles.length > particleLimit) {
-      // Keep the newest effects. This runs only on a profile transition, never
-      // in the frame loop, so the one splice is preferable to ongoing churn.
-      this.particles.splice(0, this.particles.length - particleLimit);
-      this.recycleCursor %= this.particles.length;
-      let hot = 0;
-      for (const p of this.particles) {
-        if (p.kind === "flash" || p.kind === "jet") hot++;
-      }
-      this.flashJetCount = hot;
-    }
-    const flameLimit = this.flameLimit();
-    if (this.flames.length > flameLimit) this.flames.length = flameLimit;
+    this.applyEntityLimits();
+    this.setPostFXEnabled(this.opts.postFX && this.qualityProfile.postFX);
+  }
+
+  /** Push the current quality profile's caps down into each subsystem. */
+  private applyEntityLimits() {
+    this.particles.setLimit(this.opts.maxParticles * this.qualityProfile.particleScale);
+    this.fire.setLimit(this.opts.maxFlames * this.qualityProfile.flameScale);
     this.physics.setIterations(this.qualityProfile.physicsIterations);
     this.physics.setBodyLimit(Math.max(24, Math.round(MAX_BODIES * this.qualityProfile.bodyScale)));
-    this.setPostFXEnabled(this.opts.postFX && this.qualityProfile.postFX);
   }
 
   private ensurePostFX() {
@@ -1908,8 +2192,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     );
     if (height > MAX_CAPTURE_HEIGHT && !this.captureHeightWarned) {
       this.captureHeightWarned = true;
-      console.warn(
-        `[desktop-destroyer] document is ${Math.round(height)}px tall; the destructible surface is capped at ${MAX_CAPTURE_HEIGHT}px, so content below that stays intact.`,
+      this.reportError(
+        "page-height",
+        `document is ${Math.round(height)}px tall; the destructible surface is capped at ${MAX_CAPTURE_HEIGHT}px, so content below that stays intact`,
       );
     }
     return {
@@ -1939,13 +2224,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const width = document.documentElement.clientWidth;
     this.viewportH = window.innerHeight;
     const height = Math.min(this.viewportH + FX_MARGIN * 2, this.h + FX_MARGIN * 2);
+    const dpr = Math.min(this.dpr, this.opts.effectsPixelRatio);
     this.vignette.style.width = `${width}px`;
     this.vignette.style.height = `${this.viewportH}px`;
-    if (width === this.fxW && height === this.fxH) return;
+    if (width === this.fxW && height === this.fxH && dpr === this.fxDpr) return;
     this.fxW = width;
     this.fxH = height;
-    this.fxCanvas.width = Math.round(width * this.dpr);
-    this.fxCanvas.height = Math.round(height * this.dpr);
+    this.fxDpr = dpr;
+    this.fxCanvas.width = Math.round(width * dpr);
+    this.fxCanvas.height = Math.round(height * dpr);
     this.fxCanvas.style.width = `${width}px`;
     this.fxCanvas.style.height = `${height}px`;
     this.postfx?.resize(this.fxCanvas.width, this.fxCanvas.height, width, height);
@@ -1982,7 +2269,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.h = height;
     this.dpr = dpr;
     // The frost grid is indexed off the document size; a reflow invalidates it.
-    this.frost = null;
+    this.frost.release();
     this.container.style.height = `${height}px`;
     this.measureOrigin();
     this.resizeFx();
@@ -2009,6 +2296,18 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.exitContentMode();
   };
 
+  private onVisibilityChange = () => {
+    if (!this.opts.pauseWhenHidden || this.disposed) return;
+    const wasPaused = this.paused;
+    this.pausedByVisibility = document.visibilityState === "hidden";
+    this.applyPauseTransition(wasPaused);
+  };
+
+  /** Catch SPA reflows and asynchronously-loaded content that do not resize the viewport. */
+  private onObservedResize = () => {
+    if (!this.disposed) this.onWindowResize();
+  };
+
   private onWindowResize = () => {
     this.onScroll();
     this.resize();
@@ -2019,7 +2318,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = window.setTimeout(() => {
         if (this.disposed || !this.contentLayer) return;
-        if (this.contentLayer.width !== document.documentElement.clientWidth) {
+        const next = this.docSize();
+        if (this.contentLayer.width !== next.width || this.contentLayer.height !== next.height) {
           clearTimeout(this.refreshTimer);
           this.exitContentMode();
           this.contentLayer.ready = false;
@@ -2071,9 +2371,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    if (!this.activeTool || e.button !== 0) return;
+    if (!this.activeTool || e.button !== 0 || !e.isPrimary || this.paused) return;
     e.preventDefault();
+    this.checkpoint(this.activeTool.id);
     this.pointerDown = true;
+    this.activePointerId = e.pointerId;
+    try {
+      this.container.setPointerCapture?.(e.pointerId);
+    } catch {
+      // Older Safari builds can reject capture even though Pointer Events exist.
+    }
     this.artDownAt = performance.now() / 1000;
     this.lastPointer.x = this.lastPointer.y = -1000;
     // Always build the event (it updates this.pointer for tick-driven tools),
@@ -2084,22 +2391,41 @@ export class DestroyerEngine implements DestroyerEngineApi {
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (!this.activeTool) return;
+    if (!this.activeTool || !e.isPrimary) return;
+    if (this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
     const ev = this.toolEvent(e);
     this.activeTool.onMove?.(this, ev);
     this.requestFrame();
   };
 
   private onPointerUp = (e: PointerEvent) => {
-    if (!this.pointerDown) return;
-    this.pointerDown = false;
-    this.artUpAt = performance.now() / 1000;
-    const ev = this.toolEvent(e);
-    this.activeTool?.onUp?.(this, ev);
-    this.requestFrame();
+    this.endPointer(e);
   };
 
+  private onPointerCancel = (e: PointerEvent) => {
+    this.endPointer(e);
+  };
+
+  private endPointer(e?: PointerEvent) {
+    if (!this.pointerDown) return;
+    if (e && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+    this.pointerDown = false;
+    this.artUpAt = performance.now() / 1000;
+    const ev = e ? this.toolEvent(e) : { ...this.pointer, dx: 0, dy: 0, buttons: 0 };
+    this.activeTool?.onUp?.(this, ev);
+    if (this.activePointerId !== null) {
+      try {
+        this.container.releasePointerCapture?.(this.activePointerId);
+      } catch {
+        // Capture may already have been released by the browser on cancellation.
+      }
+    }
+    this.activePointerId = null;
+    this.requestFrame();
+  }
+
   private onPointerLeave = () => {
+    if (this.pointerDown) return;
     this.pointer.x = this.pointer.y = -1000;
     this.lastPointer.x = this.lastPointer.y = -1000;
     this.requestFrame();
@@ -2110,7 +2436,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   };
 
   private frame = (now: number) => {
-    if (this.disposed) return;
+    if (this.disposed || this.paused) return;
     this.raf = 0;
     this.monitor.observeRaf(now);
     const minFrameInterval = this.qualityProfile.minFrameIntervalMs;
@@ -2144,10 +2470,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.activeTool?.tick?.(this, dt, this.pointerDown, this.pointer);
     this.stepToolArt(dt);
     this.stepCollapse(dt);
-    this.stepFlames(dt);
-    this.stepBugs(dt);
+    this.fire.step(this, dt, this.lastTime);
+    this.destruction = Math.min(1, this.destruction + this.bugs.step(this, dt));
     this.stepSingularity(dt);
-    this.stepParticles(dt);
+    this.particles.step(dt, this.lastTime, this.particleWorld);
     this.stepPhysics(dt);
     const updateMs = performance.now() - updateStartedAt;
     // Safety net for decals painted straight into `surfaceCtx` by a tool, which
@@ -2181,13 +2507,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
       renderMs: Math.max(0, renderTotalMs - this.postFXFrameMs),
       postFXMs: this.postFXFrameMs,
       entities: {
-        particles: this.particles.length,
-        flames: this.flames.length,
+        particles: this.particles.count,
+        flames: this.fire.count,
         bodies: this.physics.count,
-        bugs: this.bugs.length,
+        bugs: this.bugs.count,
       },
       quality: this.qualityTier,
       pixelRatio: this.dpr,
+      effectsPixelRatio: this.fxDpr,
       targetFps,
     });
     if (recommendation && this.qualityMode === "auto") this.applyQuality(recommendation);
@@ -2196,16 +2523,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
   };
 
   private requestFrame() {
-    if (this.disposed || this.raf) return;
+    if (this.disposed || this.paused || this.raf) return;
     this.raf = requestAnimationFrame(this.frame);
   }
 
   private hasActiveWork() {
     return (
-      this.particles.length > 0 ||
-      this.flames.length > 0 ||
+      this.particles.count > 0 ||
+      this.fire.count > 0 ||
       this.physics.active ||
-      this.bugs.length > 0 ||
+      this.bugs.count > 0 ||
       this.collapseQueue.length > 0 ||
       !!this._singularity ||
       !!this.activeTool ||
@@ -2218,13 +2545,18 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   private hasPostFXDemand() {
     return (
-      this.flames.length > 0 ||
+      this.fire.count > 0 ||
       this.destruction > 0.016 ||
       !!this._singularity ||
-      this.flashJetCount > 0
+      this.particles.flashJetCount > 0
     );
   }
 
+  /**
+   * Smooth the pointer's motion for the drawn tool. Raw per-event deltas are
+   * far too jittery to pose from — a broom's bristles would buzz — so the art
+   * gets a low-passed velocity and, from it, a slow-turning aim direction.
+   */
   private resetHeat() {
     if (!this.postfxEnabled) {
       this.heatLevel = 0;
@@ -2242,11 +2574,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  /**
-   * Smooth the pointer's motion for the drawn tool. Raw per-event deltas are
-   * far too jittery to pose from — a broom's bristles would buzz — so the art
-   * gets a low-passed velocity and, from it, a slow-turning aim direction.
-   */
   private stepToolArt(dt: number) {
     const p = this.pointer;
     if (p.x <= -999) {
@@ -2283,6 +2610,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const art = this.activeTool!.art!;
     ctx.save();
     ctx.translate(this.pointer.x, this.pointer.y);
+    ctx.scale(this.opts.toolScale, this.opts.toolScale);
     art(ctx, {
       time,
       held: this.pointerDown,
@@ -2398,14 +2726,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
       if (nearest) this.dropElement(nearest, s.x, s.y);
     }
 
-    // Bugs unlucky enough to crawl inside the horizon are simply gone — no
-    // smear, no smoke; nothing comes back out of a black hole.
-    for (let i = this.bugs.length - 1; i >= 0; i--) {
-      const b = this.bugs[i];
-      const dx = b.x - s.x;
-      const dy = b.y - s.y;
-      if (dx * dx + dy * dy < r * r) this.bugs.splice(i, 1);
-    }
+    // Bugs unlucky enough to crawl inside the horizon are simply gone.
+    this.bugs.vanish(s.x, s.y, r);
 
     // Eat the page. Throttled because each bite repaints a document-sized
     // canvas, and sixty bites a second is sixty full-page repaints.
@@ -2415,19 +2737,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.contentLayer.punch(s.x, s.y, r * 0.92);
     }
 
-    // Loose particles spiral in. The tangential term is what turns a vacuum
-    // cleaner into something that looks like it has an accretion disc.
-    for (const p of this.particles) {
-      const dx = s.x - p.x;
-      const dy = s.y - p.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 > 810000) continue;
-      const d = Math.sqrt(d2) || 1;
-      const a = ((s.power * 30) / Math.max(3200, d2)) * dt;
-      p.vx += (dx / d) * a - (dy / d) * a * 0.55;
-      p.vy += (dy / d) * a + (dx / d) * a * 0.55;
-      if (d < r * 0.55) p.life = p.maxLife;
-    }
+    // Loose particles spiral in.
+    this.particles.attract(s.x, s.y, s.power, r * 0.55, dt);
 
     // A held singularity is a vacuum for wreckage: everything the page has
     // already shed gets hauled across the screen and destroyed at the horizon.
@@ -2478,111 +2789,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.heat(s.x, s.y, r * 2.4, 0.55 * s.charge);
   }
 
-  // ── Fuel ────────────────────────────────────────────────────────────────
-
-  private ensureFuel() {
-    const cols = Math.max(1, Math.ceil(this.w / FUEL_CELL));
-    const rows = Math.max(1, Math.ceil(this.h / FUEL_CELL));
-    if (this.fuel && cols === this.fuelCols && rows === this.fuelRows) return;
-    this.fuelCols = cols;
-    this.fuelRows = rows;
-    this.fuel = new Uint8Array(cols * rows).fill(255);
-  }
-
-  /** Remaining fuel under (x, y), 0..1. Unburnt page reads 1. */
-  private fuelAt(x: number, y: number): number {
-    if (!this.fuel) return 1;
-    const cx = Math.min(this.fuelCols - 1, Math.max(0, Math.floor(x / FUEL_CELL)));
-    const cy = Math.min(this.fuelRows - 1, Math.max(0, Math.floor(y / FUEL_CELL)));
-    return this.fuel[cy * this.fuelCols + cx] / 255;
-  }
-
-  /** Burn away fuel under (x, y) and a little in the surrounding cells. */
-  private consumeFuel(x: number, y: number, amount: number) {
-    this.ensureFuel();
-    const fuel = this.fuel!;
-    const cx = Math.min(this.fuelCols - 1, Math.max(0, Math.floor(x / FUEL_CELL)));
-    const cy = Math.min(this.fuelRows - 1, Math.max(0, Math.floor(y / FUEL_CELL)));
-    const i = cy * this.fuelCols + cx;
-    fuel[i] = Math.max(0, fuel[i] - amount);
-    // Neighbours dry out at a quarter rate: a fire burning through one board
-    // scorches the boards beside it before they catch.
-    for (const [nx, ny] of [
-      [cx - 1, cy],
-      [cx + 1, cy],
-      [cx, cy - 1],
-      [cx, cy + 1],
-    ] as const) {
-      if (nx < 0 || ny < 0 || nx >= this.fuelCols || ny >= this.fuelRows) continue;
-      const j = ny * this.fuelCols + nx;
-      fuel[j] = Math.max(0, fuel[j] - amount * 0.25);
-    }
-  }
-
   // ── Bugs ────────────────────────────────────────────────────────────────
 
   spawnBugs(x: number, y: number, count = 1) {
-    // A bug needs page to stand on. Released over the void it has nothing to
-    // crawl across or eat — so nothing is released, and nothing chirps.
-    if (!this.onPage(x, y, 0.5)) return;
-    const before = this.bugs.length;
-    for (let i = 0; i < count && this.bugs.length < MAX_BUGS; i++) {
-      this.bugs.push({
-        x: x + (Math.random() - 0.5) * 18,
-        y: y + (Math.random() - 0.5) * 18,
-        a: Math.random() * TAU,
-        speed: 26 + Math.random() * 38,
-        size: 3 + Math.random() * 2.2,
-        ttl: 25 + Math.random() * 30,
-        chew: Math.random() * 0.2,
-        turn: Math.random() * 1.5,
-        seed: Math.random() * TAU,
-      });
-    }
-    // At the population cap nothing was released — so nothing chirps either.
-    if (this.bugs.length === before) return;
-    this.sound.pop();
-    this.requestFrame();
+    if (this.bugs.spawn(this, x, y, count)) this.requestFrame();
   }
 
   squashBugs(x: number, y: number, radius: number): number {
-    let squashed = 0;
-    const r2 = radius * radius;
-    for (let i = this.bugs.length - 1; i >= 0; i--) {
-      const b = this.bugs[i];
-      const dx = b.x - x;
-      const dy = b.y - y;
-      if (dx * dx + dy * dy > r2) continue;
-      this.bugs.splice(i, 1);
-      squashed++;
-      // The smear a squashed bug leaves. Drawn through surfaceCtx so it
-      // persists like any other decal.
-      const ctx = this.surfaceCtx;
-      ctx.save();
-      // The smear is on the page, so it clips to the page — a bug squashed at
-      // a hole's rim leaves its mark on the rim, not floating in the void.
-      ctx.globalCompositeOperation = "source-atop";
-      ctx.fillStyle = "rgba(58, 44, 26, 0.85)";
-      for (let s = 0; s < 4; s++) {
-        const a = Math.random() * TAU;
-        const d = Math.random() * b.size * 1.6;
-        ctx.beginPath();
-        ctx.ellipse(
-          b.x + Math.cos(a) * d,
-          b.y + Math.sin(a) * d,
-          b.size * (0.5 + Math.random() * 0.7),
-          b.size * (0.3 + Math.random() * 0.4),
-          Math.random() * TAU,
-          0,
-          TAU,
-        );
-        ctx.fill();
-      }
-      ctx.restore();
-      this.markSurface(b.x, b.y, b.size * 4);
-    }
-    if (squashed > 0) this.sound.splat();
-    return squashed;
+    return this.bugs.squash(this, x, y, radius);
   }
 
   /**
@@ -2591,632 +2805,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * washed off the page rather than into it.
    */
   flushBugs(x: number, y: number, radius: number): number {
-    let flushed = 0;
-    const r2 = radius * radius;
-    for (let i = this.bugs.length - 1; i >= 0; i--) {
-      const b = this.bugs[i];
-      const dx = b.x - x;
-      const dy = b.y - y;
-      if (dx * dx + dy * dy > r2) continue;
-      this.bugs.splice(i, 1);
-      flushed++;
-      // The bug itself, tumbling downstream and off the heap...
-      this.spawnParticle({
-        kind: "debris",
-        x: b.x,
-        y: b.y,
-        vx: dx * 5 + (Math.random() - 0.5) * 90,
-        vy: 60 + Math.random() * 140,
-        life: 0,
-        maxLife: 0.9 + Math.random() * 0.5,
-        size: b.size,
-        color: "#3a2c1a",
-        angle: Math.random() * TAU,
-        spin: (Math.random() - 0.5) * 24,
-        bounce: 0.2,
-        restY: b.y + 180 + Math.random() * 220,
-      });
-      // ...in a burst of the water that took it.
-      for (let s = 0; s < 5; s++) {
-        const a = Math.random() * TAU;
-        this.spawnParticle({
-          kind: "water",
-          x: b.x,
-          y: b.y,
-          vx: Math.cos(a) * (60 + Math.random() * 120),
-          vy: Math.sin(a) * (60 + Math.random() * 120) - 40,
-          life: 0,
-          maxLife: 0.3 + Math.random() * 0.25,
-          size: 2 + Math.random() * 2,
-          gravity: 700,
-          drag: 1.1,
-        });
-      }
-    }
-    return flushed;
-  }
-
-  /**
-   * Bugs wander and eat. They live at engine level — like flames — so an
-   * infestation keeps gnawing while the user switches tools to fight it.
-   * And fight back they can: fire burns a bug that wanders into it, and every
-   * blast or fracture squashes whatever was underneath (see `explode`/`fracture`).
-   */
-  private stepBugs(dt: number) {
-    for (let i = this.bugs.length - 1; i >= 0; i--) {
-      const b = this.bugs[i];
-      // Fire kills: a bug that wanders into a burning region goes up with a
-      // wisp of smoke and a tiny scorch, no smear — it burned, it wasn't hit.
-      let burned = false;
-      for (const f of this.flames) {
-        const dx = f.x - b.x;
-        const dy = f.y - b.y;
-        if (f.intensity > 0.2 && dx * dx + dy * dy < f.radius * f.radius) {
-          burned = true;
-          break;
-        }
-      }
-      // Cold kills the other way: frost stiffens a bug — it slows, stops
-      // chewing (frozen page is too hard to gnaw) — and heavy rime freezes it
-      // solid where it stands. It comes apart as ice, not as a smear.
-      const chill = this.frost ? this.frostAt(b.x, b.y) : 0;
-      if (chill > 0.7) {
-        for (let s = 0; s < 6; s++) {
-          this.spawnParticle({
-            kind: "ice",
-            x: b.x,
-            y: b.y,
-            vx: (Math.random() - 0.5) * 120,
-            vy: -30 - Math.random() * 90,
-            life: 0,
-            maxLife: 0.5 + Math.random() * 0.5,
-            size: 1.2 + Math.random() * 2.2,
-            angle: Math.random() * TAU,
-            spin: (Math.random() - 0.5) * 20,
-            gravity: 260,
-          });
-        }
-        this.bugs.splice(i, 1);
-        continue;
-      }
-      if (burned) {
-        this.contentLayer?.char(b.x, b.y, b.size * 2.5, 0.3);
-        this.markSurface(b.x, b.y, b.size * 4);
-        this.spawnParticle({
-          kind: "smoke",
-          x: b.x,
-          y: b.y,
-          vx: (Math.random() - 0.5) * 20,
-          vy: -40 - Math.random() * 30,
-          life: 0,
-          maxLife: 0.8 + Math.random() * 0.5,
-          size: 5 + Math.random() * 4,
-          drag: 1.4,
-        });
-        this.bugs.splice(i, 1);
-        continue;
-      }
-      b.ttl -= dt;
-      if (b.ttl <= 0) {
-        // Burrows away with a puff rather than blinking out.
-        this.spawnParticle({
-          kind: "dust",
-          x: b.x,
-          y: b.y,
-          vx: 0,
-          vy: -12,
-          life: 0,
-          maxLife: 0.5,
-          size: 4,
-        });
-        this.bugs.splice(i, 1);
-        continue;
-      }
-      // Skittering: constant jitter plus an occasional decisive turn.
-      b.turn -= dt;
-      if (b.turn <= 0) {
-        b.turn = 0.5 + Math.random() * 1.6;
-        b.a += (Math.random() - 0.5) * 2.4;
-      }
-      b.a += (Math.random() - 0.5) * 3.4 * dt;
-      // A chilled bug moves like one: stiff, slow, and easier to catch.
-      const mobility = 1 - chill * 0.85;
-      b.x += Math.cos(b.a) * b.speed * mobility * dt;
-      b.y += Math.sin(b.a) * b.speed * mobility * dt;
-      // Turn back at the page edge instead of wandering into the void.
-      if (b.x < 4 || b.x > this.w - 4 || b.y < 4 || b.y > this.h - 4) {
-        b.a += Math.PI;
-        b.x = Math.max(4, Math.min(this.w - 4, b.x));
-        b.y = Math.max(4, Math.min(this.h - 4, b.y));
-      }
-      // Chewing: a small bite out of the page every fraction of a second, which
-      // over a wander becomes the classic gnawed-trail look. The same timer
-      // doubles as the hole check — a bug at the rim of a hole turns back onto
-      // solid page, because it eats the site and the void has nothing to eat.
-      b.chew -= dt;
-      if (b.chew <= 0 && chill < 0.3 && this.contentLayer?.ready) {
-        b.chew = 0.09 + Math.random() * 0.16;
-        if (this.contentLayer.opacityAt(b.x, b.y) < 0.5) {
-          b.a += Math.PI + (Math.random() - 0.5);
-        } else {
-          this.contentLayer.burn(b.x, b.y, 1.6 + Math.random() * 1.8);
-          this.destruction = Math.min(1, this.destruction + 0.0001);
-        }
-      }
-    }
-  }
-
-  /** Draw the bugs into the fx layer: dark segmented body, animated legs. */
-  private renderBugs(ctx: CanvasRenderingContext2D, top: number, bottom: number, time: number) {
-    for (const b of this.bugs) {
-      if (b.y < top - 20 || b.y > bottom + 20) continue;
-      const wiggle = Math.sin(time * 22 + b.seed) * 0.35;
-      ctx.save();
-      ctx.translate(b.x, b.y);
-      ctx.rotate(b.a + wiggle * 0.2);
-      // Legs first, three per side, alternating with the gait.
-      ctx.strokeStyle = "rgba(20, 14, 8, 0.9)";
-      ctx.lineWidth = 0.8;
-      ctx.beginPath();
-      for (let l = -1; l <= 1; l++) {
-        const phase = Math.sin(time * 22 + b.seed + l * 2.1);
-        const lx = l * b.size * 0.55;
-        ctx.moveTo(lx, 0);
-        ctx.lineTo(lx + phase * b.size * 0.4, b.size * 0.9);
-        ctx.moveTo(lx, 0);
-        ctx.lineTo(lx - phase * b.size * 0.4, -b.size * 0.9);
-      }
-      ctx.stroke();
-      // Two body segments and a head.
-      ctx.fillStyle = "rgba(38, 26, 14, 0.95)";
-      ctx.beginPath();
-      ctx.ellipse(-b.size * 0.35, 0, b.size * 0.62, b.size * 0.45, 0, 0, TAU);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(b.size * 0.4, 0, b.size * 0.45, b.size * 0.36, 0, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = "rgba(58, 40, 20, 0.95)";
-      ctx.beginPath();
-      ctx.arc(b.size * 0.85, 0, b.size * 0.24, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-    }
-  }
-
-  private stepFlames(dt: number) {
-    for (let i = this.flames.length - 1; i >= 0; i--) {
-      const f = this.flames[i];
-      f.age += dt;
-      // Fire lives on fuel: a full flame over fresh wood, a starving flicker
-      // over spent. Age still winds it down eventually, but exhausting the
-      // cell underneath is what actually kills a fire now — which is why a
-      // blaze gutters out where it has already eaten through instead of
-      // burning in place forever.
-      const fuel = this.fuelAt(f.x, f.y);
-      const starved = fuel < 0.06;
-      const target = f.age < 12 && !starved ? 0.35 + 0.65 * fuel : 0;
-      f.intensity += (target - f.intensity) * dt * (f.age < 12 && !starved ? 0.35 : 0.12);
-
-      // Fire consumes the page in stages: it catches (chars the surface),
-      // burns (erodes into the material), deepens (heavy erosion, spent fuel),
-      // and finally breaks through — the hole opens onto the void and the
-      // flame dies with it, because the void has nothing left to burn.
-      f.scorchCooldown -= dt;
-      if (f.scorchCooldown <= 0 && f.intensity > 0.15) {
-        // Jittered rather than a flat 0.3s: with a fixed period every flame
-        // lit in the same frame stays in lockstep forever, so all of them
-        // repaint the (document-sized) content canvas on the same frame.
-        f.scorchCooldown = 0.26 + Math.random() * 0.14;
-        // Fire returns frost's favour: rime stops a fire catching (see
-        // `spawnFlame`), and an established flame steadily melts the rime
-        // around it — boiling off as steam, so a frozen patch next to a blaze
-        // doesn't stay improbably frozen.
-        if (this.frost && this.frostAt(f.x, f.y) > 0.04) {
-          this.meltFrost(f.x, f.y, f.radius * 1.8, 0.5);
-          this.spawnParticle({
-            kind: "steam",
-            x: f.x + (Math.random() - 0.5) * f.radius * 1.6,
-            y: f.y - Math.random() * 8,
-            vx: (Math.random() - 0.5) * 60,
-            vy: -60 - Math.random() * 70,
-            life: 0,
-            maxLife: 0.8 + Math.random() * 0.8,
-            size: 8 + Math.random() * 12,
-            drag: 1.5,
-          });
-        }
-        const layer = this.contentLayer;
-        if (layer?.ready) {
-          const opacity = layer.opacityAt(f.x, f.y);
-          if (opacity < 0.25 || (fuel < 0.05 && f.age > 1.5)) {
-            // Stage 4 — breakthrough. The material under the flame is gone:
-            // open the hole cleanly, throw one last gasp of embers and smoke,
-            // and put the flame out. Fire never lives over the void.
-            layer.punch(f.x, f.y, f.radius * 0.55);
-            for (let s = 0; s < 6; s++) {
-              const a = Math.random() * TAU;
-              this.spawnParticle({
-                kind: "ember",
-                x: f.x + Math.cos(a) * f.radius * 0.5,
-                y: f.y + Math.sin(a) * f.radius * 0.4,
-                vx: Math.cos(a) * (30 + Math.random() * 60),
-                vy: -40 - Math.random() * 80,
-                life: 0,
-                maxLife: 0.8 + Math.random() * 1,
-                size: 1.5 + Math.random() * 2,
-                gravity: 40,
-                drag: 1.2,
-              });
-            }
-            for (let s = 0; s < 3; s++) {
-              this.spawnParticle({
-                kind: "smoke",
-                x: f.x + (Math.random() - 0.5) * f.radius,
-                y: f.y - Math.random() * 8,
-                vx: (Math.random() - 0.5) * 20,
-                vy: -50 - Math.random() * 40,
-                life: 0,
-                maxLife: 1.4 + Math.random(),
-                size: 8 + Math.random() * 8,
-                drag: 1.3,
-              });
-            }
-            this.flames.splice(i, 1);
-            continue;
-          }
-          if (f.age < 0.8) {
-            // Stage 1 — catching: the surface darkens but nothing is lost yet.
-            layer.char(f.x, f.y + 2, f.radius * 0.5, 0.1);
-          } else if (fuel > 0.5) {
-            // Stage 2 — burning: the char deepens and erosion begins.
-            layer.char(f.x, f.y + 2, f.radius * 0.85, 0.16);
-            layer.burn(f.x, f.y + 2, f.radius * 0.22);
-            this.consumeFuel(f.x, f.y, 9 + 13 * f.intensity);
-          } else {
-            // Stage 3 — deepening: the fire is inside the material now, eating
-            // fast toward breakthrough, and the rim glows with thrown embers.
-            layer.burn(f.x, f.y + 2, f.radius * (0.3 + f.intensity * 0.35));
-            this.consumeFuel(f.x, f.y, 13 + 16 * f.intensity);
-            if (Math.random() < 0.5) {
-              const a = Math.random() * TAU;
-              this.spawnParticle({
-                kind: "ember",
-                x: f.x + Math.cos(a) * f.radius * 0.6,
-                y: f.y + Math.sin(a) * f.radius * 0.4,
-                vx: (Math.random() - 0.5) * 30,
-                vy: -20 - Math.random() * 40,
-                life: 0,
-                maxLife: 1 + Math.random(),
-                size: 1.4 + Math.random() * 1.8,
-                gravity: -6,
-                drag: 1.6,
-              });
-            }
-          }
-        } else {
-          drawScorch(
-            this.damageCtx,
-            f.x + (Math.random() - 0.5) * 8,
-            f.y + 4 + (Math.random() - 0.5) * 6,
-            f.radius * (0.5 + f.intensity * 0.5),
-            0.05 + f.intensity * 0.06,
-          );
-        }
-      }
-
-      // Fire spreads: strong flames seed children nearby.
-      f.spreadCooldown -= dt;
-      if (f.spreadCooldown <= 0 && f.intensity > 0.75 && this.flames.length < this.flameLimit()) {
-        f.spreadCooldown = 2 + Math.random() * 3;
-        const angle = Math.random() * TAU;
-        const dist = f.radius * (1.2 + Math.random());
-        const nx = f.x + Math.cos(angle) * dist;
-        // Heat rises: children bias upward, so a fire climbs the page the way
-        // flame climbs a board rather than blooming symmetrically.
-        const ny = f.y + Math.sin(angle) * dist * 0.6 - dist * 0.3;
-        // And it only takes hold where there is still wood to take.
-        if (nx > 0 && nx < this.w && ny > 0 && ny < this.h && this.fuelAt(nx, ny) > 0.22) {
-          this.spawnFlame(nx, ny, 0.25);
-        }
-      }
-
-      // Sap-pocket pops: an audible crack that throws a fistful of embers, so a
-      // sustained fire keeps startling you instead of settling into wallpaper.
-      f.popCooldown -= dt;
-      if (f.popCooldown <= 0 && f.intensity > 0.55) {
-        f.popCooldown = 1.8 + Math.random() * 4;
-        for (let s = 0; s < 5 + Math.floor(Math.random() * 5); s++) {
-          const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
-          const speed = 110 + Math.random() * 220;
-          this.spawnParticle({
-            kind: "ember",
-            x: f.x,
-            y: f.y - f.radius * 0.4,
-            vx: Math.cos(a) * speed,
-            vy: Math.sin(a) * speed,
-            life: 0,
-            maxLife: 0.7 + Math.random() * 0.8,
-            size: 1.8 + Math.random() * 2.6,
-            gravity: 130,
-            drag: 1.1,
-          });
-        }
-        if (this.lastTime > this.nextPop) {
-          this.nextPop = this.lastTime + 280;
-          this.sound.pop();
-        }
-      }
-
-      // Smoke + embers. Rates are per *second* and scaled by dt: as per-frame
-      // probabilities they doubled on a 120Hz display, which is exactly where
-      // the frame budget is already halved — the particle cap then sat pinned
-      // and every extra puff was overdraw nobody asked for.
-      if (f.intensity > 0.2) {
-        // Smoke is the single biggest particle cost of a big fire: each puff
-        // lives for seconds and is drawn twice while warm. Fewer, larger, and
-        // shorter-lived puffs keep the rolling-column look at a fraction of
-        // the population — 14/s per flame, down from 34/s.
-        if (Math.random() < f.intensity * 14 * dt) {
-          // Rolling column: puffs are launched hard, then dragged to a crawl, so
-          // they bunch up and billow overhead instead of streaming away as dots.
-          this.spawnParticle({
-            kind: "smoke",
-            x: f.x + (Math.random() - 0.5) * f.radius,
-            y: f.y - f.radius * 0.9,
-            vx: (Math.random() - 0.5) * 55,
-            vy: -70 - Math.random() * 90 * f.intensity,
-            life: 0,
-            maxLife: 1.7 + Math.random() * 1.7,
-            size: 12 + Math.random() * 18 * f.intensity,
-            gravity: -18,
-            drag: 1.5,
-            spin: (Math.random() - 0.5) * 1.2,
-            angle: Math.random() * TAU,
-            phase: Math.random() * TAU,
-          });
-        }
-        if (Math.random() < f.intensity * 6 * dt) {
-          // A third of the shed embers are *drifters*: caught in the thermal
-          // plume, they ride up and sideways for a couple of seconds, cooling
-          // through the whole white-orange → red → dark arc before they die
-          // (the render pass keys the sprite and sway off `phase`/age). The
-          // rest stay the quick, heavy pops that arc down and wink out.
-          const drifter = Math.random() < 0.35;
-          this.spawnParticle({
-            kind: "ember",
-            x: f.x + (Math.random() - 0.5) * f.radius * 0.8,
-            y: f.y - f.radius * 0.5,
-            vx: (Math.random() - 0.5) * (drifter ? 34 : 50),
-            vy: drifter ? -40 - Math.random() * 55 : -60 - Math.random() * 80,
-            life: 0,
-            maxLife: drifter ? 1.7 + Math.random() * 1.1 : 0.7 + Math.random() * 0.9,
-            size: 1.5 + Math.random() * 2,
-            gravity: drifter ? -22 : 60,
-            drag: drifter ? 0.7 : undefined,
-            phase: drifter ? Math.random() * TAU : undefined,
-          });
-        }
-      }
-
-      if (f.intensity <= 0.02) {
-        // Died — final char + a puff of smoke.
-        if (this.contentLayer?.ready) {
-          this.contentLayer.char(f.x, f.y, f.radius, 0.35);
-        } else {
-          drawScorch(this.damageCtx, f.x, f.y + 3, f.radius * 0.8, 0.15);
-        }
-        // Burnt through its wood: the spot smoulders — slow dim embers that
-        // glow and die in place — instead of the fire just switching off.
-        if (starved) {
-          for (let s = 0; s < 3; s++) {
-            this.spawnParticle({
-              kind: "ember",
-              x: f.x + (Math.random() - 0.5) * f.radius,
-              y: f.y + (Math.random() - 0.5) * 6,
-              vx: (Math.random() - 0.5) * 6,
-              vy: -4 - Math.random() * 8,
-              life: 0,
-              maxLife: 2.5 + Math.random() * 2.5,
-              size: 1.2 + Math.random() * 1.6,
-              gravity: -2,
-              drag: 2.2,
-              phase: Math.random() * TAU,
-            });
-          }
-        }
-        for (let s = 0; s < 4; s++) {
-          this.spawnParticle({
-            kind: "smoke",
-            x: f.x + (Math.random() - 0.5) * f.radius,
-            y: f.y - Math.random() * 8,
-            vx: (Math.random() - 0.5) * 15,
-            vy: -30 - Math.random() * 25,
-            life: 0,
-            maxLife: 1.5 + Math.random(),
-            size: 7 + Math.random() * 8,
-            drag: 1.2,
-          });
-        }
-        // Cooling rim: the char edge keeps glowing for a moment after the flame
-        // itself is out, which is what makes the burn look hot rather than drawn.
-        for (let s = 0; s < 7; s++) {
-          const a = Math.random() * TAU;
-          const d = f.radius * (0.55 + Math.random() * 0.45);
-          this.spawnParticle({
-            kind: "ember",
-            x: f.x + Math.cos(a) * d,
-            y: f.y + Math.sin(a) * d * 0.6,
-            vx: (Math.random() - 0.5) * 12,
-            vy: -6 - Math.random() * 14,
-            life: 0,
-            maxLife: 1.1 + Math.random() * 1.4,
-            size: 1.6 + Math.random() * 2.2,
-            gravity: -4,
-            phase: Math.random() * TAU,
-          });
-        }
-        this.flames.splice(i, 1);
-      }
-    }
-  }
-
-  private stepParticles(dt: number) {
-    // Single compaction pass: survivors are written down over dead particles,
-    // so removing hundreds of expiring droplets a second costs one linear walk
-    // instead of a `splice` (O(n) memmove) per death.
-    const list = this.particles;
-    let write = 0;
-    let hotSurvivors = 0;
-    for (let i = 0; i < list.length; i++) {
-      const p = list[i];
-      p.life += dt;
-      if (p.life >= p.maxLife) {
-        // A drip that has stopped moving leaves a permanent run on the page.
-        // Queued, not stamped here: the content canvas is document-sized and
-        // this pass is already the hot loop.
-        if (p.kind === "paint" && this.onPage(p.x, p.y)) this.pendingStamps.push(p);
-        continue;
-      }
-
-      const gravity =
-        p.gravity ?? (p.kind === "smoke" || p.kind === "steam" || p.kind === "dust" ? -10 : 350);
-      p.vy += gravity * dt;
-      if (p.drag) {
-        p.vx *= 1 - p.drag * dt;
-        p.vy *= 1 - p.drag * dt;
-      }
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.angle !== undefined && p.spin) p.angle += p.spin * dt;
-      // Paint clings while there is a surface under it. Reaching a hole turns
-      // the run into a falling drop; in this 2D layer that means it leaves the
-      // page without stamping a bridge across the void.
-      if (p.kind === "paint" && !this.onPage(p.x, p.y)) continue;
-      // Runs trail behind whatever is sliding down the page — water rivulets
-      // and paint drips both leave a tail as long as the distance they covered.
-      if (p.kind === "rivulet" || p.kind === "paint") p.len = (p.len ?? 0) + Math.max(0, p.vy) * dt;
-
-      // Landing. Solid bits fall out of the page and clatter onto whatever is
-      // below; settling them (rather than letting them sink forever) is most of
-      // what makes debris read as physical.
-      if (p.bounce && p.restY !== undefined && p.vy > 0 && p.y >= p.restY) {
-        p.y = p.restY;
-        p.vy = -p.vy * p.bounce;
-        p.vx *= 0.55;
-        if (p.spin) p.spin *= 0.4;
-        if (p.kind === "casing" && p.bounce > 0.35 && this.lastTime > this.nextTink) {
-          this.nextTink = this.lastTime + 45;
-          this.sound.tink();
-        }
-        p.bounce *= 0.42;
-        if (p.bounce < 0.12) {
-          p.bounce = 0;
-          p.vx = p.vy = 0;
-          p.gravity = 0;
-          p.spin = 0;
-        }
-      }
-
-      // Water droplets extinguish flames they touch.
-      if (p.kind === "water") {
-        if (this.flames.length > 0 && this.dowseFlames(p.x, p.y, 10, 0.12) > 0) continue;
-        // Splash when a droplet "lands" (end of its arc). Deferred: spawning
-        // mid-compaction could land a new particle in a slot this pass has
-        // already walked past.
-        if (p.life > p.maxLife * 0.85) {
-          if (this.onPage(p.x, p.y)) this.pendingSplashes.push(p.x, p.y, p.vx);
-          continue;
-        }
-      }
-      if (p.kind === "flash" || p.kind === "jet") hotSurvivors++;
-      list[write++] = p;
-    }
-    list.length = write;
-    // Settle the exact count from what actually survived the walk; deferred
-    // splash/stamp spawns below go through `spawnParticle` and count themselves.
-    this.flashJetCount = hotSurvivors;
-    if (this.recycleCursor >= write) this.recycleCursor = 0;
-
-    for (let i = 0; i < this.pendingSplashes.length; i += 3) {
-      this.spawnSplash(
-        this.pendingSplashes[i],
-        this.pendingSplashes[i + 1],
-        this.pendingSplashes[i + 2],
-      );
-    }
-    this.pendingSplashes.length = 0;
-
-    if (this.pendingStamps.length > 0) {
-      const ctx = this.surfaceCtx;
-      for (const p of this.pendingStamps) {
-        drawPaintStreak(ctx, p.x, p.y, p.len ?? 8, p.size, p.color ?? "#e63946", p.color2);
-        // Splashes land wherever the paint flew, not under the cursor.
-        this.contentLayer?.markSurface(p.x, p.y, (p.len ?? 8) + p.size);
-      }
-      this.pendingStamps.length = 0;
-    }
-  }
-
-  private spawnSplash(x: number, y: number, inVx = 0) {
-    for (let i = 0; i < 3; i++) {
-      this.spawnParticle({
-        kind: "splash",
-        x,
-        y,
-        // Splashback keeps a quarter of the arriving sideways speed: the spray
-        // glances downstream off the page instead of blooming symmetrically.
-        vx: inVx * 0.25 + (Math.random() - 0.5) * 90,
-        vy: -Math.random() * 70,
-        life: 0,
-        maxLife: 0.25 + Math.random() * 0.2,
-        size: 1 + Math.random() * 2,
-      });
-    }
-    // One droplet in three genuinely bounces: it leaps back off the surface,
-    // arcs, and lands again a short way downstream — the "rain on pavement"
-    // half of a hose stream hitting something solid.
-    if (Math.random() < 0.34) {
-      this.spawnParticle({
-        kind: "water",
-        x,
-        y,
-        vx: inVx * 0.3 + (Math.random() - 0.5) * 60,
-        vy: -90 - Math.random() * 130,
-        life: 0,
-        maxLife: 0.3 + Math.random() * 0.2,
-        size: 1.6 + Math.random() * 1.8,
-        gravity: 900,
-        drag: 0.6,
-      });
-    }
-    // Lingering wet mark.
-    this.spawnParticle({
-      kind: "wet",
-      x,
-      y,
-      vx: 0,
-      vy: 12,
-      life: 0,
-      maxLife: 2.5 + Math.random() * 2,
-      size: 5 + Math.random() * 9,
-      gravity: 0,
-    });
-    // Every few splashes, one gathers into a run that streaks down the page.
-    if (Math.random() < 0.22) {
-      this.spawnParticle({
-        kind: "rivulet",
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 8,
-        vy: 30 + Math.random() * 50,
-        life: 0,
-        maxLife: 1.1 + Math.random() * 1.2,
-        size: 1.4 + Math.random() * 1.8,
-        gravity: 90,
-        drag: 1.6,
-        len: 0,
-      });
-    }
+    return this.bugs.flush(this, x, y, radius);
   }
 
   /**
@@ -3232,6 +2821,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.fxOffsetY = top;
       // A transform (not `top`/`left`) so scrolling never re-rasters the layer.
       // Whichever canvas is actually in the DOM is the one that has to move.
+      // Whichever canvas is actually in the DOM is the one that has to move.
       const presented = this.postfxActive ? this.postfx!.canvas : this.fxCanvas;
       presented.style.transform = `translate3d(${left}px, ${top}px, 0)`;
     }
@@ -3243,7 +2833,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.vignetteOffsetY = vTop;
       this.vignette.style.transform = `translate3d(${left}px, ${vTop}px, 0)`;
     }
-    const dpr = this.dpr;
+    const dpr = this.fxDpr;
     this._fxCtx.setTransform(dpr, 0, 0, dpr, -left * dpr, -top * dpr);
     return { left, top, right: left + this.fxW, bottom: top + this.fxH };
   }
@@ -3259,11 +2849,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const artVisible =
       this.opts.toolStyle === "3d" && !!this.activeTool?.art && this.pointer.x > -999;
     const idle =
-      this.particles.length === 0 &&
-      this.flames.length === 0 &&
+      this.particles.count === 0 &&
+      this.fire.count === 0 &&
       this.physics.count === 0 &&
-      this.bugs.length === 0 &&
+      this.bugs.count === 0 &&
       !this._singularity &&
+      !this.aimCursor &&
       !artVisible;
     if (idle) {
       // Nothing to draw: clear once after the last active frame, then leave the
@@ -3279,123 +2870,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.fxPainted = true;
 
     // Bugs crawl *on* the page, under every particle and piece of debris.
-    if (this.bugs.length > 0) this.renderBugs(ctx, view.top, view.bottom, time);
+    if (this.bugs.count > 0) this.bugs.render(ctx, view.top, view.bottom, time);
 
-    // One classification pass. Particles live in document space and the page
-    // can be far taller than the screen, so anything outside the fx band is
-    // dropped here instead of being submitted and clipped by the canvas.
-    const wet = this.bucketWet;
-    const puff = this.bucketPuff;
-    const bit = this.bucketBit;
-    const hot = this.bucketHot;
-    wet.length = puff.length = bit.length = hot.length = 0;
-    for (const p of this.particles) {
-      if (p.x < view.left - 200 || p.x > view.right + 200) continue;
-      if (p.y < view.top - 200 || p.y > view.bottom + 200) continue;
-      switch (p.kind) {
-        case "wet":
-        case "splash":
-        case "water":
-        case "rivulet":
-        case "stream":
-          wet.push(p);
-          break;
-        case "smoke":
-        case "steam":
-        case "dust":
-          puff.push(p);
-          break;
-        case "debris":
-        case "casing":
-        case "sawdust":
-        case "shard":
-        case "paint":
-        case "ice":
-          bit.push(p);
-          break;
-        case "ember":
-        case "spark":
-        case "flash":
-        case "ring":
-        case "streak":
-        case "jet":
-        case "sparkle":
-        case "spaghetti":
-          hot.push(p);
-          break;
-      }
-    }
-
-    // Wet marks + splashes under everything else. Wet patches are a soft sheen
-    // rather than a filled ellipse — a hard-edged blob reads as a grey stain on
-    // a dark page, where a feathered one reads as a surface that is damp.
-    const sprite = sprites();
-    for (const p of wet) {
-      if (p.kind !== "wet") continue;
-      const t = p.life / p.maxLife;
-      blitRect(ctx, sprite.mist, p.x, p.y, p.size * 1.5, p.size * 0.95, 0.16 * (1 - t));
-    }
-    ctx.globalAlpha = 1;
-    for (const p of wet) {
-      if (p.kind === "wet") continue;
-      const t = p.life / p.maxLife;
-      if (p.kind === "stream") {
-        // The unbroken column of water leaving the nozzle, before it fans out
-        // into droplets. Drawn opaque, not additively — water occludes.
-        blitStreak(
-          ctx,
-          sprite.streakWater,
-          p.x,
-          p.y,
-          p.angle ?? 0,
-          p.len ?? 40,
-          p.size,
-          0.85 * (1 - t * 0.6),
-        );
-        continue;
-      }
-      if (p.kind === "rivulet") {
-        // A run of water sliding down the page: a fading tail behind a bead.
-        blitStreak(
-          ctx,
-          sprite.streakWater,
-          p.x,
-          p.y,
-          Math.PI / 2,
-          -(p.len ?? 0),
-          p.size * 2.4,
-          0.5 * (1 - t),
-        );
-        ctx.fillStyle = "rgb(150, 195, 240)";
-        ctx.globalAlpha = 0.75 * (1 - t);
-        ctx.beginPath();
-        ctx.ellipse(p.x, p.y, p.size * 0.8, p.size * 1.15, 0, 0, TAU);
-        ctx.fill();
-        continue;
-      }
-      ctx.fillStyle = p.kind === "water" ? "rgb(140, 190, 240)" : "rgb(160, 200, 240)";
-      ctx.globalAlpha = p.kind === "water" ? 0.85 : 0.7 * (1 - t);
-      ctx.beginPath();
-      ctx.ellipse(
-        p.x,
-        p.y,
-        p.size * 0.7,
-        p.size * 1.3,
-        Math.atan2(p.vy, p.vx) + Math.PI / 2,
-        0,
-        TAU,
-      );
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
+    // One classification pass up front; the four passes below draw from it.
+    this.fx.classify(this.particles.particles, view);
+    this.fx.drawWet(ctx);
 
     // Flames render here — with the other *surface-bound* effects, before the
     // mask below — not in the airborne additive pass at the end.
     ctx.globalCompositeOperation = "lighter";
-    for (const f of this.flames) {
+    for (const f of this.fire.list) {
       if (f.y < view.top - 300 || f.y > view.bottom + 300) continue;
       if (f.x < view.left - 300 || f.x > view.right + 300) continue;
-      this.renderFlame(ctx, f, time);
+      drawFlame(ctx, f, time, this.qualityProfile.flameLayers);
       // Air above a fire is what the shimmer shader distorts.
       this.heat(f.x, f.y - f.radius, f.radius * 3.2, 0.5 * f.intensity);
     }
@@ -3409,140 +2896,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // place; nothing that happens on the site is visible in it. Airborne
     // effects (smoke, debris, shockwaves) draw *after* this and stay visible
     // over holes, because they fly in front of the page, not on it.
-    if (this.bugs.length > 0 || wet.length > 0 || this.flames.length > 0) {
+    if (this.bugs.count > 0 || this.fx.hasSurfaceParticles || this.fire.count > 0) {
       this.maskFxToPage(ctx, view);
     }
 
-    // Smoke, steam and dust (normal blending, soft grey/white).
-    for (const p of puff) {
-      const t = p.life / p.maxLife;
-      if (p.kind === "dust") {
-        blit(
-          ctx,
-          sprite.dust,
-          p.x,
-          p.y,
-          p.size * (1 + t * 2.6),
-          0.3 * (1 - t) * Math.min(1, t * 8),
-        );
-        continue;
-      }
-      if (p.kind === "steam") {
-        blit(
-          ctx,
-          sprite.steam,
-          p.x,
-          p.y,
-          p.size * (1 + t * 2.2),
-          0.32 * (1 - t) * Math.min(1, t * 6),
-        );
-        continue;
-      }
-      // Smoke: born lit by the fire it came off, cooling to grey as it climbs,
-      // and swaying so a column rolls rather than sliding straight up. Two
-      // incommensurate frequencies — the second keyed off the puff's height so
-      // neighbours shear against each other — give the slow sway a turbulent
-      // curl for the cost of one extra sin, no per-frame state.
-      const ph = p.phase ?? 0;
-      const sway =
-        (Math.sin(time * 1.6 + ph) + 0.55 * Math.sin(time * 3.9 + ph * 1.7 + p.y * 0.013)) *
-        p.size *
-        0.45 *
-        t;
-      const fade = (1 - t) * Math.min(1, t * 5);
-      if (t < 0.35)
-        blit(
-          ctx,
-          sprite.smokeWarm,
-          p.x + sway,
-          p.y,
-          p.size * (1 + t * 2.4),
-          0.34 * fade * (1 - t / 0.35),
-        );
-      blit(ctx, sprite.smoke, p.x + sway, p.y, p.size * (1 + t * 2.6), 0.3 * fade);
-    }
-    ctx.globalAlpha = 1;
-
-    // Solid bits: debris, casings, sawdust, paint drips, and flying page shards.
-    for (const p of bit) {
-      const t = p.life / p.maxLife;
-      if (p.kind === "paint") {
-        // The wet head of a drip; the run it leaves behind is stamped on death.
-        ctx.globalAlpha = 0.92;
-        ctx.fillStyle = p.color ?? "#e63946";
-        ctx.beginPath();
-        ctx.ellipse(
-          p.x,
-          p.y - (p.len ?? 0) * 0.5,
-          p.size * 0.5,
-          p.size * 0.5 + (p.len ?? 0) * 0.5,
-          0,
-          0,
-          TAU,
-        );
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size * 0.85, 0, TAU);
-        ctx.fill();
-        continue;
-      }
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.angle ?? 0);
-      ctx.globalAlpha = 1 - t * t;
-      if (p.kind === "ice") {
-        // A splinter of frozen page: a pale facet with one lit edge. Triangular
-        // rather than square, because ice breaks along planes.
-        ctx.fillStyle = "rgba(206, 238, 255, 0.9)";
-        ctx.beginPath();
-        ctx.moveTo(0, -p.size);
-        ctx.lineTo(p.size * 0.8, p.size * 0.7);
-        ctx.lineTo(-p.size * 0.7, p.size * 0.6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-      } else if (p.kind === "shard" && p.img) {
-        // A torn-off chunk of the real page tumbling through the air. The ghost
-        // behind it is a cheap motion blur — one extra blit, no filter.
-        const speed = Math.abs(p.vx) + Math.abs(p.vy);
-        if (speed > 200) {
-          ctx.globalAlpha = (1 - t * t) * 0.28;
-          ctx.drawImage(
-            p.img,
-            p.sx!,
-            p.sy!,
-            p.sw!,
-            p.sh!,
-            -p.size / 2 - p.vx * 0.012,
-            -p.size / 2 - p.vy * 0.012,
-            p.size,
-            p.size,
-          );
-          ctx.globalAlpha = 1 - t * t;
-        }
-        ctx.drawImage(p.img, p.sx!, p.sy!, p.sw!, p.sh!, -p.size / 2, -p.size / 2, p.size, p.size);
-        ctx.strokeStyle = "rgba(10, 8, 6, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(-p.size / 2, -p.size / 2, p.size, p.size);
-        // Lit top edge, so a tumbling shard catches the light as it spins.
-        ctx.strokeStyle = "rgba(255, 252, 245, 0.4)";
-        ctx.beginPath();
-        ctx.moveTo(-p.size / 2, -p.size / 2);
-        ctx.lineTo(p.size / 2, -p.size / 2);
-        ctx.stroke();
-      } else if (p.kind === "casing") {
-        ctx.fillStyle = "#c9a227";
-        ctx.fillRect(-p.size, -p.size * 0.4, p.size * 2, p.size * 0.8);
-        ctx.fillStyle = "rgba(255, 240, 190, 0.7)";
-        ctx.fillRect(-p.size, -p.size * 0.4, p.size * 2, p.size * 0.25);
-      } else {
-        ctx.fillStyle = p.color ?? (p.kind === "sawdust" ? "#a8865a" : "#55504b");
-        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-      }
-      ctx.restore();
-    }
+    this.fx.drawPuffs(ctx, time);
+    this.fx.drawSolids(ctx);
 
     // Rigid debris. Opaque, and above the loose particles: a falling chunk of
     // page is a solid object and has to occlude the dust it kicked up.
@@ -3559,131 +2918,22 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // The singularity's horizon. Drawn source-over, not additively — the one
     // thing on this layer whose job is to be a hole rather than a light.
     const sing = this._singularity;
-    if (sing) {
-      const r = sing.radius * sing.charge;
-      blit(ctx, sprites().singularity, sing.x, sing.y, r, 1);
-      ctx.globalAlpha = 1;
-    }
+    if (sing) drawEventHorizon(ctx, sing);
 
-    // Additive pass: flames, embers, sparks, muzzle flashes.
+    // Additive pass: the accretion disc, then every glowing particle.
     ctx.globalCompositeOperation = "lighter";
-    if (sing) {
-      const r = sing.radius * sing.charge;
-      // Accretion band, counter-rotating against the infall and pulsing, so the
-      // horizon never sits still even when nothing is being eaten.
-      const wobble = 0.9 + 0.1 * Math.sin(time * 9);
-      blitRect(ctx, sprites().accretion, sing.x, sing.y, r * 2.1 * wobble, r * 1.5 * wobble, 0.85);
-      blitRect(ctx, sprites().accretion, sing.x, sing.y, r * 2.9, r * 0.72, 0.5);
-      blit(ctx, sprites().glow, sing.x, sing.y, r * 3.4, 0.16 * sing.charge);
-      ctx.globalAlpha = 1;
-    }
-    for (const p of hot) {
-      const t = p.life / p.maxLife;
-      switch (p.kind) {
-        case "ember": {
-          // Cooling arc: white-orange while fresh, orange in the middle of the
-          // flight, dull red at the end — the way a real ember dims rather
-          // than fading at one colour. Drifters (spawned with a `phase`) also
-          // sway on the thermal and breathe: two cheap sins, no state.
-          let ex = p.x;
-          let glow = 1 - t;
-          if (p.phase !== undefined) {
-            ex += Math.sin(time * 2.2 + p.phase) * (3 + p.size) * t;
-            glow *= 0.78 + 0.22 * Math.sin(time * 15 + p.phase);
-          }
-          blit(
-            ctx,
-            t < 0.38 ? sprite.emberHot : t < 0.72 ? sprite.emberCool : sprite.emberDark,
-            ex,
-            p.y,
-            p.size * (1 - t * 0.5) * 1.6,
-            glow,
-          );
-          break;
-        }
-        case "spark":
-          // Fast sparks smear into a streak; slow ones stay points.
-          if (Math.abs(p.vx) + Math.abs(p.vy) > 260) {
-            blitStreak(
-              ctx,
-              sprite.streakHot,
-              p.x,
-              p.y,
-              Math.atan2(p.vy, p.vx),
-              -(Math.abs(p.vx) + Math.abs(p.vy)) * 0.022,
-              p.size * 2.6,
-              (1 - t) * 0.8,
-            );
-          }
-          blit(ctx, sprite.spark, p.x, p.y, p.size * (1 - t * 0.5) * 1.6, 1 - t);
-          break;
-        case "ring":
-          // Expanding shockwave. Hollow by construction, so it rides over a
-          // fresh hole without painting the void back in.
-          blit(
-            ctx,
-            sprite.shockRing,
-            p.x,
-            p.y,
-            p.size * (0.35 + t * 1.9),
-            (1 - t) * (1 - t) * 0.85,
-          );
-          break;
-        case "streak":
-          blitStreak(
-            ctx,
-            sprite.streakHot,
-            p.x,
-            p.y,
-            p.angle ?? 0,
-            p.len ?? 40,
-            p.size,
-            (1 - t) * 0.9,
-          );
-          break;
-        case "jet": {
-          // Flamethrower fuel: white-hot at the nozzle, swelling and cooling as
-          // it flies. The size ramp is what turns a line of dots into a cone.
-          const r = p.size * (0.5 + t * 2.6);
-          blit(ctx, t < 0.3 ? sprite.flameCore : sprite.flameHigh, p.x, p.y, r, (1 - t) * 0.62);
-          blit(ctx, sprite.flameLow, p.x, p.y, r * 1.35, (1 - t) * 0.34);
-          break;
-        }
-        case "spaghetti": {
-          // Tidal stretching: the faster it falls, the longer it draws. Colour
-          // splits between violet and amber so the disc looks like it has
-          // temperature structure rather than being one glowing smear.
-          const speed = Math.hypot(p.vx, p.vy);
-          blitStreak(
-            ctx,
-            p.color === "#c98bff" ? sprite.streakWater : sprite.streakHot,
-            p.x,
-            p.y,
-            Math.atan2(p.vy, p.vx),
-            -Math.min(90, speed * 0.11),
-            p.size * 2.2,
-            (1 - t) * 0.7,
-          );
-          break;
-        }
-        case "sparkle": {
-          // Twinkle: on/off rather than a smooth fade, so it reads as a glint.
-          const tw = 0.5 + 0.5 * Math.sin(time * 22 + (p.phase ?? 0));
-          blit(ctx, sprite.sparkle, p.x, p.y, p.size * (0.6 + tw * 0.8), (1 - t) * tw);
-          break;
-        }
-        default:
-          // Muzzle/impact flash: a warm halo with a white-hot centre. Warm alone
-          // reads as a fireball; white alone reads as a lens flare.
-          blit(ctx, sprite.flash, p.x, p.y, p.size, 0.55 * (1 - t));
-          blit(ctx, sprite.flashWhite, p.x, p.y, p.size * 0.68, 1 - t);
-      }
-    }
+    if (sing) drawAccretionDisc(ctx, sing, time);
+    this.fx.drawHot(ctx, time);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
 
     // The tool in hand, over everything it just did.
     if (artVisible) this.renderToolArt(ctx, time);
+
+    // The keyboard cursor, above everything: it is a control, not an effect,
+    // and a visitor steering by arrow keys has to be able to find it over a
+    // page that is on fire.
+    if (this.aimCursor) drawAimCursor(ctx, this.aimCursor, time);
 
     this.postFXFrameMs = this.present(time);
   }
@@ -3727,12 +2977,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   /**
-   * Hand the finished effects frame to the post-processing chain.
+   * Hand the finished effects frame to the post-processing stage.
    *
    * Bloom and aberration are scaled by what is actually happening: an idle page
    * with two paint splats gets neither, a page on fire gets both. That keeps
-   * the shader honest about cost as well as taste — the blur passes are skipped
-   * outright when the bloom weight is zero.
+   * the shader honest about cost as well as taste — the stage skips the whole
+   * chain when the numbers say it would change nothing.
    */
   private present(time: number): number {
     const startedAt = performance.now();
@@ -3741,12 +2991,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.setPostFXOutput(false);
       return 0;
     }
-    let bloom = 0;
-    for (const f of this.flames) bloom += f.intensity;
-    bloom = Math.min(0.85, bloom * 0.16 + (this._singularity ? 0.55 : 0));
+    let bloom = Math.min(0.85, this.fire.totalIntensity * 0.16 + (this._singularity ? 0.55 : 0));
     // Explosions and muzzle flashes are brief but very bright; let them bloom
     // even with no fire burning.
-    if (this.flashJetCount > 0) bloom = Math.max(bloom, 0.45);
+    if (this.particles.flashJetCount > 0) bloom = Math.max(bloom, 0.45);
     const heat = this.heatLevel * 0.012;
     const aberration = this.destruction * 0.006 + (this._singularity ? 0.004 : 0);
 
@@ -3759,89 +3007,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
 
     this.setPostFXOutput(true);
-    postfx.render(this.fxCanvas, this.heatCanvas, {
-      bloom,
-      heat,
-      aberration,
-      time,
-    });
+    postfx.render(this.fxCanvas, this.heatCanvas, { bloom, heat, aberration, time });
     return performance.now() - startedAt;
-  }
-
-  /**
-   * Flickering multi-layer flame: glowing char rim, body, licking tongue, core.
-   *
-   * Baked sprites rather than freshly built radial gradients; the flicker lives
-   * entirely in the per-draw scale and alpha, which are plain numbers.
-   *
-   * Two frequencies drive every offset — a slow sway and a fast jitter. One
-   * frequency is a wobble; two is the shimmer that reads as heat.
-   */
-  private renderFlame(ctx: CanvasRenderingContext2D, f: Flame, time: number) {
-    const flicker =
-      0.85 + 0.15 * Math.sin(time * 13 + f.seed) + 0.08 * Math.sin(time * 29 + f.seed * 2);
-    const r = f.radius * f.intensity * flicker;
-    if (r < 1) return;
-    const { x, y } = f;
-    const sprite = sprites();
-
-    // Ambient glow (taller than wide — light pools above a fire), then the hot
-    // rim: the burnt edge of the hole glowing where the fire is still eating it.
-    // The ring sprite is hollow and drawn flat to the page, so it lights the rim
-    // without filling in the hole it surrounds or reading as a bubble.
-    blitRect(ctx, sprite.glow, x, y - r * 0.5, r * 1.9, r * 2.5, 0.17 * f.intensity);
-    blitRect(
-      ctx,
-      sprite.heatRing,
-      x,
-      y + r * 0.2,
-      r * 1.85,
-      r * 0.8,
-      0.2 * f.intensity * (0.85 + 0.15 * Math.sin(time * 7 + f.seed)),
-    );
-
-    // Flame body — a column of vertical ellipses, narrower and hotter toward the
-    // top, rising well clear of the hole so the fire licks upward. Five layers,
-    // not seven: with dozens of flames alight this loop is the render path's
-    // hottest blit site, and the two dropped layers were overdraw inside the
-    // column, not silhouette.
-    const layers = this.qualityProfile.flameLayers;
-    for (let i = 0; i < layers; i++) {
-      const t = i / (layers - 1);
-      const ly = y - r * 2.9 * t;
-      const lr = r * (0.82 - t * 0.58) * (0.88 + 0.18 * Math.sin(time * 17 + f.seed + i * 2.1));
-      const wobble =
-        Math.sin(time * 9 + f.seed + i * 1.7) * r * 0.36 * t +
-        Math.sin(time * 24 + f.seed * 3 + i) * r * 0.12 * t;
-      const hot = t >= 0.3;
-      blitRect(
-        ctx,
-        hot ? sprite.flameHigh : sprite.flameLow,
-        x + wobble,
-        ly,
-        lr,
-        lr * 1.65,
-        (hot ? 0.4 : 0.48) * f.intensity,
-      );
-    }
-
-    // A tongue that detaches off the top and gutters out — the thing real fire
-    // does that a stack of circles never will.
-    const lick = 0.5 + 0.5 * Math.sin(time * 7.3 + f.seed * 1.7);
-    if (lick > 0.42) {
-      blitRect(
-        ctx,
-        sprite.flameHigh,
-        x + Math.sin(time * 11 + f.seed) * r * 0.7,
-        y - r * (3.1 + lick * 1.9),
-        r * 0.26 * lick,
-        r * 0.62 * lick,
-        0.42 * f.intensity * lick,
-      );
-    }
-
-    // White-hot core at the base.
-    blitRect(ctx, sprite.flameCore, x, y - r * 0.3, r * 0.5, r * 0.86, 0.85 * f.intensity);
   }
 
   private updateShake(dt: number) {
@@ -3886,9 +3053,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private updateLoops() {
-    let total = 0;
-    for (const flame of this.flames) total += flame.intensity;
-    const heat = Math.min(1, total / 4);
-    this.sound.loop("fire", heat * 0.5);
+    this.sound.loop("fire", Math.min(1, this.fire.totalIntensity / 4) * 0.5);
   }
 }
