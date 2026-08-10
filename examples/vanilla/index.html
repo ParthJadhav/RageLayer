@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Desktop Destroyer — vanilla example</title>
+    <style>
+      /* A real background matters: the capture keeps whatever transparency
+         the page had, so a page with no background is mostly void — there is
+         nothing there to smash between the letters. */
+      body { font-family: system-ui, sans-serif; margin: 0; background: #f4f1ec; color: #17130f; }
+      main { max-width: 720px; margin: 0 auto; padding: 4rem 1.5rem; }
+      /* The host's own toolbar. `data-dd-ignore` keeps it out of the capture,
+         so the toy cannot destroy its own controls. */
+      #bar {
+        position: fixed; inset: auto 0 16px 0; display: flex; gap: 6px;
+        width: max-content; max-width: 92vw; margin: 0 auto; padding: 8px;
+        flex-wrap: wrap; justify-content: center; border-radius: 14px;
+        background: #141210ee; box-shadow: 0 12px 40px #0007;
+      }
+      #bar button {
+        all: unset; display: grid; place-items: center; width: 38px; height: 38px;
+        border-radius: 10px; cursor: pointer; color: #fff; font-size: 18px;
+      }
+      #bar button[aria-pressed="true"] { background: #dc5a1f; }
+      #bar button[aria-disabled="true"] { opacity: 0.4; cursor: default; }
+      #bar button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+      #bar img { width: 28px; height: 28px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>A perfectly ordinary page</h1>
+      <p>
+        Everything here is real DOM. The destroyer captures it into a canvas, hides the original,
+        and lets the visitor take the copy apart.
+      </p>
+      <button id="launch" type="button" aria-pressed="false">Destroy this page</button>
+    </main>
+
+    <script type="module">
+      import { createDesktopDestroyer } from "../../dist/index.js";
+      import { ToolbarModel } from "../../dist/toolbar/index.js";
+
+      const launch = document.getElementById("launch");
+      const destroyer = createDesktopDestroyer({ history: true, initialTool: null });
+
+      let bar = null;
+      let toolbar = null;
+      let unsubscribe = null;
+
+      const close = () => {
+        destroyer.close();
+        launch.setAttribute("aria-pressed", "false");
+        launch.focus();
+      };
+
+      destroyer.subscribe((engine) => {
+        // Tear the old toolbar down whatever closed the engine — the close
+        // button, Escape, or the host calling `close()`.
+        unsubscribe?.();
+        toolbar?.destroy();
+        bar?.remove();
+        unsubscribe = toolbar = bar = null;
+        if (!engine) return;
+
+        bar = document.createElement("div");
+        bar.id = "bar";
+        bar.setAttribute("role", "toolbar");
+        bar.setAttribute("aria-label", "Desktop Destroyer tools");
+        bar.setAttribute("data-dd-ignore", "");
+        document.body.append(bar);
+
+        toolbar = new ToolbarModel(engine, { onClose: close });
+        // Handle for the repository's runtime test suite; not needed in an app.
+        window.__ddExampleEngine = engine;
+        unsubscribe = toolbar.subscribe((state) => {
+          bar.replaceChildren(
+            ...state.buttons.map((button, index) => {
+              const element = document.createElement("button");
+              element.type = "button";
+              element.setAttribute("aria-label", button.label);
+              element.title = button.title;
+              // Roving tabindex: one stop for the whole group.
+              element.tabIndex = index === state.focusIndex ? 0 : -1;
+              if (button.pressed !== undefined) {
+                element.setAttribute("aria-pressed", String(button.pressed));
+              }
+              if (button.disabled) element.setAttribute("aria-disabled", "true");
+              if (button.icon) {
+                const image = document.createElement("img");
+                image.src = button.icon;
+                image.alt = "";
+                element.append(image);
+              } else {
+                element.textContent = button.glyph ?? button.toolIcon ?? "";
+              }
+              element.addEventListener("click", () => {
+                if (!button.disabled) button.run();
+              });
+              return element;
+            }),
+          );
+        });
+        bar.querySelector("button")?.focus();
+      });
+
+      // Shortcuts, keyboard aiming and undo all come from the model.
+      window.addEventListener("keydown", (event) => {
+        if (toolbar?.handleKeyDown(event)) event.preventDefault();
+      });
+
+      launch.addEventListener("click", () => {
+        destroyer.open();
+        launch.setAttribute("aria-pressed", "true");
+      });
+
+      // Module scripts are deferred, so anything driving this page — a test,
+      // a screenshot script — needs a signal that the wiring is live.
+      document.documentElement.dataset.ready = "true";
+    </script>
+  </body>
+</html>

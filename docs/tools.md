@@ -2,7 +2,7 @@
 
 Every screenshot below is generated from the current build by
 [`scripts/screenshots.mjs`](../scripts/screenshots.mjs), which drives the
-[demo page](../demo/index.html) with real pointer input in headless Chrome.
+[demo page](./demo/) with real pointer input in headless Chrome.
 Regenerate them any time with `bun run screenshots`.
 
 ## The demo page, pristine
@@ -46,6 +46,22 @@ Splatters that drip and dry, clipped to surviving page pixels.
 
 ![Paint splats across the page](./screenshots/paintball.png)
 
+## Water hose
+
+Hold to spray. Water sheets down the page under gravity, puts out fires it reaches, and rinses
+paint, soot and rime off surviving pixels — washing cleans stains but does not repair structure,
+so a hole stays a hole.
+
+![Water sheeting down the page and dousing a fire](./screenshots/water.png)
+
+## Broom
+
+Drag to sweep. The only genuinely restorative tool: it repairs the page back to the pristine
+capture under the bristles, and swats any bugs it passes over. Sweeping intact page leaves it
+exactly intact, with no seam where the sweep passed.
+
+![A half-swept page: bullet holes on the right, repaired page on the left](./screenshots/broom.png)
+
 ## Black hole
 
 Held: thin-lens gravitational deflection, frame-dragging swirl, photon ring, opaque horizon.
@@ -60,12 +76,70 @@ crawlers, a crater, and fires.
 
 ![Lightning strike with forked branches](./screenshots/lightning.png)
 
+## Rocket launcher
+
+Click to launch. The rocket leaves the muzzle along the tool's aim with a backblast and recoil,
+arms only once it has actually flown, then detonates on impact — so the crater is never where the
+click was.
+
+![A rocket mid-flight, trailing smoke away from the launch point](./screenshots/rocket.png)
+
+## Demolition
+
+Click page furniture — cards, images, paragraphs — to knock the whole element loose as a single
+rigid body rather than fracturing it. Elements are measured from the live layout at capture time,
+so what you can see is what you can pull out.
+
+![Whole cards knocked loose from the page and falling](./screenshots/demolition.png)
+
+## Bugs
+
+Click to release a bug. They crawl over the surviving page, avoid the void, and can be squashed
+with any impact tool, shot, or swept up with the broom.
+
+![Bugs crawling across the surviving page](./screenshots/bugs.png)
+
 ## Freeze ray + hammer: frost shatter
 
 A frozen patch doesn't tear like paper — it comes apart like glass: more, lighter,
 blue-tinted shards with a crystalline glint twinkling over the break for an instant.
 
 ![Frozen page shattering under the hammer](./screenshots/frost-shatter.png)
+
+## Gravity gun
+
+Hold over wreckage to pull rigid chunks into orbit, then release to launch the nearest piece along
+the tool's aim. Using it around a sticky-bomb blast triggers the orbital-bomb combo.
+
+## Laser cutter
+
+Drag for a precise heated kerf. Paper yields quickly; metal and stone require dwell. Laser against
+frozen material causes a thermal-shock fracture.
+
+## Acid sprayer
+
+Hold to paint corrosive droplets. Each marked material has its own resistance; acid meeting fire
+causes a volatile-corrosion blast.
+
+## Wrecking ball
+
+Swing the pointer. Impact force is derived from motion speed and material density, so deliberate
+arcs hit harder than small movements.
+
+## Sticky bombs
+
+Click to attach up to eight timed charges. Charges remain visible on the surface, spark near the
+end of their fuse, then fracture and ignite the attachment point.
+
+## Glitch gun
+
+Corrupts the page with bounded RGB slices, pulses, and occasional structural faults. Glitch plus
+lightning triggers reality overload.
+
+## Materials and combos
+
+Add `data-dd-material="glass|metal|wood|stone|rubber|ice|paper"` to page regions to change their
+behavior. See the [advanced systems guide](./advanced.md) for all seven combos and custom materials.
 
 ## A mixed session
 

@@ -2,24 +2,17 @@
 
 `desktop-destroyer` is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
-shoot, burn, soak, saw, paint, freeze, bomb — and then sweep it all up. Zero assets, one
-dependency (`html-to-image`), framework-agnostic core with a drop-in React component.
+shoot, burn, soak, saw, paint, freeze, bomb — and then sweep it all up. Zero assets, zero
+runtime dependencies, framework-agnostic core with a drop-in React component.
 
 ![The demo page mid-destruction](./screenshots/aftermath.png)
 
 ## Install
 
-From npm (once published), or straight from the GitHub repo:
+Install from npm:
 
 ```sh
-# npm registry
 npm install desktop-destroyer
-
-# private GitHub repo (requires repo access)
-npm install github:ParthJadhav/desktop-destroyer
-
-# or a release tarball attached to a GitHub Release
-npm install ./desktop-destroyer-0.2.0.tgz
 ```
 
 Bun, pnpm and Yarn all work the same way (`bun add desktop-destroyer`, …).
@@ -47,25 +40,24 @@ function App() {
 That's the whole integration: a floating toolbar appears, the page becomes destructible, and
 `Esc` (or the ✕ button) restores everything and unmounts cleanly.
 
-> **Next.js note:** render the component client-side only (behind a click, or with
-> `next/dynamic` and `ssr: false`). See [integrations](./integrations.md#nextjs).
+> **Next.js note:** use it from a Client Component. The published React entry preserves its
+> `"use client"` boundary; lazy loading is optional. See [integrations](./integrations.md#nextjs).
 
 ## 60-second vanilla setup
 
 ```ts
-import { DestroyerEngine, defaultTools } from "desktop-destroyer";
+import { createDesktopDestroyer } from "desktop-destroyer";
 
-const engine = new DestroyerEngine({ soundEnabled: true });
-for (const tool of defaultTools) engine.registerTool(tool);
-engine.setTool("flamethrower"); // null makes the overlay click-through
-// …later
-engine.clear();   // repair everything
-engine.dispose(); // remove every trace and restore the page
+const destroyer = createDesktopDestroyer({
+  initialTool: "flamethrower",
+  soundEnabled: true,
+});
+
+document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
 ```
 
-`defaultTools` already contains all 13 tools (the heavy ones included). Build whatever UI you
-like on top — [`demo/index.html`](../demo/index.html) is a complete example with a hand-rolled
-toolbar in ~60 lines.
+The controller registers all 19 tools and handles repeated open/close cycles. Build whatever UI
+you like on top—the [live demo](./demo/) is a complete example with a hand-rolled toolbar.
 
 ## The toolset
 
@@ -87,6 +79,9 @@ toolbar in ~60 lines.
 
 Screenshots of each: [tool gallery](./tools.md).
 
+Need a smaller initial graph or different visual sizing? See [procedural 3D models](./models.md) for
+`toolScale`, engine-only imports, base/heavy/advanced tool entry points, and on-demand loading.
+
 ## Keyboard (React toolbar)
 
 `1`–`9`/`0` select tools · `X` collapse the page · `P` save a PNG · `R` repair · `M` mute ·
@@ -97,4 +92,8 @@ Screenshots of each: [tool gallery](./tools.md).
 - [Integrations](./integrations.md) — React, Next.js, Vue, Svelte, Astro, plain `<script>`
 - [API reference](./api.md) — engine options, engine API, custom tools
 - [Performance](./performance.md) — adaptive quality, telemetry, benchmarks
+- [Procedural 3D models](./models.md) — sizing, fidelity, custom art, and lazy tool loading
 - [Architecture](./architecture.md) — how the whole thing works
+- [Compatibility](./compatibility.md) — browsers, frameworks, SSR, ESM, and CSP
+- [Accessibility](./accessibility.md) — keyboard, reduced motion, and host responsibilities
+- [Troubleshooting](./troubleshooting.md) — capture, SSR, layering, sound, and performance fixes

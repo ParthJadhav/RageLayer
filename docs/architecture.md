@@ -1,8 +1,9 @@
 # Architecture
 
 How the package turns a live page into a destructible object. Deeper dives:
-the [README](../README.md) covers the design reasoning per feature, and
-[HTML-IN-CANVAS.md](../HTML-IN-CANVAS.md) is the research log behind live capture mode.
+the [repository README](https://github.com/ParthJadhav/desktop-destroyer#readme) covers the public
+overview, and [HTML-IN-CANVAS.md](https://github.com/ParthJadhav/desktop-destroyer/blob/main/HTML-IN-CANVAS.md)
+is the research log behind live capture mode.
 
 ## The layer model
 
@@ -48,7 +49,16 @@ src/
 ├── sprites.ts       Lazily-baked gradient sprites for the hot particle paths
 ├── tools.ts         Hammer, gun, flamethrower, hose, chainsaw, paintball, broom
 ├── heavy-tools.ts   Demolition, rocket, lightning, freeze ray, black hole, bugs
+├── advanced-tools.ts Gravity gun, laser, acid, wrecking ball, bombs, glitch
+├── materials.ts     Registry + nested DOM-region material lookup
+├── combos.ts        Bounded spatial interaction tracker and combo definitions
+├── history.ts       Pixel-budgeted undo/redo stack with deterministic disposal
+├── loadouts.ts      Frozen named tool presets and custom loadout validation
+├── sdk.ts           Typed stateful custom-tool factories and rate scheduling
+├── default-tools.ts Official ordering that combines all built-in toolsets
+├── lazy.ts          On-demand base/heavy/advanced/complete tool loaders
 ├── toolart.ts       Hand-drawn pseudo-3D tool renderings + toolbar icon baking
+├── advanced-toolart.ts Split procedural models for advanced tools
 ├── cursors.ts       emojiCursor()
 ├── audio.ts         SoundEngine — fully procedural WebAudio
 ├── performance.ts   Quality profiles, device detection, frame telemetry ring
@@ -59,7 +69,9 @@ src/
 ## The frame loop
 
 The engine schedules **no animation frames while idle** — pointer input, scrolling, capture
-completion, tool selection and new entities wake it on demand.
+completion, tool selection and new entities wake it on demand. Hidden documents and explicit host
+pauses cancel the pending frame and resume against a fresh clock, so time away is never integrated as
+one giant physics step.
 
 ```
 frame:
