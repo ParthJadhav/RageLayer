@@ -12,6 +12,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Third-party actions are pinned to a commit SHA rather than a moving tag: a
+# compromised or retagged release would otherwise run with this workflow's
+# permissions. The trailing comment records which version each SHA is, so
+# Dependabot can keep both in step.
 jobs:
   verify:
     name: Lint, typecheck, test, build
@@ -19,15 +23,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.9
 
       - name: Install dependencies from lockfile
         run: bun install --frozen-lockfile
+
+      - name: Dependency audit
+        run: bun run audit
 
       - name: Lint (Biome)
         run: bun run lint
@@ -35,38 +42,94 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Unit tests
-        run: bun test
+      - name: Unit tests with coverage floors
+        run: bun run test:coverage
 
       - name: Build (tsdown)
         run: bun run build
 
+      - name: Consumer type tests (bundler + Node 16 resolution)
+        run: bun run typecheck:consumers
+
       - name: Package correctness (publint + arethetypeswrong)
         run: bun run check:package
 
+      - name: Documentation site
+        run: bun run docs:build
+
       - name: Upload dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dist
           path: dist
           retention-days: 7
 
+  # `engines` promises Node 20; the consumer type tests and the packaged build
+  # are what a Node-based toolchain actually touches, so they run on every
+  # supported major rather than only on the newest.
+  node-support:
+    name: Node ${{ matrix.node }} consumer build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22", "24"]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies from lockfile
+        run: bun install --frozen-lockfile
+
+      - name: Build
+        run: bun run build
+
+      - name: Consumer type tests
+        run: bun run typecheck:consumers
+
+      - name: Package correctness
+        run: bun run check:package
+
+      - name: Import the built package from Node
+        # Importing on a server must not touch the DOM; this is the SSR
+        # contract every framework adapter depends on.
+        run: |
+          node --input-type=module -e "
+            const dd = await import('./dist/index.js');
+            const controller = dd.createDesktopDestroyer();
+            if (controller.isOpen) throw new Error('controller opened during import');
+            if (dd.baseTools.length === 0) throw new Error('no tools exported');
+            console.log('imported', dd.defaultTools.length, 'default tools on Node ' + process.version);
+          "
+
   browser:
-    name: Chrome runtime smoke
+    name: Chrome runtime suite
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: verify
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.9
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
 
@@ -75,14 +138,24 @@ jobs:
 
       - name: Install Chrome for Testing
         id: chrome
-        uses: browser-actions/setup-chrome@v2
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
         with:
           chrome-version: stable
+
+      - name: Build
+        run: bun run build
+
+      - name: Runtime behaviour suite
+        # The only place page capture, the WebGL2 surface shader and the
+        # post-processing chain are executed for real.
+        env:
+          DD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node scripts/browser-test.mjs
 
       - name: Benchmark smoke (short run)
         env:
           DD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
-        run: bun run build && node scripts/benchmark.mjs --scenarios idle,mixed --duration 1500 --warmup 400
+        run: node scripts/benchmark.mjs --scenarios idle,mixed --duration 1500 --warmup 400 --assert
 
       - name: Memory leak gate
         env:

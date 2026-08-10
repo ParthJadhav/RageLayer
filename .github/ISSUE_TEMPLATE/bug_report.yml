@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a reproducible problem with Desktop Destroyer
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Desktop Destroyer. Please use the latest release and remove private page data from reproductions.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 0.3.0
+    validations:
+      required: true
+  - type: dropdown
+    id: integration
+    attributes:
+      label: Integration
+      options:
+        - React / Next.js
+        - Vue / Nuxt
+        - Svelte / SvelteKit
+        - Vanilla / core engine
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: Chrome 147 on macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Link a small repository or provide the shortest code that reproduces the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and console output
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and tested the latest version.
+          required: true
+        - label: This report does not contain sensitive page captures or credentials.
+          required: true
