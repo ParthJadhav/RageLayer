@@ -1,10 +1,8 @@
-import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
+import { launchChrome } from "./lib/browser.mjs";
 
-const chromePath =
-  process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const targetUrl = readFlag("--url", "http://127.0.0.1:4321/");
 const cpuRate = Math.max(1, Number(readFlag("--cpu", "1")));
 const deviceScaleFactor = Math.max(1, Number(readFlag("--dpr", "2")));
@@ -33,89 +31,18 @@ const EFFECT_CONFIG = {
   freeze: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 82, moveHz: 0.34 },
   blackhole: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 0, moveHz: 0 },
   bugs: { mode: "click", intervalMs: 420, activeRatio: 0.8, movePx: 180, moveHz: 0.27 },
+  "gravity-gun": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 100, moveHz: 0.4 },
+  "laser-cutter": { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 150, moveHz: 0.55 },
+  "acid-sprayer": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 90, moveHz: 0.42 },
+  "wrecking-ball": { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 180, moveHz: 0.65 },
+  "sticky-bombs": { mode: "click", intervalMs: 220, activeRatio: 0.8, movePx: 130, moveHz: 0.35 },
+  "glitch-gun": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 100, moveHz: 0.48 },
   broom: { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 150, moveHz: 0.62 },
 };
 
 function readFlag(name, fallback) {
   const index = process.argv.indexOf(name);
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
-}
-
-class CdpClient {
-  constructor(socket) {
-    this.socket = socket;
-    this.nextId = 1;
-    this.pending = new Map();
-    this.listeners = new Map();
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (message.id) {
-        const pending = this.pending.get(message.id);
-        if (!pending) return;
-        this.pending.delete(message.id);
-        if (message.error) pending.reject(new Error(message.error.message));
-        else pending.resolve(message.result);
-        return;
-      }
-      const callbacks = this.listeners.get(message.method);
-      if (!callbacks) return;
-      for (const callback of callbacks) callback(message.params ?? {}, message.sessionId);
-    });
-  }
-
-  send(method, params = {}, sessionId) {
-    const id = this.nextId++;
-    return new Promise((resolveMessage, reject) => {
-      this.pending.set(id, { resolve: resolveMessage, reject });
-      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
-  }
-
-  on(method, callback) {
-    let callbacks = this.listeners.get(method);
-    if (!callbacks) {
-      callbacks = new Set();
-      this.listeners.set(method, callbacks);
-    }
-    callbacks.add(callback);
-    return () => callbacks.delete(callback);
-  }
-
-  once(method) {
-    return new Promise((resolveEvent) => {
-      const off = this.on(method, (params, sessionId) => {
-        off();
-        resolveEvent({ params, sessionId });
-      });
-    });
-  }
-}
-
-async function freePort() {
-  const { createServer } = await import("node:net");
-  const server = createServer();
-  await new Promise((resolveReady, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise((resolveClosed) => server.close(resolveClosed));
-  return port;
-}
-
-async function waitForDebugger(port) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) return response.json();
-    } catch {
-      // Chrome is still starting.
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-  }
-  throw new Error("Chrome DevTools endpoint did not become ready");
 }
 
 function metricsObject(metrics) {
@@ -390,47 +317,10 @@ async ({ effect, mode, movePx }) => {
 }`;
 
 await mkdir(outputDir, { recursive: true });
-const profileDir = await mkdtemp(join(tmpdir(), "desktop-destroyer-profile-"));
-const debugPort = await freePort();
-const chrome = spawn(
-  chromePath,
-  [
-    "--headless=new",
-    // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which the
-    // Chrome sandbox needs; these harnesses only ever load their own local files.
-    ...(process.env.CI || process.env.DD_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-features=Translate,BackForwardCache",
-    "--disable-extensions",
-    "--disable-sync",
-    "--enable-precise-memory-info",
-    "--metrics-recording-only",
-    "about:blank",
-  ],
-  { stdio: ["ignore", "ignore", "pipe"] },
-);
-
-let stderr = "";
-chrome.stderr.on("data", (chunk) => {
-  stderr += chunk;
-});
+const browser = await launchChrome({ url: targetUrl, cpuRate });
+const { cdp, sessionId, targetId, version } = browser;
 
 try {
-  const version = await waitForDebugger(debugPort);
-  const socket = new WebSocket(version.webSocketDebuggerUrl);
-  await new Promise((resolveOpen, reject) => {
-    socket.addEventListener("open", resolveOpen, { once: true });
-    socket.addEventListener("error", reject, { once: true });
-  });
-  const cdp = new CdpClient(socket);
-  const { targetId } = await cdp.send("Target.createTarget", { url: targetUrl });
-  const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   const enableDomains = [
     cdp.send("Page.enable", {}, sessionId),
     cdp.send("Runtime.enable", {}, sessionId),
@@ -452,11 +342,9 @@ try {
 
   const evaluate = async (expression, argument = undefined) => {
     const result = await cdp.send(
-      "Runtime.callFunctionOn",
+      "Runtime.evaluate",
       {
-        functionDeclaration: expression,
-        executionContextId: 1,
-        arguments: argument === undefined ? [] : [{ value: argument }],
+        expression: `(${expression})(${argument === undefined ? "" : JSON.stringify(argument)})`,
         awaitPromise: true,
         returnByValue: true,
         userGesture: true,
@@ -483,15 +371,29 @@ try {
 
   const waitUntil = async (expression, timeoutMs, message) => {
     const deadline = Date.now() + timeoutMs;
-    while (!(await evalValue(expression))) {
+    while (true) {
+      try {
+        if (await evalValue(expression)) return;
+      } catch (error) {
+        // Attaching while the target commits its first navigation destroys the
+        // temporary about:blank execution context. Retry only that known race.
+        if (!/Cannot find context|Execution context was destroyed/.test(String(error))) throw error;
+      }
       if (Date.now() > deadline) throw new Error(message);
       await new Promise((resolveWait) => setTimeout(resolveWait, 100));
     }
   };
 
-  await waitUntil("document.readyState === 'complete'", 20_000, "Production page did not load");
+  await waitUntil(
+    `location.href === ${JSON.stringify(targetUrl)} && document.readyState === "complete"`,
+    20_000,
+    "Production page did not load",
+  );
   await evalValue(
     `Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "DESTROY")?.click()`,
+  );
+  await evalValue(
+    `if (!window.__desktopDestroyer && window.ddBenchmark) window.ddBenchmark.setupScenario("idle")`,
   );
   await waitUntil(
     "Boolean(window.__desktopDestroyer)",
@@ -499,7 +401,7 @@ try {
     "Desktop Destroyer did not mount",
   );
   await waitUntil(
-    "['snapshot', 'live'].includes(window.__desktopDestroyer.captureStatus)",
+    "window.__desktopDestroyer.opts.captureContent === false || ['snapshot', 'live'].includes(window.__desktopDestroyer.captureStatus)",
     Math.max(30_000, 20_000 * cpuRate),
     "Desktop Destroyer capture did not become ready",
   );
@@ -694,29 +596,11 @@ try {
   });
   await writeFile(join(outputDir, `summary-${cpuRate}x.json`), JSON.stringify(output, null, 2));
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
-  socket.close();
 } catch (error) {
-  process.stderr.write(`${error.stack ?? error}\n${stderr}\n`);
+  process.stderr.write(`${error.stack ?? error}\n${browser.stderr()}\n`);
   process.exitCode = 1;
 } finally {
-  chrome.kill("SIGTERM");
-  await Promise.race([
-    new Promise((resolveExit) => {
-      if (chrome.exitCode != null) resolveExit();
-      else chrome.once("exit", resolveExit);
-    }),
-    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
-  ]);
-  if (chrome.exitCode == null) {
-    chrome.kill("SIGKILL");
-    // Wait for the actual exit so Chrome isn't still flushing its profile
-    // directory while rm deletes it.
-    await Promise.race([
-      new Promise((resolveExit) => chrome.once("exit", resolveExit)),
-      new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
-    ]);
-  }
-  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await browser.close();
 }
 
 // Node's built-in WebSocket can retain an undici keep-alive handle after CDP

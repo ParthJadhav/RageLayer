@@ -1,5 +1,11 @@
 node_modules/
 dist/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+docs/public/demo/
+docs/public/dist/
+docs/public/screenshots/
 *.tsbuildinfo
 .DS_Store
 benchmark-results*.json
+coverage/

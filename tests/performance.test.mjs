@@ -23,6 +23,7 @@ function measurement(overrides = {}) {
     entities: { particles: 0, flames: 0, bodies: 0, bugs: 0 },
     quality: "high",
     pixelRatio: 1,
+    effectsPixelRatio: 1,
     targetFps: 60,
     ...overrides,
   };
@@ -136,6 +137,42 @@ describe("PerformanceMonitor adaptive quality", () => {
     expect(rec).toBe("balanced");
   });
 
+  test("persistent cadence pressure catches deferred canvas work", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    const rec = run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ cadenceMs: 34, frameMs: 6 })),
+    );
+    expect(rec).toBe("balanced");
+  });
+
+  test("a meaningful minority of deferred late frames can trigger adaptation", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    const frames = [
+      ...Array.from({ length: 26 }, () => measurement({ cadenceMs: 16.7, frameMs: 6 })),
+      ...Array.from({ length: 4 }, () => measurement({ cadenceMs: 34, frameMs: 6 })),
+    ];
+    expect(run(monitor, frames)).toBe("balanced");
+  });
+
+  test("catastrophic sustained overload skips the ineffective middle tier", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    const rec = run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ cadenceMs: 55, frameMs: 30 })),
+    );
+    expect(rec).toBe("low");
+  });
+
+  test("slow cadence alone does not blame a cheap engine", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    const rec = run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ cadenceMs: 50, frameMs: 2 })),
+    );
+    expect(rec).toBeNull();
+  });
+
   test("sustained headroom climbs low back toward balanced after five cool samples", () => {
     const monitor = new PerformanceMonitor(undefined, "low");
     let rec = null;
@@ -176,12 +213,28 @@ describe("quality profiles and detection", () => {
     expect(detectInitialQuality("high")).toBe("high");
   });
 
+  test("data-saver devices start in the low-cost profile", () => {
+    const previous = Object.getOwnPropertyDescriptor(navigator, "connection");
+    Object.defineProperty(navigator, "connection", {
+      configurable: true,
+      value: { saveData: true },
+    });
+    try {
+      expect(detectInitialQuality("auto")).toBe("low");
+    } finally {
+      if (previous) Object.defineProperty(navigator, "connection", previous);
+      else delete navigator.connection;
+    }
+  });
+
   test("profiles degrade monotonically", () => {
     const { high, balanced, low } = QUALITY_PROFILES;
     expect(high.particleScale).toBeGreaterThan(balanced.particleScale);
     expect(balanced.particleScale).toBeGreaterThan(low.particleScale);
     expect(high.physicsIterations).toBeGreaterThanOrEqual(balanced.physicsIterations);
     expect(balanced.physicsIterations).toBeGreaterThanOrEqual(low.physicsIterations);
+    expect(high.postFX).toBe(true);
+    expect(balanced.postFX).toBe(false);
     expect(low.postFX).toBe(false);
   });
 });

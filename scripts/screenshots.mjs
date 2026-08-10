@@ -226,12 +226,15 @@ try {
   const loadDemo = async () => {
     await cdp.send("Page.navigate", { url: `http://127.0.0.1:${serverPort}/` }, sessionId);
     const deadline = Date.now() + 20_000;
-    while (!(await evaluate("document.documentElement.dataset.ready === 'true'"))) {
+    // Optional chaining throughout: between `Page.navigate` returning and the
+    // new document existing there is a window where `documentElement` is null
+    // and evaluating against it throws rather than simply reporting "not yet".
+    while (!(await evaluate("document.documentElement?.dataset.ready === 'true'"))) {
       if (Date.now() > deadline) throw new Error("Demo page did not become ready");
       await wait(100);
     }
     // Wait for the page capture to finish so tools hit real content.
-    while ((await evaluate("window.engine.captureStatus")) === "capturing") {
+    while ((await evaluate("window.engine?.captureStatus ?? 'capturing'")) === "capturing") {
       if (Date.now() > deadline) throw new Error("Page capture did not finish");
       await wait(100);
     }
@@ -354,7 +357,76 @@ try {
   await wait(70);
   await shoot("frost-shatter");
 
-  // ── 10. Aftermath — a mixed session with the debris heap ────────────────
+  // ── 10. Water hose — sheeting water putting a fire out ──────────────────
+  await loadDemo();
+  await selectTool("flamethrower");
+  await drag(
+    [
+      { x: 560, y: 400 },
+      { x: 700, y: 400 },
+    ],
+    { stepMs: 180, settleMs: 400 },
+  );
+  await selectTool("water");
+  await hold(630, 300, 900);
+  await shoot("water");
+  await release(630, 300);
+  await wait(200);
+
+  // ── 11. Broom — sweeping wreckage back to a pristine page ───────────────
+  await loadDemo();
+  await selectTool("gun");
+  await drag(
+    Array.from({ length: 12 }, (_, i) => ({ x: 300 + i * 60, y: 320 })),
+    { stepMs: 60 },
+  );
+  await wait(500);
+  await selectTool("broom");
+  // Stop the sweep half way, so the shot shows repaired page beside damage.
+  await drag(
+    Array.from({ length: 8 }, (_, i) => ({ x: 300 + i * 45, y: 320 })),
+    { stepMs: 90, settleMs: 300 },
+  );
+  await shoot("broom");
+
+  // ── 12. Rocket launcher — captured on detonation ────────────────────────
+  await loadDemo();
+  await selectTool("rocket");
+  await click(420, 300);
+  // Long enough for the motor to carry it clear of the muzzle and arm.
+  await wait(700);
+  await shoot("rocket");
+
+  // ── 13. Demolition — whole elements knocked loose and falling ───────────
+  await loadDemo();
+  await selectTool("demolition");
+  for (const spot of [
+    { x: 360, y: 300 },
+    { x: 660, y: 320 },
+    { x: 940, y: 300 },
+  ]) {
+    await click(spot.x, spot.y);
+    await wait(220);
+  }
+  await wait(700);
+  await shoot("demolition");
+
+  // ── 14. Bugs — crawling over the surviving page ─────────────────────────
+  await loadDemo();
+  await selectTool("bugs");
+  for (const spot of [
+    { x: 380, y: 300 },
+    { x: 560, y: 380 },
+    { x: 740, y: 300 },
+    { x: 900, y: 420 },
+  ]) {
+    await click(spot.x, spot.y);
+    await wait(200);
+  }
+  await wait(900);
+  await shoot("bugs");
+
+  // ── 15. Aftermath — a mixed session with the debris heap ────────────────
   await loadDemo();
   await selectTool("gun");
   await drag(

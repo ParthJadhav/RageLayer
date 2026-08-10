@@ -1,18 +1,13 @@
-import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { launchChrome, startStaticServer } from "./lib/browser.mjs";
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const chromePath =
-  process.env.DD_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const cpuRate = Number(readFlag("--cpu", "1"));
 const durationMs = Number(readFlag("--duration", "4000"));
 const warmupMs = Number(readFlag("--warmup", "1000"));
 const leakCycles = Math.max(0, Number(readFlag("--leak-cycles", "0")));
+const assertBudgets = process.argv.includes("--assert");
+const maxEngineP95Ms = Number(readFlag("--max-engine-p95", "25")) * Math.max(1, cpuRate);
+const maxHeapGrowthBytes = Number(readFlag("--max-heap-growth", "10000000"));
+const maxLayoutMs = Number(readFlag("--max-layout", "50"));
 const requestedScenarios = readFlag("--scenarios", "idle,particles,fire,physics,mixed")
   .split(",")
   .map((value) => value.trim())
@@ -21,96 +16,6 @@ const requestedScenarios = readFlag("--scenarios", "idle,particles,fire,physics,
 function readFlag(name, fallback) {
   const index = process.argv.indexOf(name);
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
-}
-
-function contentType(pathname) {
-  return (
-    {
-      ".html": "text/html; charset=utf-8",
-      ".js": "text/javascript; charset=utf-8",
-      ".map": "application/json; charset=utf-8",
-      ".css": "text/css; charset=utf-8",
-    }[extname(pathname)] ?? "application/octet-stream"
-  );
-}
-
-async function startServer() {
-  const server = createServer(async (request, response) => {
-    try {
-      const url = new URL(request.url ?? "/", "http://localhost");
-      const pathname = decodeURIComponent(
-        url.pathname === "/" ? "/benchmarks/runtime.html" : url.pathname,
-      );
-      const filepath = resolve(packageRoot, `.${pathname}`);
-      if (!filepath.startsWith(`${packageRoot}/`)) throw new Error("outside package root");
-      const info = await stat(filepath);
-      if (!info.isFile()) throw new Error("not a file");
-      response.writeHead(200, {
-        "Content-Type": contentType(filepath),
-        "Cache-Control": "no-store",
-      });
-      createReadStream(filepath).pipe(response);
-    } catch {
-      response.writeHead(404, { "Content-Type": "text/plain" });
-      response.end("Not found");
-    }
-  });
-  await new Promise((resolveReady, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
-  });
-  return server;
-}
-
-class CdpClient {
-  constructor(socket) {
-    this.socket = socket;
-    this.nextId = 1;
-    this.pending = new Map();
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}, sessionId) {
-    const id = this.nextId++;
-    return new Promise((resolveMessage, reject) => {
-      this.pending.set(id, { resolve: resolveMessage, reject });
-      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
-  }
-}
-
-async function waitForDebugger(port) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) return response.json();
-    } catch {
-      // Chrome has not opened the debugging socket yet.
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-  }
-  throw new Error("Chrome DevTools endpoint did not become ready");
-}
-
-async function freePort() {
-  const server = createServer();
-  await new Promise((resolveReady, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise((resolveClosed) => server.close(resolveClosed));
-  return port;
 }
 
 function metricsObject(metrics) {
@@ -142,56 +47,14 @@ function memorySample(metrics) {
   };
 }
 
-const server = await startServer();
-const serverAddress = server.address();
-const serverPort = typeof serverAddress === "object" && serverAddress ? serverAddress.port : 0;
-const debugPort = await freePort();
-const profileDir = await mkdtemp(join(tmpdir(), "desktop-destroyer-benchmark-"));
-const chrome = spawn(
-  chromePath,
-  [
-    "--headless=new",
-    // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which the
-    // Chrome sandbox needs; these harnesses only ever load their own local files.
-    ...(process.env.CI || process.env.DD_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-features=Translate,BackForwardCache",
-    "--disable-extensions",
-    "--disable-sync",
-    "--enable-precise-memory-info",
-    "--metrics-recording-only",
-    "about:blank",
-  ],
-  { stdio: ["ignore", "ignore", "pipe"] },
-);
-
-let stderr = "";
-chrome.stderr.on("data", (chunk) => {
-  stderr += chunk;
-});
+const server = await startStaticServer("/benchmarks/runtime.html");
+const benchmarkUrl = process.env.DD_BENCHMARK_URL ?? `${server.origin}/benchmarks/runtime.html`;
+const browser = await launchChrome({ url: benchmarkUrl, cpuRate });
+const { cdp, sessionId, targetId, version } = browser;
 
 try {
-  const version = await waitForDebugger(debugPort);
-  const socket = new WebSocket(version.webSocketDebuggerUrl);
-  await new Promise((resolveOpen, reject) => {
-    socket.addEventListener("open", resolveOpen, { once: true });
-    socket.addEventListener("error", reject, { once: true });
-  });
-  const cdp = new CdpClient(socket);
-  const { targetId } = await cdp.send("Target.createTarget", {
-    url: `http://127.0.0.1:${serverPort}/benchmarks/runtime.html`,
-  });
-  const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   await Promise.all([
-    cdp.send("Runtime.enable", {}, sessionId),
     cdp.send("Performance.enable", { timeDomain: "timeTicks" }, sessionId),
-    cdp.send("Emulation.setCPUThrottlingRate", { rate: cpuRate }, sessionId),
     cdp.send(
       "Emulation.setDeviceMetricsOverride",
       { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false },
@@ -221,6 +84,8 @@ try {
 
   const results = [];
   for (const scenario of requestedScenarios) {
+    await cdp.send("Target.activateTarget", { targetId });
+    await cdp.send("Page.bringToFront", {}, sessionId);
     await evaluate(`window.ddBenchmark.setupScenario(${JSON.stringify(scenario)})`);
     await cdp.send("HeapProfiler.collectGarbage", {}, sessionId);
     const before = metricsObject((await cdp.send("Performance.getMetrics", {}, sessionId)).metrics);
@@ -303,48 +168,56 @@ try {
   }
 
   await evaluate("window.ddBenchmark.dispose()");
+  const assertionFailures = [];
+  if (assertBudgets) {
+    for (const result of results) {
+      const cpuP95 = result.engine?.cpu?.p95 ?? 0;
+      if (cpuP95 > maxEngineP95Ms) {
+        assertionFailures.push(
+          `${result.scenario} engine p95 ${cpuP95.toFixed(2)}ms exceeds ${maxEngineP95Ms.toFixed(2)}ms`,
+        );
+      }
+      const heapGrowth = result.heap?.deltaBytes ?? 0;
+      if (heapGrowth > maxHeapGrowthBytes) {
+        assertionFailures.push(
+          `${result.scenario} heap grew ${heapGrowth} bytes (limit ${maxHeapGrowthBytes})`,
+        );
+      }
+      if (result.browser.layoutMs > maxLayoutMs) {
+        assertionFailures.push(
+          `${result.scenario} layout cost ${result.browser.layoutMs.toFixed(2)}ms exceeds ${maxLayoutMs.toFixed(2)}ms`,
+        );
+      }
+    }
+  }
   const output = {
     generatedAt: new Date().toISOString(),
     chrome: version.Browser,
+    benchmarkUrl,
     cpuThrottle: cpuRate,
     viewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
     durationMs,
     warmupMs,
     results,
     leak,
+    assertions: assertBudgets
+      ? {
+          passed: assertionFailures.length === 0,
+          limits: { maxEngineP95Ms, maxHeapGrowthBytes, maxLayoutMs },
+          failures: assertionFailures,
+        }
+      : null,
   };
   process.stdout.write(`${JSON.stringify(roundValues(output), null, 2)}\n`);
-  socket.close();
+  if (assertionFailures.length > 0) {
+    throw new Error(`Runtime performance budgets failed: ${assertionFailures.join("; ")}`);
+  }
 } catch (error) {
-  process.stderr.write(`${error.stack ?? error}\n${stderr}\n`);
+  process.stderr.write(`${error.stack ?? error}\n${browser.stderr()}\n`);
   process.exitCode = 1;
 } finally {
-  chrome.kill("SIGTERM");
-  const chromeExited = new Promise((resolveExit) => {
-    if (chrome.exitCode != null) resolveExit();
-    else chrome.once("exit", resolveExit);
-  });
-  await Promise.race([
-    chromeExited,
-    new Promise((resolveTimeout) =>
-      setTimeout(() => {
-        chrome.kill("SIGKILL");
-        resolveTimeout();
-      }, 2_000),
-    ),
-  ]);
-  // A SIGKILLed Chrome can still be flushing its profile when rm starts;
-  // wait for the actual exit before deleting the directory.
-  await Promise.race([
-    chromeExited,
-    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
-  ]);
-  server.closeAllConnections?.();
-  await Promise.race([
-    new Promise((resolveClosed) => server.close(resolveClosed)),
-    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 1_000)),
-  ]);
-  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await browser.close();
+  await server.close();
   // Node's built-in WebSocket can retain an undici keep-alive handle after a
   // long multi-scenario CDP session. Flush output, then terminate explicitly so
   // the benchmark remains CI-friendly instead of hanging after valid JSON.
