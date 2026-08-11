@@ -7,5 +7,6 @@ docs/public/dist/
 docs/public/screenshots/
 *.tsbuildinfo
 .DS_Store
+.claude/settings.local.json
 benchmark-results*.json
 coverage/

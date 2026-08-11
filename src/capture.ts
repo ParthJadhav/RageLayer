@@ -39,6 +39,15 @@ export const DD_IGNORE_ATTR = "data-dd-ignore";
 const MAX_CANVAS_PIXELS = 20e6;
 
 /**
+ * Tallest document the destructible surface will cover.
+ *
+ * Beyond this the capture is truncated: a canvas that tall is both slow to
+ * rasterize and enormous to hold, and leaving the content below it intact is a
+ * better trade than degrading the fidelity of everything above.
+ */
+export const MAX_CAPTURE_HEIGHT = 12000;
+
+/**
  * Pixel ratio for a document-sized canvas.
  *
  * Capped three ways: never above 2 (past that the extra fidelity is invisible

@@ -124,7 +124,9 @@ function wrapContext(ctx, element) {
   };
 
   return new Proxy(ctx, {
-    get(target, property, receiver) {
+    // No `receiver`: every read resolves against the skia context itself, so
+    // that getters see the real backing object rather than this proxy.
+    get(target, property) {
       if (property === "canvas") return element;
       if (property === "__skia") return target;
       const value = Reflect.get(target, property, target);

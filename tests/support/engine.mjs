@@ -41,8 +41,8 @@ export function createTestEngine({
   const raster = makeCanvas(width, height, pageColor);
   const layer = new ContentLayer();
   layer.adopt(raster, width, height);
+  // Mounts the canvas in the right place in the layer stack as well.
   engine.contentLayer = layer;
-  engine.container.insertBefore(layer.canvas, engine.damageCanvas);
   stubRect(engine.container, { x: 0, y: 0, width, height });
 
   for (const tool of tools) engine.registerTool(tool);

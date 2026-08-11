@@ -362,21 +362,21 @@ describe("reduced motion", () => {
     setMediaMatch(QUERY, true);
     const engine = makeEngine();
 
-    expect(engine.vignette.style.transition).toBe("none");
+    expect(engine.overlay.vignette.style.transition).toBe("none");
   });
 
   test("an explicit false keeps full motion even when the system asks to reduce", () => {
     setMediaMatch(QUERY, true);
     const engine = makeEngine({ reducedMotion: false });
 
-    expect(engine.vignette.style.transition).not.toBe("none");
+    expect(engine.overlay.vignette.style.transition).not.toBe("none");
   });
 
   test("an explicit true reduces motion even when the system does not ask", () => {
     setMediaMatch(QUERY, false);
     const engine = makeEngine({ reducedMotion: true });
 
-    expect(engine.vignette.style.transition).toBe("none");
+    expect(engine.overlay.vignette.style.transition).toBe("none");
   });
 });
 

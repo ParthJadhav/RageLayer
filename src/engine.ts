@@ -1,17 +1,12 @@
 import { SoundEngine } from "./audio";
 import { BugSwarm } from "./bugs-sim";
-import {
-  DD_IGNORE_ATTR,
-  defaultCaptureFilter,
-  measureCapture,
-  pickPixelRatio,
-  resolvePageBackdrop,
-} from "./capture";
+import { defaultCaptureFilter } from "./capture";
+import { CaptureController, type CaptureHost } from "./capture-controller";
 import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
-import { type ContentCheckpoint, ContentLayer } from "./content";
+import type { ContentCheckpoint, ContentLayer } from "./content";
 import { atopAsOver } from "./ctx-proxy";
 import { drawPaintStreak } from "./decals";
-import { elementAt, elementsInBand, harvestElements, type PageElement } from "./elements";
+import { elementAt, elementsInBand, type PageElement } from "./elements";
 import { type FieldSnapshot, ScalarField } from "./fields";
 import { FlameField } from "./flames";
 import {
@@ -30,9 +25,9 @@ import {
   FxPainter,
 } from "./fx-render";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
-import { LiveContentSource, supportsLiveCapture } from "./live";
 import { type MaterialDefinition, MaterialSystem } from "./materials";
 import { TAU } from "./math";
+import { Overlay } from "./overlay";
 import { ParticleSystem, type ParticleWorld } from "./particles";
 import {
   detectInitialQuality,
@@ -43,8 +38,6 @@ import {
 import { MAX_BODIES, PhysicsWorld } from "./physics";
 import { PostFX } from "./postfx";
 import { blit, clearSpriteCache, sprites } from "./sprites";
-import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
-import { buildTextMask } from "./textmask";
 import { polygonArea2 } from "./topology";
 import type {
   CaptureMode,
@@ -71,8 +64,6 @@ import type {
 let liveEngines = 0;
 
 const MAX_CAPTURE_HEIGHT = 12000;
-/** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
-const FX_MARGIN = 120;
 /** Soft transient effects default to CSS-pixel resolution; hosts can explicitly supersample. */
 const DEFAULT_FX_DPR = 1;
 /** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
@@ -145,7 +136,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private applyingCombo = false;
   private readonly history: DestructionHistory<EngineHistoryEntry> | null;
   private restoringHistory = false;
-  readonly container: HTMLDivElement;
+  /** The overlay DOM and every question about where things are. */
+  private readonly overlay: Overlay;
   readonly sound = new SoundEngine();
   /** Rigid-body debris: chunks of page that have physically come off. */
   readonly physics: PhysicsWorld;
@@ -155,24 +147,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
   /** Document-space rects of the real page's furniture (see `elements.ts`). */
   pageElements: PageElement[] = [];
 
-  private voidLayer: HTMLDivElement;
-  private contentLayer: ContentLayer | null = null;
-  /** Shader settings for the destructible surface, applied on every capture. */
-  private surfaceParams: SurfaceParams = { ...DEFAULT_SURFACE_PARAMS };
-  /** False when the host asked for `surface: false` — mount the 2D canvas raw. */
-  private surfaceShading = true;
-  private contentRoot: HTMLElement | null = null;
-  private prevRootVisibility: string | null = null;
-  private damageCanvas: HTMLCanvasElement;
-  private fxCanvas: HTMLCanvasElement;
-  /** Viewport-parked darkening that deepens as the page gets wrecked. */
-  private vignette: HTMLDivElement;
-  private _damageCtx: CanvasRenderingContext2D;
+  /** Rasterizing the real page, and keeping the copy current. */
+  private readonly capture: CaptureController;
+
+  /** The destructible page, or null until a capture has succeeded. */
+  private get contentLayer(): ContentLayer | null {
+    return this.capture.content;
+  }
+
+  private set contentLayer(layer: ContentLayer | null) {
+    this.capture.install(layer);
+  }
   /** `_damageCtx` behind the atop→over wrapper; what the getters hand out. */
   private _damageToolCtx: CanvasRenderingContext2D | null = null;
-  private _fxCtx: CanvasRenderingContext2D;
-  /** The damage canvas only gets a backing store once something draws on it. */
-  private damageReady = false;
   /** Every transient effect: sparks, smoke, water, drips, flying page shards. */
   private readonly particles = new ParticleSystem();
   /** What the particle step reaches for outside itself; built once. */
@@ -220,11 +207,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private qualityMode: PerformanceQuality;
   private qualityTier: PerformanceQualityTier;
   private qualityProfile: QualityProfile;
-  private shakeAmount = 0;
-  /** Directional lurch and roll layered on top of the omnidirectional rattle. */
-  private kickX = 0;
-  private kickY = 0;
-  private shakeRoll = 0;
   /** Resolved once at mount from the explicit option or the OS preference. */
   private reducedMotion = false;
   /**
@@ -233,26 +215,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * vignette; repairs walk it back.
    */
   private destruction = 0;
-  private vignetteShown = -1;
   /**
    * Rate gate for debris-landing dust. A single chunk thudding down gets its
    * puff; a 150-body rain gets a sparse drizzle of them instead of a dust
    * storm that costs more than the debris it decorates.
    */
   private nextImpactDust = 0;
-  private dpr = 1;
-  private w = 0;
-  private h = 0;
-  /** Viewport size the fx canvas is currently sized for. */
-  private fxW = 0;
-  private fxH = 0;
-  /** Effects have an independent DPR cap; page capture and damage retain full fidelity. */
-  private fxDpr = 1;
-  private viewportH = 0;
-  private fxOffsetX = -1;
-  private fxOffsetY = -1;
-  private vignetteOffsetX = -1;
-  private vignetteOffsetY = -1;
   /** Whether the last frame put anything on the fx canvas (drives clear skips). */
   private fxPainted = false;
   /**
@@ -263,12 +231,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
    */
   private scrollX = 0;
   private scrollY = 0;
-  /**
-   * Document offset of the overlay container, captured without forcing layout
-   * on every pointer event. See `toolEvent`.
-   */
-  private originX = 0;
-  private originY = 0;
   private disposed = false;
   private pausedByHost = false;
   private pausedByVisibility = false;
@@ -276,16 +238,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private listeners = new Map<EngineEvent, Set<() => void>>();
   private resizeTimer = 0;
   private resizeObserver: ResizeObserver | null = null;
-  private capturing = false;
-  private captureFilter: (node: Node) => boolean;
-  /** Non-null only while live mode is actually in use. */
-  private liveSource: LiveContentSource | null = null;
-  private refreshTimer = 0;
-  private refreshing = false;
-  /** Extra delay before the next live refresh after a failure; 0 when healthy. */
-  private refreshBackoffMs = 0;
-  private _captureStatus: CaptureStatus = "idle";
-  private _liveUnavailable = false;
   /** One-shot: the MAX_CAPTURE_HEIGHT truncation is warned about only once. */
   private captureHeightWarned = false;
   /** Post-processing chain. Null when disabled or WebGL is unavailable. */
@@ -395,12 +347,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       toolScale: Math.min(2, Math.max(0.5, options.toolScale ?? 1)),
       pauseWhenHidden: options.pauseWhenHidden ?? true,
     };
-    if (options.surface === false) this.surfaceShading = false;
-    else if (options.surface) {
-      // Applied before the first capture, so the very first frame is shaded the
-      // way the host asked for rather than snapping to it a frame later.
-      this.surfaceParams = { ...DEFAULT_SURFACE_PARAMS, ...options.surface };
-    }
     this.physics = new PhysicsWorld({
       gravity: options.gravity,
       iterations: this.qualityProfile.physicsIterations,
@@ -408,97 +354,54 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.applyEntityLimits();
     // Asked for live on a browser without the flag: record it up front so the
     // toolbar can say *why* it is in snapshot mode.
-    this._liveUnavailable = this.opts.captureMode === "live" && !supportsLiveCapture();
-    this.captureFilter = options.captureFilter ?? defaultCaptureFilter;
     // Registered before the constructor's `captureContent()` call, so a host
     // that passes `onError` sees capture failures — the most likely failure of
     // all, and the one that happens before it could subscribe afterwards.
     if (options.onError) this.errorListeners.add(options.onError);
     this.sound.enabled = options.soundEnabled ?? false;
-    this.contentRoot = options.contentRoot ?? document.body;
-    this.materials.scan(this.contentRoot);
+    const contentRoot = options.contentRoot ?? document.body;
+    this.materials.scan(contentRoot);
     this.pausedByVisibility = this.opts.pauseWhenHidden && document.visibilityState === "hidden";
 
-    this.container = document.createElement("div");
-    this.container.setAttribute(DD_IGNORE_ATTR, "");
-    // Pure visual overlay: keep the canvases out of the accessibility tree.
-    this.container.setAttribute("aria-hidden", "true");
-    Object.assign(this.container.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-      width: "100%",
-      zIndex: String(this.opts.zIndex),
-      pointerEvents: "none",
-      overflow: "hidden",
-    } satisfies Partial<CSSStyleDeclaration>);
+    this.overlay = new Overlay({
+      zIndex: this.opts.zIndex,
+      reducedMotion: this.reducedMotion,
+      desynchronizedFx: !this.opts.postFX,
+    });
+    this.overlay.mount(options.target ?? document.body);
 
-    this.voidLayer = document.createElement("div");
-    Object.assign(this.voidLayer.style, {
-      position: "absolute",
-      inset: "0",
-      display: "none",
-      background:
-        "radial-gradient(ellipse 120% 60% at 50% 0%, #17130f 0%, #0c0a08 55%, #060504 100%)",
-    } satisfies Partial<CSSStyleDeclaration>);
-    this.container.appendChild(this.voidLayer);
-
-    this.damageCanvas = document.createElement("canvas");
-    this.fxCanvas = document.createElement("canvas");
-    Object.assign(this.damageCanvas.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-    } satisfies Partial<CSSStyleDeclaration>);
-    this.container.appendChild(this.damageCanvas);
-    // Start the damage canvas at zero size rather than the 300×150 default —
-    // `ensureDamage` gives it a backing store the first time anything draws.
-    this.damageCanvas.width = 0;
-    this.damageCanvas.height = 0;
-
-    // The raw FX canvas is the zero-cost presentation path. The WebGL chain is
-    // created lazily when a tool is selected or effects are spawned, so merely
-    // opening the destroyer does not compile shaders and allocate another set
-    // of viewport-sized buffers.
-    Object.assign(this.fxCanvas.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-    } satisfies Partial<CSSStyleDeclaration>);
-    this.container.appendChild(this.fxCanvas);
-    // The fx canvas is re-drawn every frame and only ever shows the viewport,
-    // so it is promoted to its own compositor layer and scrolled by transform.
-    Object.assign(this.fxCanvas.style, {
-      willChange: "transform",
-      transformOrigin: "0 0",
-    } satisfies Partial<CSSStyleDeclaration>);
-
-    // Global "this page has been through something" darkening. A CSS gradient
-    // on its own compositor layer, parked over the viewport exactly like the fx
-    // canvas: no per-frame canvas fill, and it only ever animates `opacity`.
-    this.vignette = document.createElement("div");
-    Object.assign(this.vignette.style, {
-      position: "absolute",
-      top: "0",
-      left: "0",
-      opacity: "0",
-      pointerEvents: "none",
-      transformOrigin: "0 0",
-      willChange: "opacity, transform",
-      transition: this.reducedMotion ? "none" : "opacity 0.6s ease-out",
-      background:
-        "radial-gradient(ellipse 76% 70% at 50% 50%, rgba(0,0,0,0) 32%, rgba(0,0,0,0.45) 74%, rgba(0,0,0,0.88) 100%)",
-    } satisfies Partial<CSSStyleDeclaration>);
-    this.container.appendChild(this.vignette);
-    this._damageCtx = this.damageCanvas.getContext("2d")!;
-    // `desynchronized` helps when this canvas is presented directly, but it is
-    // actively harmful when post-FX uploads the canvas into WebGL: Chrome has
-    // to synchronize two independent IOSurfaces before every texSubImage2D.
-    // Keep one compositor-owned surface for post-FX installations; packages
-    // with post-FX disabled still get the low-latency direct-present path.
-    this._fxCtx = this.fxCanvas.getContext("2d", { desynchronized: !this.opts.postFX })!;
-
-    (options.target ?? document.body).appendChild(this.container);
+    // A literal rather than `this`: these callbacks are internal plumbing, and
+    // putting them on the engine would widen its public API.
+    const captureHost: CaptureHost = {
+      overlay: this.overlay,
+      materials: this.materials,
+      docSize: () => this.docSize(),
+      refreshBand: () => this.refreshBand(),
+      onElements: (elements) => {
+        this.pageElements = elements;
+      },
+      onStatusChange: () => this.emit("statuschange"),
+      onError: (scope, message, cause) => this.reportError(scope, message, cause),
+      onCaptureLanded: () => {
+        // A fresh full capture can have different geometry and invalidates old
+        // pixel checkpoints. Live refreshes do not pass through this path.
+        if (this.history) this.clearHistory();
+      },
+      onCaptureSettled: (durationMs) => {
+        this.monitor.setCaptureDuration(durationMs);
+        this.requestFrame();
+      },
+    };
+    this.capture = new CaptureController(captureHost, {
+      root: contentRoot,
+      mode: this.opts.captureMode,
+      liveRefreshMs: this.opts.liveRefreshMs,
+      harvestElements: this.opts.harvestElements,
+      physics: this.opts.physics,
+      textMask: this.opts.textMask,
+      filter: options.captureFilter ?? defaultCaptureFilter,
+      surface: options.surface,
+    });
     this.resize();
     this.onScroll();
     window.addEventListener("resize", this.onWindowResize);
@@ -512,17 +415,17 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(this.onObservedResize);
       this.resizeObserver.observe(document.documentElement);
-      if (this.contentRoot !== document.documentElement) {
-        this.resizeObserver.observe(this.contentRoot);
+      if (contentRoot !== document.documentElement) {
+        this.resizeObserver.observe(contentRoot);
       }
     }
 
-    this.container.addEventListener("pointerdown", this.onPointerDown);
-    this.container.addEventListener("pointermove", this.onPointerMove);
+    this.overlay.container.addEventListener("pointerdown", this.onPointerDown);
+    this.overlay.container.addEventListener("pointermove", this.onPointerMove);
     window.addEventListener("pointerup", this.onPointerUp);
     window.addEventListener("pointercancel", this.onPointerCancel);
-    this.container.addEventListener("pointerleave", this.onPointerLeave);
-    this.container.addEventListener("contextmenu", this.onContextMenu);
+    this.overlay.container.addEventListener("pointerleave", this.onPointerLeave);
+    this.overlay.container.addEventListener("contextmenu", this.onContextMenu);
 
     this.lastTime = performance.now();
     if (!this.paused) this.requestFrame();
@@ -532,24 +435,28 @@ export class DestroyerEngine implements DestroyerEngineApi {
     liveEngines++;
 
     if (this.opts.captureContent) {
-      void this.captureContent();
+      void this.capture.capture();
     }
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
 
+  /** The overlay's root element, spanning the whole document. */
+  get container(): HTMLDivElement {
+    return this.overlay.container;
+  }
   get width() {
-    return this.w;
+    return this.overlay.width;
   }
   get height() {
-    return this.h;
+    return this.overlay.height;
   }
   get damageCtx() {
-    this.ensureDamage();
-    return (this._damageToolCtx ??= atopAsOver(this._damageCtx));
+    this.overlay.ensureDamage();
+    return (this._damageToolCtx ??= atopAsOver(this.overlay.damageCtx));
   }
   get fxCtx() {
-    return this._fxCtx;
+    return this.overlay.fxCtx;
   }
   get flames(): Flame[] {
     return this.fire.list;
@@ -729,12 +636,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * which is what the toolbar's status chip listens to.
    */
   get captureStatus(): CaptureStatus {
-    return this._captureStatus;
+    return this.capture.captureStatus;
   }
 
   /** Live mode was requested but the experimental API isn't available. */
   get liveUnavailable(): boolean {
-    return this._liveUnavailable;
+    return this.capture.liveUnavailable;
   }
 
   /** The mode that was asked for (not necessarily the one in use). */
@@ -747,7 +654,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * mode, or while a capture/refresh is already in flight.
    */
   refreshContent(): Promise<void> {
-    return this.refreshLive();
+    return this.capture.refresh();
   }
 
   registerTool(tool: Tool) {
@@ -785,13 +692,17 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (next === this.activeTool) return;
     if (this.pointerDown) this.endPointer();
     this.activeTool = next;
-    this.container.style.pointerEvents = next ? "auto" : "none";
+    this.overlay.container.style.pointerEvents = next ? "auto" : "none";
     // A tool with drawn art becomes its own cursor; the CSS one would be a
     // second, emoji-sized tool floating over the real one. In `"emoji"` tool
     // style the art never draws, so the CSS cursor stays in charge.
     const drawn = next?.art && this.opts.toolStyle === "3d";
-    this.container.style.cursor = next ? (drawn ? "none" : (next.cursor ?? "crosshair")) : "";
-    this.container.style.touchAction = next ? "none" : "";
+    this.overlay.container.style.cursor = next
+      ? drawn
+        ? "none"
+        : (next.cursor ?? "crosshair")
+      : "";
+    this.overlay.container.style.touchAction = next ? "none" : "";
     // Tool selection precedes the first destructive pointer action, making it
     // a safe time to warm the quality-preserving post-FX path without charging
     // the opening or capture path for it.
@@ -803,11 +714,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private createHistoryEntry(label?: string): EngineHistoryEntry {
     const content = this.contentLayer?.createCheckpoint() ?? null;
     let damage: HTMLCanvasElement | null = null;
-    if (this.damageReady) {
+    if (this.overlay.damageReady) {
       damage = document.createElement("canvas");
-      damage.width = this.damageCanvas.width;
-      damage.height = this.damageCanvas.height;
-      damage.getContext("2d")?.drawImage(this.damageCanvas, 0, 0);
+      damage.width = this.overlay.damageCanvas.width;
+      damage.height = this.overlay.damageCanvas.height;
+      damage.getContext("2d")?.drawImage(this.overlay.damageCanvas, 0, 0);
     }
     const frost = this.frost.snapshot();
     const fuel = this.fire.snapshotFuel();
@@ -838,7 +749,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private estimateHistoryPixelCost(): number {
     return (
       (this.contentLayer?.checkpointPixelCost ?? 0) +
-      (this.damageReady ? this.damageCanvas.width * this.damageCanvas.height : 0) +
+      (this.overlay.damageReady
+        ? this.overlay.damageCanvas.width * this.overlay.damageCanvas.height
+        : 0) +
       this.fieldPixelCost()
     );
   }
@@ -854,14 +767,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
       if (entry.content) this.contentLayer?.restoreCheckpoint(entry.content);
       else this.contentLayer?.restoreAll();
       if (entry.damage) {
-        this.ensureDamage();
-        this._damageCtx.save();
-        this._damageCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this._damageCtx.clearRect(0, 0, this.damageCanvas.width, this.damageCanvas.height);
-        this._damageCtx.drawImage(entry.damage, 0, 0);
-        this._damageCtx.restore();
-      } else if (this.damageReady) {
-        this._damageCtx.clearRect(0, 0, this.w, this.h);
+        this.overlay.ensureDamage();
+        this.overlay.damageCtx.save();
+        this.overlay.damageCtx.setTransform(1, 0, 0, 1, 0, 0);
+        this.overlay.damageCtx.clearRect(
+          0,
+          0,
+          this.overlay.damageCanvas.width,
+          this.overlay.damageCanvas.height,
+        );
+        this.overlay.damageCtx.drawImage(entry.damage, 0, 0);
+        this.overlay.damageCtx.restore();
+      } else if (this.overlay.damageReady) {
+        this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
       }
       this.frost.restore(entry.frost);
       this.fire.restoreFuel(entry.fuel);
@@ -885,7 +803,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   clear() {
     if (!this.restoringHistory) this.checkpoint("clear");
-    if (this.damageReady) this._damageCtx.clearRect(0, 0, this.w, this.h);
+    if (this.overlay.damageReady)
+      this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
     this.contentLayer?.restoreAll();
     this.fire.clear();
     this.particles.clear();
@@ -942,18 +861,18 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * rasterized, so this is four blits and a `toBlob`.
    */
   async snapshot(type = "image/png"): Promise<Blob | null> {
-    const w = Math.min(this.w, document.documentElement.clientWidth);
-    const h = Math.min(this.h, this.viewportH);
+    const w = Math.min(this.overlay.width, document.documentElement.clientWidth);
+    const h = Math.min(this.overlay.height, this.overlay.viewportHeight);
     if (w <= 0 || h <= 0) return null;
     const out = document.createElement("canvas");
-    out.width = Math.round(w * this.dpr);
-    out.height = Math.round(h * this.dpr);
+    out.width = Math.round(w * this.overlay.dpr);
+    out.height = Math.round(h * this.overlay.dpr);
     const ctx = out.getContext("2d");
     if (!ctx) return null;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.setTransform(this.overlay.dpr, 0, 0, this.overlay.dpr, 0, 0);
 
     const sx = this.scrollX;
-    const sy = Math.max(0, Math.min(this.scrollY, this.h - h));
+    const sy = Math.max(0, Math.min(this.scrollY, this.overlay.height - h));
 
     // The void behind the page, so holes read as holes and not as transparency.
     const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
@@ -968,19 +887,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
       const d = layer.dpr;
       ctx.drawImage(layer.canvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
     }
-    if (this.damageReady) {
-      const d = this.dpr;
-      ctx.drawImage(this.damageCanvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
+    if (this.overlay.damageReady) {
+      const d = this.overlay.dpr;
+      ctx.drawImage(this.overlay.damageCanvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
     }
     // The effects layer is viewport-parked, so its source rect is relative to
     // wherever `positionFx` last left it.
-    const presented = this.postfxActive ? this.postfx!.canvas : this.fxCanvas;
+    const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
     if (this.fxPainted && presented.width > 0) {
-      const d = this.dpr;
+      const d = this.overlay.dpr;
       ctx.drawImage(
         presented,
-        (sx - this.fxOffsetX) * d,
-        (sy - this.fxOffsetY) * d,
+        (sx - this.overlay.fxOffsetX) * d,
+        (sy - this.overlay.fxOffsetY) * d,
         w * d,
         h * d,
         0,
@@ -1009,9 +928,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     cancelAnimationFrame(this.raf);
     this.raf = 0;
     window.clearTimeout(this.resizeTimer);
-    window.clearTimeout(this.refreshTimer);
+
     this.resizeTimer = 0;
-    this.refreshTimer = 0;
+
     window.removeEventListener("resize", this.onWindowResize);
     window.removeEventListener("scroll", this.onScroll);
     window.removeEventListener("pagehide", this.onPageHide);
@@ -1020,21 +939,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     window.removeEventListener("pointercancel", this.onPointerCancel);
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.container.removeEventListener("pointerdown", this.onPointerDown);
-    this.container.removeEventListener("pointermove", this.onPointerMove);
-    this.container.removeEventListener("pointerleave", this.onPointerLeave);
-    this.container.removeEventListener("contextmenu", this.onContextMenu);
-    this.exitContentMode();
-    this.contentLayer?.dispose();
-    this.contentLayer = null;
-    this.liveSource?.dispose();
-    this.liveSource = null;
+    this.overlay.container.removeEventListener("pointerdown", this.onPointerDown);
+    this.overlay.container.removeEventListener("pointermove", this.onPointerMove);
+    this.overlay.container.removeEventListener("pointerleave", this.onPointerLeave);
+    this.overlay.container.removeEventListener("contextmenu", this.onContextMenu);
+    this.capture.dispose();
     this.physics.clear();
     this.postfx?.dispose();
     this.postfx = null;
-    this.setStatus("idle");
-    this.container.remove();
-    this.container.replaceChildren();
+    this.overlay.container.remove();
+    this.overlay.container.replaceChildren();
     this.sound.dispose();
     this.history?.clear();
     this.emit("dispose");
@@ -1044,10 +958,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // `dispose` must release the expensive state even when application code
     // intentionally keeps the engine object for inspection. In particular, a
     // detached high-DPI canvas keeps its whole pixel backing until it is reset.
-    this.damageCanvas.width = 0;
-    this.damageCanvas.height = 0;
-    this.fxCanvas.width = 0;
-    this.fxCanvas.height = 0;
+    this.overlay.damageCanvas.width = 0;
+    this.overlay.damageCanvas.height = 0;
+    this.overlay.fxCanvas.width = 0;
+    this.overlay.fxCanvas.height = 0;
     if (this.heatCanvas) {
       this.heatCanvas.width = 0;
       this.heatCanvas.height = 0;
@@ -1056,7 +970,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.heatCanvas = null;
     this.heatCtx = null;
     this._damageToolCtx = null;
-    this.damageReady = false;
     this.fxPainted = false;
 
     this.fire.clear();
@@ -1080,8 +993,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.frost.release();
     this.fire.dispose();
     this._singularity = null;
-    this.contentRoot = null;
-    this.prevRootVisibility = null;
 
     // Last engine out releases the shared sprite atlas. Safe even if another
     // engine is created later — `sprites()` rebuilds lazily.
@@ -1091,240 +1002,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   // ── Content capture (the "destroy the real page" pipeline) ────────────────
 
-  private setStatus(status: CaptureStatus) {
-    if (this._captureStatus === status) return;
-    this._captureStatus = status;
-    this.emit("statuschange");
-  }
-
-  private async captureContent() {
-    if (this.capturing || this.disposed || !this.contentRoot) return;
-    const captureStartedAt = performance.now();
-    this.capturing = true;
-    this.setStatus("capturing");
-    try {
-      const layer = this.contentLayer ?? new ContentLayer();
-      this.contentLayer = layer;
-      // Set before the capture: `adopt` is what brings the renderer up, so this
-      // has to be known by then rather than applied to it afterwards.
-      layer.shadingEnabled = this.surfaceShading;
-      // Match the overlay's own geometry so the destructible surface, the void
-      // and the fx canvas share one coordinate space.
-      const doc = this.docSize();
-      const geometry = measureCapture(this.contentRoot, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
-      const backdrop = resolvePageBackdrop(this.contentRoot);
-      this.materials.scan(this.contentRoot);
-
-      // Map the page's furniture while the real layout still exists — after
-      // `enterContentMode` there is nothing left to measure.
-      if (this.opts.harvestElements && this.opts.physics) {
-        try {
-          this.pageElements = harvestElements(this.contentRoot, this.captureFilter);
-        } catch (err) {
-          // A hostile layout shouldn't cost the user the whole toy.
-          this.reportError("element-harvest", "element harvest failed, demolition disabled", err);
-          this.pageElements = [];
-        }
-      }
-
-      let live = false;
-      if (this.opts.captureMode !== "snapshot" && supportsLiveCapture()) {
-        try {
-          await this.captureLive(layer, geometry, backdrop);
-          live = true;
-        } catch (err) {
-          // "live" was best-effort or explicit; either way a working toy beats
-          // a broken one, so drop to the snapshot path.
-          if (this.opts.captureMode === "live") {
-            this._liveUnavailable = true;
-            this.reportError(
-              "live-capture",
-              "live capture failed, falling back to snapshot mode",
-              err,
-            );
-          }
-        }
-      }
-      if (this.disposed) return;
-
-      if (!live) {
-        layer.live = false;
-        await layer.capture(this.contentRoot, geometry.width, geometry.height, this.captureFilter, {
-          source: geometry.source,
-          rootSize: geometry.rootSize,
-          backdrop,
-        });
-        if (this.disposed) return;
-        this.liveSource?.dispose();
-        this.liveSource = null;
-      }
-
-      // The renderer is (re-)created by `adopt`, so its settings are re-applied
-      // here rather than once at construction.
-      layer.surfaceParams = { ...this.surfaceParams };
-
-      // Map where the page has type on it, so the shader can keep glyphs crisp
-      // where a tear runs through them. Built here — before `enterContentMode`
-      // hides the real DOM — because it measures live line boxes.
-      if (this.opts.textMask && layer.shaded) {
-        try {
-          layer.setTextMask(
-            buildTextMask(this.contentRoot, geometry.width, geometry.height, this.captureFilter),
-          );
-        } catch (err) {
-          // Purely an enhancement; a page that resists measurement still works.
-          this.reportError("text-mask", "text mask failed, shading uniformly", err);
-        }
-      }
-
-      // Content canvas sits between the void backdrop and the damage canvas.
-      this.container.insertBefore(layer.canvas, this.damageCanvas);
-      this.enterContentMode();
-      // A fresh full capture can have different geometry and invalidates old
-      // pixel checkpoints. Live refreshes do not pass through this path.
-      if (this.history) this.clearHistory();
-      this.setStatus(live ? "live" : "snapshot");
-      if (live) this.scheduleRefresh();
-    } catch (err) {
-      // Capture can fail (e.g. CORS-tainted resources). Fall back to
-      // overlay-only damage rather than breaking the toy.
-      this.reportError("capture", "page capture failed, using overlay mode", err);
-      this.contentLayer?.dispose();
-      this.contentLayer = null;
-      this.setStatus("idle");
-    } finally {
-      this.capturing = false;
-      this.monitor.setCaptureDuration(performance.now() - captureStartedAt);
-      this.requestFrame();
-    }
-  }
-
-  /** First live capture: raster the page through `drawElementImage`. */
-  private async captureLive(
-    layer: ContentLayer,
-    geometry: ReturnType<typeof measureCapture>,
-    backdrop: ReturnType<typeof resolvePageBackdrop>,
-  ) {
-    const source = (this.liveSource ??= new LiveContentSource());
-    layer.dpr = pickPixelRatio(geometry.width, geometry.height);
-    const raster = await source.capture(
-      this.contentRoot!,
-      geometry.width,
-      geometry.height,
-      layer.dpr,
-      {
-        source: geometry.source,
-        rootSize: geometry.rootSize,
-        backdrop,
-        filter: this.captureFilter,
-      },
-    );
-    if (this.disposed) throw new Error("disposed");
-    // Set before adopt: `adopt` resets the wound buffers, and `live` decides
-    // whether damage is recorded into them at all.
-    layer.live = true;
-    layer.adopt(raster, geometry.width, geometry.height);
-  }
-
-  private scheduleRefresh() {
-    clearTimeout(this.refreshTimer);
-    if (this.opts.liveRefreshMs <= 0 || this.disposed) return;
-    this.refreshTimer = window.setTimeout(
-      () => {
-        void this.refreshLive().then(() => this.scheduleRefresh());
-      },
-      Math.max(this.opts.liveRefreshMs, this.refreshBackoffMs),
-    );
-  }
-
-  /**
-   * Re-capture the un-destroyed page into the layer's base while keeping every
-   * wound. Cheap (~6 ms on a typical page) because it is one `drawElementImage`
-   * rather than an SVG round-trip — which is the whole point of live mode.
-   */
-  private async refreshLive() {
-    const layer = this.contentLayer;
-    if (!this.liveSource || !layer?.ready || !layer.live) return;
-    if (this.refreshing || this.capturing || this.disposed || !this.contentRoot) return;
-    // A hidden tab still runs timers but its rAF is throttled to a crawl, and
-    // the capture awaits two frames. Skip rather than pile up.
-    if (document.hidden) return;
-    this.refreshing = true;
-    try {
-      this.materials.scan(this.contentRoot);
-      const doc = this.docSize();
-      const geometry = measureCapture(this.contentRoot, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
-      // A reflow invalidates the whole capture; the resize handler owns that.
-      if (geometry.width !== layer.width || geometry.height !== layer.height) return;
-
-      // Fast path: the mirror is already mounted and its animations are running
-      // in step with the page's, so a refresh is one draw call rather than a
-      // clone of the whole DOM. Falls through to the full capture when the
-      // browser has no paint events, or when the paint record went stale.
-      const repainted = this.liveSource.repaint();
-      if (repainted) {
-        layer.refreshBase(repainted, {
-          y0: this.scrollY - this.viewportH,
-          y1: this.scrollY + this.viewportH * 2,
-        });
-        this.refreshBackoffMs = 0;
-        return;
-      }
-
-      const raster = await this.liveSource.capture(
-        this.contentRoot,
-        geometry.width,
-        geometry.height,
-        layer.dpr,
-        {
-          source: geometry.source,
-          rootSize: geometry.rootSize,
-          backdrop: resolvePageBackdrop(this.contentRoot),
-          filter: this.captureFilter,
-        },
-      );
-      if (this.disposed) return;
-      // Refresh only what the user can see plus a screen either side — the
-      // page below the fold keeps last refresh's (still pristine) pixels.
-      layer.refreshBase(raster, {
-        y0: this.scrollY - this.viewportH,
-        y1: this.scrollY + this.viewportH * 2,
-      });
-      this.refreshBackoffMs = 0;
-    } catch (err) {
-      // A failed refresh just means the base is a little stale — the existing
-      // pixels and all the destruction are still on screen. Back off (doubling
-      // up to a minute) and keep retrying rather than giving up forever; a
-      // success resets the backoff. The configured interval is never mutated.
-      this.refreshBackoffMs = Math.min(
-        60_000,
-        Math.max(this.opts.liveRefreshMs * 4, this.refreshBackoffMs * 2),
-      );
-      this.reportError("live-refresh", "live refresh failed, keeping last capture", err);
-    } finally {
-      this.refreshing = false;
-    }
-  }
-
-  private enterContentMode() {
-    if (!this.contentRoot || !this.contentLayer?.ready) return;
-    if (this.prevRootVisibility === null) {
-      this.prevRootVisibility = this.contentRoot.style.visibility;
-    }
-    // Hide the real DOM but keep its layout (scrollbars, page height). Our
-    // own container un-hides itself — visibility, unlike display, can be
-    // re-enabled on descendants.
-    this.contentRoot.style.visibility = "hidden";
-    this.container.style.visibility = "visible";
-    this.voidLayer.style.display = "block";
-  }
-
-  private exitContentMode() {
-    if (this.contentRoot && this.prevRootVisibility !== null) {
-      this.contentRoot.style.visibility = this.prevRootVisibility;
-      this.prevRootVisibility = null;
-    }
-    this.voidLayer.style.display = "none";
+  /** The document rows a live refresh covers: what the user can see, plus a screen either side. */
+  private refreshBand() {
+    const viewport = this.overlay.viewportHeight;
+    return { y0: this.scrollY - viewport, y1: this.scrollY + viewport * 2 };
   }
 
   // ── DestroyerEngineApi (used by tools) ────────────────────────────────────
@@ -1354,8 +1035,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.contentLayer?.restore(x, y, radius);
     // ...and sweep any overlay decals (also the fallback path). Nothing to
     // sweep if the damage canvas was never painted on.
-    if (!this.damageReady) return;
-    const ctx = this._damageCtx;
+    if (!this.overlay.damageReady) return;
+    const ctx = this.overlay.damageCtx;
     ctx.globalCompositeOperation = "destination-out";
     blit(ctx, sprites().erase, x, y, radius, 1);
     ctx.globalAlpha = 1;
@@ -1370,8 +1051,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
    */
   washSurface(x: number, y: number, radius: number, strength = 1) {
     this.contentLayer?.wash(x, y, radius, strength);
-    if (this.damageReady) {
-      const ctx = this._damageCtx;
+    if (this.overlay.damageReady) {
+      const ctx = this.overlay.damageCtx;
       ctx.globalCompositeOperation = "destination-out";
       blit(ctx, sprites().erase, x, y, radius, Math.min(1, strength));
       ctx.globalAlpha = 1;
@@ -1426,17 +1107,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   shake(strength = 6, dirX = 0, dirY = 0) {
-    if (!this.reducedMotion) {
-      this.shakeAmount = Math.max(this.shakeAmount, strength);
-      if (dirX !== 0 || dirY !== 0) {
-        const mag = Math.hypot(dirX, dirY) || 1;
-        this.kickX += (dirX / mag) * strength * 0.5;
-        this.kickY += (dirY / mag) * strength * 0.5;
-      }
-      // A little roll on every hit: pure translation reads as a rattle, a tilt
-      // reads as the page taking the blow.
-      this.shakeRoll += (Math.random() - 0.5) * strength * 0.00035;
-    }
+    this.overlay.shake(strength, dirX, dirY);
     // Every destructive tool already calls shake(), scaled by how hard it hit —
     // which makes it the one honest measure of accumulated damage.
     this.destruction = Math.min(1, this.destruction + strength * 0.0012);
@@ -1962,12 +1633,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   collapse() {
     const top = this.scrollY - 240;
-    const bottom = this.scrollY + this.viewportH + 240;
+    const bottom = this.scrollY + this.overlay.viewportHeight + 240;
     this.collapseQueue = elementsInBand(
       this.pageElements,
       top,
       bottom,
-      this.scrollY + this.viewportH * 0.35,
+      this.scrollY + this.overlay.viewportHeight * 0.35,
     );
     this.collapseTimer = 0;
     if (this.collapseQueue.length > 0) {
@@ -1978,8 +1649,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // visible band apart by brute force instead of doing nothing.
     for (let i = 0; i < 7; i++) {
       this.fracture(
-        Math.random() * this.w,
-        this.scrollY + Math.random() * this.viewportH,
+        Math.random() * this.overlay.width,
+        this.scrollY + Math.random() * this.overlay.viewportHeight,
         70 + Math.random() * 70,
         { power: 140 },
       );
@@ -1991,7 +1662,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   // ── Frost ─────────────────────────────────────────────────────────────────
 
   freeze(x: number, y: number, radius: number, amount: number) {
-    this.frost.ensure(this.w, this.h);
+    this.frost.ensure(this.overlay.width, this.overlay.height);
     // Rime belongs on the page, not floating in a hole.
     this.frost.paintDisc(x, y, radius, amount, this.onPageCell);
     this.signalInteraction("freeze", x, y);
@@ -2016,8 +1687,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (!this.postfxEnabled) return;
     const ctx = this.heatCtx;
     if (!ctx || amount <= 0) return;
-    const hx = (x - this.fxOffsetX) / HEAT_SCALE;
-    const hy = (y - this.fxOffsetY) / HEAT_SCALE;
+    const hx = (x - this.overlay.fxOffsetX) / HEAT_SCALE;
+    const hy = (y - this.overlay.fxOffsetY) / HEAT_SCALE;
     const hr = radius / HEAT_SCALE;
     // Additive onto an opaque black field: the canvas composites in
     // premultiplied space, so `lighter` accumulates the gradient's *weighted*
@@ -2158,9 +1829,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.postfx = postfx;
     this.heatCanvas = document.createElement("canvas");
     this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
-    postfx.resize(this.fxCanvas.width, this.fxCanvas.height, this.fxW, this.fxH);
-    this.heatCanvas.width = Math.max(1, Math.round(this.fxW / HEAT_SCALE));
-    this.heatCanvas.height = Math.max(1, Math.round(this.fxH / HEAT_SCALE));
+    postfx.resize(
+      this.overlay.fxCanvas.width,
+      this.overlay.fxCanvas.height,
+      this.overlay.fxWidth,
+      this.overlay.fxHeight,
+    );
+    this.heatCanvas.width = Math.max(1, Math.round(this.overlay.fxWidth / HEAT_SCALE));
+    this.heatCanvas.height = Math.max(1, Math.round(this.overlay.fxHeight / HEAT_SCALE));
   }
 
   private setPostFXEnabled(enabled: boolean) {
@@ -2176,13 +1852,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const postfx = this.postfx;
     const next = this.postfxEnabled && !!postfx && active;
     if (next === this.postfxActive) return;
-    const outgoing = this.postfxActive ? postfx!.canvas : this.fxCanvas;
-    const incoming = next ? postfx!.canvas : this.fxCanvas;
+    const outgoing = this.postfxActive ? postfx!.canvas : this.overlay.fxCanvas;
+    const incoming = next ? postfx!.canvas : this.overlay.fxCanvas;
     incoming.style.transform = outgoing.style.transform;
     outgoing.replaceWith(incoming);
     this.postfxActive = next;
     if (!next) postfx?.clear();
-    this.fxOffsetX = this.fxOffsetY = -1;
+    this.overlay.fxOffsetX = this.overlay.fxOffsetY = -1;
   }
 
   private docSize() {
@@ -2204,80 +1880,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   /**
-   * Give the damage canvas a real backing store. Deferred until something
-   * actually paints on it: with the page capture live every tool draws onto
-   * the content canvas instead, and an empty document-sized layer still costs
-   * the compositor a full set of tiles.
+   * Re-measure the overlay against the document and push the new fx geometry
+   * into the post-processing chain.
    */
-  private ensureDamage() {
-    if (this.damageReady || this.w === 0) return;
-    this.damageReady = true;
-    this.damageCanvas.width = Math.round(this.w * this.dpr);
-    this.damageCanvas.height = Math.round(this.h * this.dpr);
-    this.damageCanvas.style.width = `${this.w}px`;
-    this.damageCanvas.style.height = `${this.h}px`;
-    this._damageCtx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-  }
-
-  /** Keep the fx canvas matched to the viewport (not the document). */
-  private resizeFx() {
-    const width = document.documentElement.clientWidth;
-    this.viewportH = window.innerHeight;
-    const height = Math.min(this.viewportH + FX_MARGIN * 2, this.h + FX_MARGIN * 2);
-    const dpr = Math.min(this.dpr, this.opts.effectsPixelRatio);
-    this.vignette.style.width = `${width}px`;
-    this.vignette.style.height = `${this.viewportH}px`;
-    if (width === this.fxW && height === this.fxH && dpr === this.fxDpr) return;
-    this.fxW = width;
-    this.fxH = height;
-    this.fxDpr = dpr;
-    this.fxCanvas.width = Math.round(width * dpr);
-    this.fxCanvas.height = Math.round(height * dpr);
-    this.fxCanvas.style.width = `${width}px`;
-    this.fxCanvas.style.height = `${height}px`;
-    this.postfx?.resize(this.fxCanvas.width, this.fxCanvas.height, width, height);
-    if (this.heatCanvas) {
-      this.heatCanvas.width = Math.max(1, Math.round(width / HEAT_SCALE));
-      this.heatCanvas.height = Math.max(1, Math.round(height / HEAT_SCALE));
-    }
-    // Force the transform to be re-applied against the new size.
-    this.fxOffsetX = this.fxOffsetY = -1;
-  }
-
   private resize() {
     const { width, height } = this.docSize();
-    if (width === 0 || height === 0) return;
-    const dpr = pickPixelRatio(width, height);
-    if (width === this.w && height === this.h && dpr === this.dpr) {
-      this.resizeFx();
-      return;
+    const overlay = this.overlay;
+    const fxChanged = overlay.resize(width, height, this.opts.effectsPixelRatio);
+    if (fxChanged) {
+      // The frost grid is indexed off the document size; a reflow invalidates it.
+      this.frost.release();
     }
-
-    // Preserve existing damage across resizes (top-left anchored). Only
-    // meaningful once the damage canvas has actually been allocated — an
-    // untouched one has no pixels worth carrying over.
-    let prev: HTMLCanvasElement | null = null;
-    const prevDpr = this.dpr;
-    if (this.damageReady) {
-      prev = document.createElement("canvas");
-      prev.width = this.damageCanvas.width;
-      prev.height = this.damageCanvas.height;
-      prev.getContext("2d")!.drawImage(this.damageCanvas, 0, 0);
-    }
-
-    this.w = width;
-    this.h = height;
-    this.dpr = dpr;
-    // The frost grid is indexed off the document size; a reflow invalidates it.
-    this.frost.release();
-    this.container.style.height = `${height}px`;
-    this.measureOrigin();
-    this.resizeFx();
-
-    if (prev) {
-      this.damageReady = false;
-      this.ensureDamage();
-      this._damageCtx.drawImage(prev, 0, 0, prev.width / prevDpr, prev.height / prevDpr);
+    this.postfx?.resize(
+      overlay.fxCanvas.width,
+      overlay.fxCanvas.height,
+      overlay.fxWidth,
+      overlay.fxHeight,
+    );
+    if (this.heatCanvas) {
+      this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
+      this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
     }
   }
 
@@ -2293,7 +1915,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * visibility so a bfcache-restored page never comes back blank.
    */
   private onPageHide = () => {
-    this.exitContentMode();
+    this.capture.exitContentMode();
   };
 
   private onVisibilityChange = () => {
@@ -2317,45 +1939,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (this.contentLayer?.ready) {
       clearTimeout(this.resizeTimer);
       this.resizeTimer = window.setTimeout(() => {
-        if (this.disposed || !this.contentLayer) return;
-        const next = this.docSize();
-        if (this.contentLayer.width !== next.width || this.contentLayer.height !== next.height) {
-          clearTimeout(this.refreshTimer);
-          this.exitContentMode();
-          this.contentLayer.ready = false;
-          void this.captureContent();
-        }
+        if (!this.disposed) this.capture.recaptureAfterReflow();
       }, 350);
     }
   };
 
-  /**
-   * Document-space position of the overlay container.
-   *
-   * Read via the `offsetParent` chain rather than `getBoundingClientRect` for
-   * two reasons: it can be cached across pointer events (the container's
-   * document anchor only moves on resize), and it ignores the shake transform,
-   * which would otherwise make the cursor's hit position jitter along with the
-   * screen shake.
-   */
-  private measureOrigin() {
-    let x = 0;
-    let y = 0;
-    let el: HTMLElement | null = this.container;
-    while (el) {
-      x += el.offsetLeft;
-      y += el.offsetTop;
-      el = el.offsetParent as HTMLElement | null;
-    }
-    this.originX = x;
-    this.originY = y;
-  }
-
   private toolEvent(e: PointerEvent) {
     // Equivalent to `clientX - container.getBoundingClientRect().left`, but
     // without forcing a layout on every pointermove.
-    const x = e.clientX + window.scrollX - this.originX;
-    const y = e.clientY + window.scrollY - this.originY;
+    const x = e.clientX + window.scrollX - this.overlay.originX;
+    const y = e.clientY + window.scrollY - this.overlay.originY;
     const ev = {
       x,
       y,
@@ -2377,7 +1970,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.pointerDown = true;
     this.activePointerId = e.pointerId;
     try {
-      this.container.setPointerCapture?.(e.pointerId);
+      this.overlay.container.setPointerCapture?.(e.pointerId);
     } catch {
       // Older Safari builds can reject capture even though Pointer Events exist.
     }
@@ -2415,7 +2008,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.activeTool?.onUp?.(this, ev);
     if (this.activePointerId !== null) {
       try {
-        this.container.releasePointerCapture?.(this.activePointerId);
+        this.overlay.container.releasePointerCapture?.(this.activePointerId);
       } catch {
         // Capture may already have been released by the browser on cancellation.
       }
@@ -2492,8 +2085,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const renderStartedAt = performance.now();
     this.render();
     const renderTotalMs = performance.now() - renderStartedAt;
-    this.updateShake(dt);
-    this.updateVignette();
+    this.overlay.stepShake(dt, this.scrollY);
+    this.overlay.setVignetteLevel(this.destruction);
     this.updateLoops();
 
     const frameMs = performance.now() - frameStartedAt;
@@ -2513,8 +2106,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
         bugs: this.bugs.count,
       },
       quality: this.qualityTier,
-      pixelRatio: this.dpr,
-      effectsPixelRatio: this.fxDpr,
+      pixelRatio: this.overlay.dpr,
+      effectsPixelRatio: this.overlay.fxDpr,
       targetFps,
     });
     if (recommendation && this.qualityMode === "auto") this.applyQuality(recommendation);
@@ -2536,10 +2129,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.collapseQueue.length > 0 ||
       !!this._singularity ||
       !!this.activeTool ||
-      this.shakeAmount > 0.2 ||
-      Math.abs(this.kickX) >= 0.15 ||
-      Math.abs(this.kickY) >= 0.15 ||
-      Math.abs(this.shakeRoll) >= 0.00012
+      this.overlay.isShaking
     );
   }
 
@@ -2637,8 +2227,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (!this.opts.physics || this.physics.count === 0) return;
     // Debris settles at the bottom of the *window*. On a page ten screens tall,
     // a document-floor heap would simply be somewhere you are not looking.
-    const floorY = Math.min(this.h, this.scrollY + this.viewportH) - 1;
-    this.physics.setBounds(this.w, floorY);
+    const floorY = Math.min(this.overlay.height, this.scrollY + this.overlay.viewportHeight) - 1;
+    this.physics.setBounds(this.overlay.width, floorY);
     this.physics.step(dt);
 
     // Dust where debris landed hard. Wood chunks slamming into the floor (or
@@ -2808,41 +2398,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     return this.bugs.flush(this, x, y, radius);
   }
 
-  /**
-   * Park the (viewport-sized) fx canvas over the visible band and set up a
-   * matching drawing transform, so the rest of the renderer keeps working in
-   * document coordinates. Returns the visible document band for culling.
-   */
-  private positionFx() {
-    const left = Math.max(0, this.scrollX);
-    const top = Math.max(0, this.scrollY - FX_MARGIN);
-    if (left !== this.fxOffsetX || top !== this.fxOffsetY) {
-      this.fxOffsetX = left;
-      this.fxOffsetY = top;
-      // A transform (not `top`/`left`) so scrolling never re-rasters the layer.
-      // Whichever canvas is actually in the DOM is the one that has to move.
-      // Whichever canvas is actually in the DOM is the one that has to move.
-      const presented = this.postfxActive ? this.postfx!.canvas : this.fxCanvas;
-      presented.style.transform = `translate3d(${left}px, ${top}px, 0)`;
-    }
-    // The vignette tracks the viewport itself, not the fx band, so it needs its
-    // own offset — `top` is clamped at the top of the document and would stick.
-    const vTop = Math.max(0, Math.min(this.scrollY, this.h - this.viewportH));
-    if (left !== this.vignetteOffsetX || vTop !== this.vignetteOffsetY) {
-      this.vignetteOffsetX = left;
-      this.vignetteOffsetY = vTop;
-      this.vignette.style.transform = `translate3d(${left}px, ${vTop}px, 0)`;
-    }
-    const dpr = this.fxDpr;
-    this._fxCtx.setTransform(dpr, 0, 0, dpr, -left * dpr, -top * dpr);
-    return { left, top, right: left + this.fxW, bottom: top + this.fxH };
-  }
-
   private render() {
     this.postFXFrameMs = 0;
     const time = this.lastTime / 1000;
-    const ctx = this._fxCtx;
-    const view = this.positionFx();
+    const ctx = this.overlay.fxCtx;
+    const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
+    const view = this.overlay.positionFx(this.scrollX, this.scrollY, presented);
 
     // A tool with drawn art keeps the canvas live whenever the pointer is on
     // the page — the tool itself is being rendered, even with nothing else on.
@@ -2860,13 +2421,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
       // Nothing to draw: clear once after the last active frame, then leave the
       // canvas (and the compositor) completely alone while idle.
       if (this.fxPainted) {
-        ctx.clearRect(view.left, view.top, this.fxW, this.fxH);
+        ctx.clearRect(view.left, view.top, this.overlay.fxWidth, this.overlay.fxHeight);
         if (this.postfxActive) this.postfx?.clear();
         this.fxPainted = false;
       }
       return;
     }
-    ctx.clearRect(view.left, view.top, this.fxW, this.fxH);
+    ctx.clearRect(view.left, view.top, this.overlay.fxWidth, this.overlay.fxHeight);
     this.fxPainted = true;
 
     // Bugs crawl *on* the page, under every particle and piece of debris.
@@ -3007,49 +2568,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
 
     this.setPostFXOutput(true);
-    postfx.render(this.fxCanvas, this.heatCanvas, { bloom, heat, aberration, time });
+    postfx.render(this.overlay.fxCanvas, this.heatCanvas, { bloom, heat, aberration, time });
     return performance.now() - startedAt;
-  }
-
-  private updateShake(dt: number) {
-    const settled =
-      this.shakeAmount <= 0.2 &&
-      Math.abs(this.kickX) < 0.15 &&
-      Math.abs(this.kickY) < 0.15 &&
-      Math.abs(this.shakeRoll) < 0.00012;
-    if (!settled) {
-      const s = this.shakeAmount;
-      const tx = (Math.random() - 0.5) * s + this.kickX;
-      const ty = (Math.random() - 0.5) * s + this.kickY;
-      const roll = this.shakeRoll + (Math.random() - 0.5) * s * 0.00022;
-      // Pivot around the middle of what the user is looking at. The container
-      // spans the whole document, so the default 50%/50% origin would swing the
-      // top of a long page by tens of pixels for a fraction of a degree.
-      this.container.style.transformOrigin = `50% ${this.scrollY + this.viewportH * 0.5}px`;
-      this.container.style.transform = `translate(${tx}px, ${ty}px) rotate(${roll}rad)`;
-      const decay = Math.exp(-dt * 14);
-      this.shakeAmount *= decay;
-      this.kickX *= decay;
-      this.kickY *= decay;
-      // The roll unwinds more slowly than the rattle, so a big hit leaves the
-      // page visibly tilting back rather than snapping straight.
-      this.shakeRoll *= Math.exp(-dt * 8);
-    } else if (this.container.style.transform) {
-      this.container.style.transform = "";
-      this.shakeAmount = 0;
-      this.kickX = this.kickY = this.shakeRoll = 0;
-    }
-  }
-
-  /**
-   * Deepen the vignette as damage piles up. Only ever a CSS opacity change, and
-   * only when it would actually be visible — the transition smooths the steps.
-   */
-  private updateVignette() {
-    const target = Math.min(0.85, this.destruction);
-    if (Math.abs(target - this.vignetteShown) < 0.02) return;
-    this.vignetteShown = target;
-    this.vignette.style.opacity = target.toFixed(3);
   }
 
   private updateLoops() {
