@@ -193,6 +193,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   // Everything the drawn-tool renderings derive their animation from: press/
   // release timestamps (seconds, on the rAF clock) and a smoothed read of
   // pointer motion. See `renderToolArt`.
+  // Stamped from `lastTime`, the frame clock, never `performance.now()`:
+  // renderToolArt subtracts them from the frame timestamp, and a host driving
+  // `frame()` with its own clock must not see the two time bases diverge.
   private artDownAt = -Infinity;
   private artUpAt = -Infinity;
   private artVX = 0;
@@ -1192,7 +1195,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.pointer.y = y;
     this.lastPointer.x = x;
     this.lastPointer.y = y;
-    this.artDownAt = performance.now() / 1000;
+    this.artDownAt = this.lastTime / 1000;
     this.pointerDown = true;
     tool.onDown?.(this, event);
 
@@ -1203,7 +1206,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
 
     this.pointerDown = false;
-    this.artUpAt = performance.now() / 1000;
+    this.artUpAt = this.lastTime / 1000;
     tool.onUp?.(this, { ...event, buttons: 0 });
     this.requestFrame();
     return true;
@@ -1974,7 +1977,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     } catch {
       // Older Safari builds can reject capture even though Pointer Events exist.
     }
-    this.artDownAt = performance.now() / 1000;
+    this.artDownAt = this.lastTime / 1000;
     this.lastPointer.x = this.lastPointer.y = -1000;
     // Always build the event (it updates this.pointer for tick-driven tools),
     // even when the tool has no onDown handler.
@@ -2003,7 +2006,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (!this.pointerDown) return;
     if (e && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
     this.pointerDown = false;
-    this.artUpAt = performance.now() / 1000;
+    this.artUpAt = this.lastTime / 1000;
     const ev = e ? this.toolEvent(e) : { ...this.pointer, dx: 0, dy: 0, buttons: 0 };
     this.activeTool?.onUp?.(this, ev);
     if (this.activePointerId !== null) {
@@ -2038,7 +2041,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
       return;
     }
     this.lastRenderedAt = now;
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000);
+    // Clamped below at zero: `lastTime` starts from `performance.now()` and the
+    // first host-supplied timestamp may precede it (rAF vsync stamps do; test
+    // clocks can by much more). A backwards step must not run physics in
+    // reverse.
+    const dt = Math.min(0.05, Math.max(0, (now - this.lastTime) / 1000));
     this.lastTime = now;
 
     // Direct API users can spawn entities without selecting a tool. Lazily
@@ -2204,8 +2211,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     art(ctx, {
       time,
       held: this.pointerDown,
-      sinceDown: time - this.artDownAt,
-      sinceUp: time - this.artUpAt,
+      // Hold durations can never be negative, whatever clock stamped them: a
+      // press recorded moments "after" this frame's timestamp is a hold of 0.
+      sinceDown: Math.max(0, time - this.artDownAt),
+      sinceUp: Math.max(0, time - this.artUpAt),
       vx: this.artVX,
       vy: this.artVY,
       aimX: this.artAimX,
