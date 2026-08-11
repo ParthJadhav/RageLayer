@@ -1,5 +1,86 @@
 # desktop-destroyer
 
+## 0.4.0
+
+### Minor Changes
+
+- [`1289409`](https://github.com/ParthJadhav/desktop-destroyer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a framework-neutral lifecycle controller, a headless React hook, a Vue composable, and a
+  Svelte action. Publish explicit `react`, `vue`, and `svelte` entry points, preserve React's client
+  boundary for Next.js, reduce the package contents, and add a documentation site and reliable npm
+  release workflow. The engine now defaults sound off and follows `prefers-reduced-motion` for camera
+  shake and nonessential UI transitions.
+
+  Add size-focused `engine`, `tools`, `tools/heavy`, and `lazy` entry points; configurable procedural
+  model scaling; exact built-in icon silhouettes that avoid canvas readbacks; explicit pause/resume;
+  automatic hidden-tab suspension; data-saver quality detection; dynamic-layout observation; and
+  robust primary-pointer capture/cancellation for touch and pen input.
+
+  Add six advanced tools—Gravity Gun, Laser Cutter, Acid Sprayer, Wrecking Ball, Sticky Bombs, and
+  Glitch Gun—with split loading and measured procedural-model bounds. Add material-aware fire,
+  fracture, laser, acid, and electrical behavior; seven bounded spatial tool combos; opt-in,
+  pixel-budgeted destruction undo/redo; immutable built-in and custom tool loadouts; and a typed
+  state-isolated custom-tool SDK. Publish `tools/advanced`, `loadouts`, and `sdk` entry points and
+  cover them in consumer fixtures, the live demo, package validation, and documentation.
+
+  Cap the transient effects layer at CSS-pixel resolution by default to avoid DPR-squared
+  Canvas2D-to-WebGL upload cost, with an `effectsPixelRatio` override for explicit supersampling.
+  The balanced adaptive-quality tier now disables the measured post-processing bottleneck immediately
+  instead of retaining it until a second downgrade.
+
+- [`1289409`](https://github.com/ParthJadhav/desktop-destroyer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a ready-made toolbar for every stack, keyboard-operable tools, translatable strings, and a
+  channel for reporting degradation.
+
+  - `desktop-destroyer/element` registers `<desktop-destroyer>`, a complete toolbar in a shadow root
+    that works unchanged in Svelte, Angular, Solid, Qwik, Astro and plain HTML. `/vue` now exports a
+    `DesktopDestroyer` component alongside the composable. Both, and the React component, render one
+    shared `ToolbarModel`, published as `desktop-destroyer/toolbar` for hosts building their own UI.
+  - Keyboard aiming makes the tools reachable without a pointer: `A` places a cursor on the page,
+    arrows steer it, `Enter` uses the tool, and moves and strikes are announced. The underlying
+    `engine.strike(x, y, { holdMs })` and `engine.setAim()` are public, and a keyboard blow is
+    undoable like any other. Custom tools need no changes to be reachable this way.
+  - Every user-visible string, including tool names and hints, can be replaced through `strings`, so
+    the toy can be translated or reworded. `DEFAULT_STRINGS` and `resolveStrings()` are exported.
+  - `onError` (option, `engine.onError()`, `engine.error` and an `"error"` event) reports the
+    failures that were previously only a `console.warn`: capture failure, live-capture fallback,
+    element-harvest failure, a missing text mask, and page-height truncation. Registering a handler
+    silences the matching warning so nothing is logged twice.
+  - `engine.historyEnabled` distinguishes "undo is on" from "there is something to undo", so a
+    toolbar can show its undo controls from the start instead of having them appear mid-session.
+
+### Patch Changes
+
+- [`1289409`](https://github.com/ParthJadhav/desktop-destroyer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Bundle the `html-to-image` capture code into the package as a lazily-loaded chunk and drop the
+  runtime dependency. Loading `dist` directly in a browser (the demo, harnesses, benchmarks, CDN
+  usage) previously failed to resolve the bare specifier and silently degraded to overlay mode —
+  no destructible page content, no fracture debris, and content-dependent tools (laser cutter, acid
+  sprayer, bugs, demolition chunks) did nothing.
+
+  Fix the broom leaving a trail of phantom torn-edge rings on intact pages: `ContentLayer.restore`
+  now composes its pristine disc on a scratch canvas and stamps it in one draw, instead of a
+  clip + clear + draw sequence that antialiased the rim twice and left a partial-alpha seam the
+  surface shader shaded as a wound.
+
+  Make the Glitch Gun read on light backgrounds: corruption now tears real page slices sideways and
+  composites its interference bars with `difference` instead of `screen`, which was nearly invisible
+  against white.
+
+  The demo toolbar now exercises the full public surface: built-in loadout switching, undo/redo,
+  whole-page repair, snapshot download, sound and pause toggles, combo toasts, and a live
+  fps/capture status readout.
+
+- [`1289409`](https://github.com/ParthJadhav/desktop-destroyer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Test the destruction pipeline for real, and harden the release path.
+
+  Unit tests now run against a DOM with a real Canvas2D rasterizer, so the coverage map, wound
+  compositing, physics solver and every built-in tool are asserted on actual pixels rather than
+  mocks — 274 tests, up from 57, taking line coverage from 44% to 85%. A new runtime suite
+  (`bun run test:browser`) drives the built package through headless Chrome and asserts what a
+  visitor sees: the page is captured, the WebGL2 surface shader comes up, tools punch real holes,
+  undo restores them, and disposing puts the real page back. Both run in CI, with coverage floors
+  and a per-module gate.
+
+  Also fixes `import "desktop-destroyer/element"` throwing when evaluated on a server, and stops
+  bundlers from tree-shaking away the element's registration.
+
 ## 0.3.0
 
 ### Minor Changes
