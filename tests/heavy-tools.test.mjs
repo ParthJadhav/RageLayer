@@ -59,23 +59,19 @@ describe("toolset hygiene", () => {
 });
 
 describe("rocket launcher", () => {
-  test(
-    "a launched rocket flies, detonates and tears the page open",
-    () => {
-      const engine = armed(rocketLauncher);
-      expect(pageDamage(engine)).toBe(0);
+  test("a launched rocket flies, detonates and tears the page open", () => {
+    const engine = armed(rocketLauncher);
+    expect(pageDamage(engine)).toBe(0);
 
-      useTool(engine, [400, 300], { frames: 2 });
-      // The rocket leaves the muzzle at speed and is armed only once it has
-      // actually flown, so the hole is never where the click was. Stop as soon
-      // as it lands: every simulated frame rasterizes, and a loaded CI runner
-      // pays real wall time for frames the assertion no longer needs.
-      for (let i = 0; i < 240 && pageDamage(engine) === 0; i += 20) tick(engine, 20);
+    useTool(engine, [400, 300], { frames: 2 });
+    // The rocket leaves the muzzle at speed and is armed only once it has
+    // actually flown, so the hole is never where the click was. Stop as soon
+    // as it lands: every simulated frame rasterizes, and a loaded CI runner
+    // pays real wall time for frames the assertion no longer needs.
+    for (let i = 0; i < 240 && pageDamage(engine) === 0; i += 20) tick(engine, 20);
 
-      expect(pageDamage(engine)).toBeGreaterThan(0);
-    },
-    20_000,
-  );
+    expect(pageDamage(engine)).toBeGreaterThan(0);
+  }, 20_000);
 });
 
 describe("lightning", () => {
