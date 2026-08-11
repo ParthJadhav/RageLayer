@@ -1,5 +1,11 @@
 # ragekit
 
+## 0.5.0
+
+### Minor Changes
+
+- [`b3b99ea`](https://github.com/ParthJadhav/ragekit/commit/b3b99eab59d80ddb01c08d4e1daa93f87f514ba5) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageKit. The React and Vue components are now `RageKit`, lifecycle helpers are `createRageKit`, `mountRageKit`, and `useRageKit`, the Svelte action is `rageKit`, and the custom element is `<rage-kit>`. Package-prefixed DOM attributes, events, constants, and development environment variables now use the `ragekit` or `RAGEKIT` prefix.
+
 ## 0.4.0
 
 ### Minor Changes
