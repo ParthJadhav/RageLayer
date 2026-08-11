@@ -6,7 +6,7 @@ export { DestroyerEngine } from "./engine";
 export type { DestructionHistoryEntry, HistoryOptions, HistoryState } from "./history";
 export { DestructionHistory } from "./history";
 export type { BuiltInMaterialId, MaterialDefinition, MaterialRegion } from "./materials";
-export { BUILT_IN_MATERIALS, DD_MATERIAL_ATTR, MaterialSystem } from "./materials";
+export { BUILT_IN_MATERIALS, MaterialSystem, RAGEKIT_MATERIAL_ATTR } from "./materials";
 export type { CustomToolDefinition, RateLimiter, ToolIconBounds } from "./sdk";
 export { createRateLimiter, createTool, defineTool, registerToolIconBounds } from "./sdk";
 export type * from "./types";

@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Desktop Destroyer — vanilla example</title>
+    <title>RageKit — vanilla example</title>
     <style>
       /* A real background matters: the capture keeps whatever transparency
          the page had, so a page with no background is mostly void — there is
          nothing there to smash between the letters. */
       body { font-family: system-ui, sans-serif; margin: 0; background: #f4f1ec; color: #17130f; }
       main { max-width: 720px; margin: 0 auto; padding: 4rem 1.5rem; }
-      /* The host's own toolbar. `data-dd-ignore` keeps it out of the capture,
+      /* The host's own toolbar. `data-ragekit-ignore` keeps it out of the capture,
          so the toy cannot destroy its own controls. */
       #bar {
         position: fixed; inset: auto 0 16px 0; display: flex; gap: 6px;
@@ -39,11 +39,11 @@
     </main>
 
     <script type="module">
-      import { createDesktopDestroyer } from "../../dist/index.js";
+      import { createRageKit } from "../../dist/index.js";
       import { ToolbarModel } from "../../dist/toolbar/index.js";
 
       const launch = document.getElementById("launch");
-      const destroyer = createDesktopDestroyer({ history: true, initialTool: null });
+      const destroyer = createRageKit({ history: true, initialTool: null });
 
       let bar = null;
       let toolbar = null;
@@ -67,8 +67,8 @@
         bar = document.createElement("div");
         bar.id = "bar";
         bar.setAttribute("role", "toolbar");
-        bar.setAttribute("aria-label", "Desktop Destroyer tools");
-        bar.setAttribute("data-dd-ignore", "");
+        bar.setAttribute("aria-label", "RageKit tools");
+        bar.setAttribute("data-ragekit-ignore", "");
         document.body.append(bar);
 
         toolbar = new ToolbarModel(engine, { onClose: close });

@@ -1,6 +1,6 @@
 # Procedural 3D tool models
 
-Desktop Destroyer's tools are shaded Canvas vector models rather than downloaded glTF, OBJ, or
+RageKit's tools are shaded Canvas vector models rather than downloaded glTF, OBJ, or
 bitmap assets. They stay sharp at every device pixel ratio, inherit the engine's animation clock,
 and add no network requests. Materials use layered gradients, highlights, contours, cast shadows,
 and moving mechanical parts to create depth while keeping each pointer hotspot exact.
@@ -10,7 +10,7 @@ and moving mechanical parts to create depth while keeping each pointer hotspot e
 Scale every model without changing its impact point:
 
 ```ts
-const engine = mountDesktopDestroyer({
+const engine = mountRageKit({
   toolScale: 1.2, // accepted range: 0.5–2; default: 1
 });
 ```
@@ -33,8 +33,8 @@ Sizes are normalized to 8–256 CSS pixels to avoid accidental oversized allocat
 The default entry remains convenient, but size-sensitive applications can split the system:
 
 ```ts
-import { DestroyerEngine } from "desktop-destroyer/engine";
-import { baseTools } from "desktop-destroyer/tools";
+import { DestroyerEngine } from "ragekit/engine";
+import { baseTools } from "ragekit/tools";
 
 const engine = new DestroyerEngine();
 engine.registerTools(baseTools);
@@ -44,7 +44,7 @@ engine.setTool("hammer");
 Load cinematic tools only when a visitor asks for them:
 
 ```ts
-import { loadHeavyTools } from "desktop-destroyer/lazy";
+import { loadHeavyTools } from "ragekit/lazy";
 
 engine.registerTools(await loadHeavyTools());
 engine.setTool("blackhole");
@@ -53,7 +53,7 @@ engine.setTool("blackhole");
 The six interaction-focused models live in their own graph:
 
 ```ts
-import { loadAdvancedTools } from "desktop-destroyer/lazy";
+import { loadAdvancedTools } from "ragekit/lazy";
 
 engine.registerTools(await loadAdvancedTools());
 engine.setTool("gravity-gun");
@@ -72,4 +72,4 @@ multiple engine instances.
 Use `ctx.save()`/`ctx.restore()` around every transform and prefer paths/gradients over embedded
 images. The engine applies `toolScale` outside the callback, so custom models scale exactly like the
 built-ins. If an art function has a known rest-pose silhouette, call
-`registerToolIconBounds(art, [x0, y0, x1, y1])` from `desktop-destroyer/sdk` to skip icon readback.
+`registerToolIconBounds(art, [x0, y0, x1, y1])` from `ragekit/sdk` to skip icon readback.

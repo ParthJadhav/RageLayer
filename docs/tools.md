@@ -138,7 +138,7 @@ lightning triggers reality overload.
 
 ## Materials and combos
 
-Add `data-dd-material="glass|metal|wood|stone|rubber|ice|paper"` to page regions to change their
+Add `data-ragekit-material="glass|metal|wood|stone|rubber|ice|paper"` to page regions to change their
 behavior. See the [advanced systems guide](./advanced.md) for all seven combos and custom materials.
 
 ## A mixed session

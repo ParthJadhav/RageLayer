@@ -2,17 +2,17 @@
 
 Eleven entry points:
 
-- `desktop-destroyer` — the framework-agnostic engine, tools, and every building block
-- `desktop-destroyer/engine` — engine + public contracts, without built-in tool models
-- `desktop-destroyer/tools` — seven everyday tools
-- `desktop-destroyer/tools/heavy` — six cinematic/physics-heavy tools
-- `desktop-destroyer/tools/advanced` — six interaction-focused tools
-- `desktop-destroyer/lazy` — asynchronous base/heavy/advanced/complete tool loaders
-- `desktop-destroyer/loadouts` — named and custom loadout helpers
-- `desktop-destroyer/sdk` — typed custom-tool factories and utilities
-- `desktop-destroyer/react` — toolbar component and headless hook
-- `desktop-destroyer/vue` — lifecycle-safe Vue composable
-- `desktop-destroyer/svelte` — Svelte action and lifecycle controller
+- `ragekit` — the framework-agnostic engine, tools, and every building block
+- `ragekit/engine` — engine + public contracts, without built-in tool models
+- `ragekit/tools` — seven everyday tools
+- `ragekit/tools/heavy` — six cinematic/physics-heavy tools
+- `ragekit/tools/advanced` — six interaction-focused tools
+- `ragekit/lazy` — asynchronous base/heavy/advanced/complete tool loaders
+- `ragekit/loadouts` — named and custom loadout helpers
+- `ragekit/sdk` — typed custom-tool factories and utilities
+- `ragekit/react` — toolbar component and headless hook
+- `ragekit/vue` — lifecycle-safe Vue composable
+- `ragekit/svelte` — Svelte action and lifecycle controller
 
 Everything is fully typed; this page covers the surfaces you'll actually reach for. For the
 exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
@@ -22,9 +22,9 @@ exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../s
 For most custom integrations, start with the lazy controller:
 
 ```ts
-import { createDesktopDestroyer } from "desktop-destroyer";
+import { createRageKit } from "ragekit";
 
-const destroyer = createDesktopDestroyer({
+const destroyer = createRageKit({
   initialTool: "hammer",
   tools: myTools, // defaults to defaultTools
 });
@@ -37,7 +37,7 @@ destroyer.close();
 destroyer.subscribe((engine) => console.log(engine));
 ```
 
-`createDesktopDestroyer()` is SSR-safe because it stays lazy. `mountDesktopDestroyer(options)`
+`createRageKit()` is SSR-safe because it stays lazy. `mountRageKit(options)`
 registers the tools and returns a live engine immediately, so call it only in a browser. Construct
 `DestroyerEngine` directly when you want to register each tool yourself.
 
@@ -107,13 +107,13 @@ engine.onPerformance(cb);       // subscribe to telemetry; returns unsubscribe f
 
 ## Custom tools
 
-For stateful tools, prefer `defineTool()` from `desktop-destroyer/sdk`; it returns a factory so
+For stateful tools, prefer `defineTool()` from `ragekit/sdk`; it returns a factory so
 multiple engines never share mutable tool state. The plain-object contract remains fully supported:
 
 A `Tool` is a plain object drawing onto the engine's canvases:
 
 ```ts
-import type { Tool } from "desktop-destroyer";
+import type { Tool } from "ragekit";
 
 const stamp: Tool = {
   id: "stamp",
@@ -194,7 +194,7 @@ All exported for reuse without the engine:
 - **Decals** — `drawCrack`, `drawBulletHole`, `drawScorch`, `drawFrost`, `drawGash`,
   `drawSplat`, `drawPaintStreak`, `drawBurnChannel`, `PAINT_COLORS`, `randomPaint`.
 - **Capture** — `defaultCaptureFilter`, `measureCapture`, `resolvePageBackdrop`,
-  `DD_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.
+  `RAGEKIT_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.
 - **Rendering** — `SurfaceRenderer`, `PostFX`, `createProgram`, `createQuad`, `createTexture`,
   `clearSpriteCache` (drop the shared baked-sprite atlas; rebuilt lazily on next use — the
   engine already calls it when the last engine is disposed).
@@ -209,7 +209,7 @@ None of the fallbacks below throw — that is the point of them — so a host th
 visitors are getting a reduced experience has to be told. `onError` is that channel:
 
 ```ts
-mountDesktopDestroyer({
+mountRageKit({
   onError(error) {
     // scope: "capture" | "live-capture" | "live-refresh"
     //      | "element-harvest" | "text-mask" | "page-height"

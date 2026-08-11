@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Acme Analytics — Desktop Destroyer demo</title>
+    <title>Acme Analytics — RageKit demo</title>
     <style>
       :root {
         --bg: #f6f4ef;
@@ -63,7 +63,7 @@
       .footnote { margin-top: 72px; color: var(--muted); font-size: 13px; text-align: center; }
 
       /* Demo toolbar (vanilla integration example) */
-      #dd-bar {
+      #rk-bar {
         visibility: visible;
         position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
         display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 8px;
@@ -71,33 +71,33 @@
         background: rgba(24, 22, 20, 0.92); box-shadow: 0 12px 40px rgba(0,0,0,0.35);
         z-index: 2147483200;
       }
-      #dd-bar button {
+      #rk-bar button {
         width: 40px; height: 40px; border: 0; border-radius: 9px; cursor: pointer;
         background: transparent; font-size: 20px; display: grid; place-items: center;
       }
-      #dd-bar button img { width: 30px; height: 30px; }
-      #dd-bar button[data-active="true"] { background: rgba(255, 255, 255, 0.18); }
-      #dd-bar button:hover { background: rgba(255, 255, 255, 0.1); }
-      #dd-bar button:disabled { opacity: 0.3; cursor: default; }
-      #dd-bar .dd-divider { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255, 255, 255, 0.16); }
-      #dd-bar select {
+      #rk-bar button img { width: 30px; height: 30px; }
+      #rk-bar button[data-active="true"] { background: rgba(255, 255, 255, 0.18); }
+      #rk-bar button:hover { background: rgba(255, 255, 255, 0.1); }
+      #rk-bar button:disabled { opacity: 0.3; cursor: default; }
+      #rk-bar .rk-divider { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255, 255, 255, 0.16); }
+      #rk-bar select {
         height: 40px; border: 0; border-radius: 9px; padding: 0 8px; cursor: pointer;
         background: rgba(255, 255, 255, 0.1); color: #f2ede4; font: 600 13px/1 system-ui, sans-serif;
       }
-      #dd-bar select:hover { background: rgba(255, 255, 255, 0.18); }
-      #dd-status {
+      #rk-bar select:hover { background: rgba(255, 255, 255, 0.18); }
+      #rk-status {
         align-self: center; margin: 0 4px; color: rgba(242, 237, 228, 0.65);
         font: 500 11px/1.2 system-ui, sans-serif; text-align: center; min-width: 58px;
       }
-      #dd-combo {
+      #rk-combo {
         position: fixed; left: 50%; top: 26px; transform: translateX(-50%) translateY(-8px);
         padding: 10px 18px; border-radius: 999px; pointer-events: none; opacity: 0;
         background: rgba(24, 22, 20, 0.92); color: #ffd66e; font: 700 15px/1.2 system-ui, sans-serif;
         box-shadow: 0 12px 40px rgba(0,0,0,0.35); transition: opacity 0.25s, transform 0.25s;
         z-index: 2147483200;
       }
-      #dd-combo[data-shown="true"] { opacity: 1; transform: translateX(-50%) translateY(0); }
-      #dd-combo small { display: block; font-weight: 500; font-size: 11px; color: rgba(242, 237, 228, 0.7); }
+      #rk-combo[data-shown="true"] { opacity: 1; transform: translateX(-50%) translateY(0); }
+      #rk-combo small { display: block; font-weight: 500; font-size: 11px; color: rgba(242, 237, 228, 0.7); }
 
       @media (max-width: 700px) {
         header { padding: 14px 20px; }
@@ -106,13 +106,13 @@
         h1 { font-size: 36px; }
         .grid { grid-template-columns: 1fr; margin-top: 40px; }
         .card[style] { grid-column: auto !important; }
-        #dd-bar { bottom: 10px; width: calc(100vw - 24px); }
-        #dd-bar button { width: 36px; height: 36px; }
+        #rk-bar { bottom: 10px; width: calc(100vw - 24px); }
+        #rk-bar button { width: 36px; height: 36px; }
       }
     </style>
   </head>
   <body>
-    <header data-dd-material="metal">
+    <header data-ragekit-material="metal">
       <div class="logo">acme<span>analytics</span></div>
       <nav><a href="#">Product</a><a href="#">Pricing</a><a href="#">Docs</a><a href="#">Sign in</a></nav>
     </header>
@@ -120,15 +120,15 @@
       <h1>Understand your traffic. <em>Then destroy it.</em></h1>
       <p class="sub">
         Acme Analytics turns raw events into decisions. This entire page is a live target for the
-        desktop-destroyer engine — every pixel below can be smashed, burned, shot and swept up.
+        ragekit engine — every pixel below can be smashed, burned, shot and swept up.
       </p>
       <a class="cta" href="#">Start free trial</a>
 
       <div class="grid">
-        <div class="card" data-dd-material="glass"><div class="stat">48,201<small>page views today</small></div></div>
-        <div class="card" data-dd-material="rubber"><div class="stat">3.4%<small>conversion rate</small></div></div>
-        <div class="card" data-dd-material="stone"><div class="stat">99.98%<small>uptime this quarter</small></div></div>
-        <div class="card" data-dd-material="wood" style="grid-column: 1 / -1">
+        <div class="card" data-ragekit-material="glass"><div class="stat">48,201<small>page views today</small></div></div>
+        <div class="card" data-ragekit-material="rubber"><div class="stat">3.4%<small>conversion rate</small></div></div>
+        <div class="card" data-ragekit-material="stone"><div class="stat">99.98%<small>uptime this quarter</small></div></div>
+        <div class="card" data-ragekit-material="wood" style="grid-column: 1 / -1">
           <h3>Weekly sessions</h3>
           <p>Organic search continues to climb after the March content push.</p>
           <div class="chart"></div>
@@ -153,7 +153,7 @@
         <footer>— Dana Whitfield, Head of Growth at Fieldstone</footer>
       </blockquote>
 
-      <p class="footnote">© 2026 Acme Analytics, Inc. Built as a destructible demo page for desktop-destroyer.</p>
+      <p class="footnote">© 2026 Acme Analytics, Inc. Built as a destructible demo page for ragekit.</p>
     </main>
 
     <script type="module">
@@ -167,16 +167,16 @@
 
       const engine = new DestroyerEngine({ soundEnabled: true, history: true });
       window.engine = engine;
-      window.__desktopDestroyer = engine;
+      window.__rageKit = engine;
 
       // Vanilla toolbar exercising the full public surface — tools and loadouts,
       // undo/redo, repair, snapshot export, sound, pause and the performance feed.
       // The React/Vue/Svelte wrappers build the same thing for you.
       const bar = document.createElement("div");
-      bar.id = "dd-bar";
-      bar.setAttribute("data-dd-ignore", "");
+      bar.id = "rk-bar";
+      bar.setAttribute("data-ragekit-ignore", "");
       bar.setAttribute("role", "toolbar");
-      bar.setAttribute("aria-label", "Desktop Destroyer tools");
+      bar.setAttribute("aria-label", "RageKit tools");
 
       const toolButtons = document.createElement("div");
       toolButtons.style.display = "contents";
@@ -229,7 +229,7 @@
 
       const divider = () => {
         const el = document.createElement("div");
-        el.className = "dd-divider";
+        el.className = "rk-divider";
         bar.append(el);
       };
       const controlButton = (label, title, action) => {
@@ -289,7 +289,7 @@
       bar.append(loadoutPicker);
 
       const status = document.createElement("div");
-      status.id = "dd-status";
+      status.id = "rk-status";
       status.textContent = "capturing…";
       bar.append(status);
       engine.onPerformance((snapshot) => {
@@ -303,8 +303,8 @@
 
       // Elemental combos (fire + water, gravity + explosion, …) surface as toasts.
       const comboToast = document.createElement("div");
-      comboToast.id = "dd-combo";
-      comboToast.setAttribute("data-dd-ignore", "");
+      comboToast.id = "rk-combo";
+      comboToast.setAttribute("data-ragekit-ignore", "");
       comboToast.setAttribute("role", "status");
       document.body.append(comboToast);
       let comboTimer = 0;

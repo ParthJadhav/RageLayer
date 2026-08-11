@@ -2,13 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DestroyerEngine } from "../engine";
-import {
-  createDesktopDestroyer,
-  type DesktopDestroyerController,
-  type MountDesktopDestroyerOptions,
-} from "../mount";
+import { createRageKit, type MountRageKitOptions, type RageKitController } from "../mount";
 
-export interface UseDesktopDestroyerResult {
+export interface UseRageKitResult {
   engine: DestroyerEngine | null;
   isOpen: boolean;
   open(): DestroyerEngine;
@@ -17,11 +13,9 @@ export interface UseDesktopDestroyerResult {
 }
 
 /** Headless React binding for applications that provide their own controls. */
-export function useDesktopDestroyer(
-  options: MountDesktopDestroyerOptions = {},
-): UseDesktopDestroyerResult {
-  const controllerRef = useRef<DesktopDestroyerController | null>(null);
-  if (!controllerRef.current) controllerRef.current = createDesktopDestroyer(options);
+export function useRageKit(options: MountRageKitOptions = {}): UseRageKitResult {
+  const controllerRef = useRef<RageKitController | null>(null);
+  if (!controllerRef.current) controllerRef.current = createRageKit(options);
   const [engine, setEngine] = useState<DestroyerEngine | null>(null);
 
   useEffect(() => {

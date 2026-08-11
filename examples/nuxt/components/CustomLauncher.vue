@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // The headless composable, for hosts that want their own controls rather than
 // the built-in toolbar.
-import { useDesktopDestroyer } from "desktop-destroyer/vue";
+import { useRageKit } from "ragekit/vue";
 
-const { isOpen, toggle, engine } = useDesktopDestroyer({
+const { isOpen, toggle, engine } = useRageKit({
   initialTool: "flamethrower",
   history: true,
 });

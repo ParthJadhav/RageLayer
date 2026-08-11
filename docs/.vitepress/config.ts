@@ -1,15 +1,15 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
-  title: "Desktop Destroyer",
+  title: "RageKit",
   description: "Turn any web page into a destructible canvas.",
-  base: "/desktop-destroyer/",
+  base: "/ragekit/",
   cleanUrls: true,
   lastUpdated: true,
   head: [
     ["meta", { name: "theme-color", content: "#171310" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "Desktop Destroyer for the web" }],
+    ["meta", { property: "og:title", content: "RageKit for the web" }],
     [
       "meta",
       {
@@ -19,7 +19,7 @@ export default defineConfig({
     ],
   ],
   sitemap: {
-    hostname: "https://parthjadhav.github.io/desktop-destroyer/",
+    hostname: "https://parthjadhav.github.io/ragekit/",
   },
   themeConfig: {
     nav: [
@@ -58,18 +58,18 @@ export default defineConfig({
       },
     ],
     socialLinks: [
-      { icon: "github", link: "https://github.com/ParthJadhav/desktop-destroyer" },
-      { icon: "npm", link: "https://www.npmjs.com/package/desktop-destroyer" },
+      { icon: "github", link: "https://github.com/ParthJadhav/ragekit" },
+      { icon: "npm", link: "https://www.npmjs.com/package/ragekit" },
     ],
     search: { provider: "local" },
     editLink: {
-      pattern: "https://github.com/ParthJadhav/desktop-destroyer/edit/main/docs/:path",
+      pattern: "https://github.com/ParthJadhav/ragekit/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     outline: [2, 3],
     footer: {
       message: "Released under the MIT License.",
-      copyright: "Desktop Destroyer by Parth Jadhav",
+      copyright: "RageKit by Parth Jadhav",
     },
   },
 });

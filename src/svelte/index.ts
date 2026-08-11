@@ -1,63 +1,59 @@
 import type { DestroyerEngine } from "../engine";
-import {
-  createDesktopDestroyer,
-  type DesktopDestroyerController,
-  type MountDesktopDestroyerOptions,
-} from "../mount";
+import { createRageKit, type MountRageKitOptions, type RageKitController } from "../mount";
 
-export interface DesktopDestroyerActionOptions extends MountDesktopDestroyerOptions {
+export interface RageKitActionOptions extends MountRageKitOptions {
   /** Close on a second click. Defaults to true. */
   toggle?: boolean;
 }
 
-export interface DesktopDestroyerActionReturn {
-  update(options?: DesktopDestroyerActionOptions): void;
+export interface RageKitActionReturn {
+  update(options?: RageKitActionOptions): void;
   destroy(): void;
 }
 
-export interface DesktopDestroyerChangeDetail {
+export interface RageKitChangeDetail {
   engine: DestroyerEngine | null;
   open: boolean;
 }
 
-export type DesktopDestroyerChangeEvent = CustomEvent<DesktopDestroyerChangeDetail>;
+export type RageKitChangeEvent = CustomEvent<RageKitChangeDetail>;
 
 declare global {
   interface HTMLElementEventMap {
-    desktopdestroyerchange: DesktopDestroyerChangeEvent;
+    ragekitchange: RageKitChangeEvent;
   }
 }
 
 /**
  * Svelte action for turning any button into a lifecycle-safe launcher.
  *
- * It maintains `aria-pressed` and emits `desktopdestroyerchange` with the
+ * It maintains `aria-pressed` and emits `ragekitchange` with the
  * current engine in `event.detail.engine`.
  */
-export function desktopDestroyer(
+export function rageKit(
   node: HTMLElement,
-  options: DesktopDestroyerActionOptions = {},
-): DesktopDestroyerActionReturn {
+  options: RageKitActionOptions = {},
+): RageKitActionReturn {
   const previousPressed = node.getAttribute("aria-pressed");
-  let controller: DesktopDestroyerController;
+  let controller: RageKitController;
   let unsubscribe: () => void;
   let toggles = true;
 
-  const sync = (engine: ReturnType<DesktopDestroyerController["open"]> | null) => {
+  const sync = (engine: ReturnType<RageKitController["open"]> | null) => {
     node.setAttribute("aria-pressed", String(engine !== null));
     node.dispatchEvent(
-      new CustomEvent<DesktopDestroyerChangeDetail>("desktopdestroyerchange", {
+      new CustomEvent<RageKitChangeDetail>("ragekitchange", {
         detail: { engine, open: engine !== null },
       }),
     );
   };
 
-  const configure = (next: DesktopDestroyerActionOptions) => {
+  const configure = (next: RageKitActionOptions) => {
     unsubscribe?.();
     controller?.close();
     const { toggle = true, ...mountOptions } = next;
     toggles = toggle;
-    controller = createDesktopDestroyer(mountOptions);
+    controller = createRageKit(mountOptions);
     unsubscribe = controller.subscribe(sync);
   };
 
@@ -83,5 +79,5 @@ export function desktopDestroyer(
   };
 }
 
-export type { DesktopDestroyerController, MountDesktopDestroyerOptions } from "../mount";
-export { createDesktopDestroyer } from "../mount";
+export type { MountRageKitOptions, RageKitController } from "../mount";
+export { createRageKit } from "../mount";

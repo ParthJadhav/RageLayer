@@ -1,7 +1,7 @@
-import { DesktopDestroyer, useDesktopDestroyer } from "desktop-destroyer/react";
+import { RageKit, useRageKit } from "ragekit/react";
 import type { ComponentProps } from "react";
 
-type Props = ComponentProps<typeof DesktopDestroyer>;
+type Props = ComponentProps<typeof RageKit>;
 
 const props = {
   soundDefault: false,
@@ -11,13 +11,13 @@ const props = {
 } satisfies Props;
 
 export function Consumer() {
-  const { engine, isOpen, toggle } = useDesktopDestroyer({ initialTool: "hammer" });
+  const { engine, isOpen, toggle } = useRageKit({ initialTool: "hammer" });
   return (
     <>
       <button type="button" onClick={toggle}>
         {isOpen ? "Close" : "Open"}
       </button>
-      {isOpen ? <DesktopDestroyer {...props} onClose={() => engine?.clear()} /> : null}
+      {isOpen ? <RageKit {...props} onClose={() => engine?.clear()} /> : null}
     </>
   );
 }

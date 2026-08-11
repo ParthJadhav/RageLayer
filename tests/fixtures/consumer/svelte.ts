@@ -1,20 +1,20 @@
 import {
-  createDesktopDestroyer,
-  type DesktopDestroyerActionOptions,
-  type DesktopDestroyerActionReturn,
-  desktopDestroyer,
-} from "desktop-destroyer/svelte";
+  createRageKit,
+  type RageKitActionOptions,
+  type RageKitActionReturn,
+  rageKit,
+} from "ragekit/svelte";
 
 const options = {
   initialTool: "rocket",
   toggle: true,
   captureContent: false,
-} satisfies DesktopDestroyerActionOptions;
+} satisfies RageKitActionOptions;
 
 declare const button: HTMLButtonElement;
-const action: DesktopDestroyerActionReturn = desktopDestroyer(button, options);
-const controller = createDesktopDestroyer(options);
-button.addEventListener("desktopdestroyerchange", (event) => event.detail.engine?.clear());
+const action: RageKitActionReturn = rageKit(button, options);
+const controller = createRageKit(options);
+button.addEventListener("ragekitchange", (event) => event.detail.engine?.clear());
 
 void action.update;
 void action.destroy;

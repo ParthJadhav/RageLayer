@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  DD_IGNORE_ATTR,
   defaultCaptureFilter,
   measureCapture,
   pinFixedDescendants,
+  RAGEKIT_IGNORE_ATTR,
   resolvePageBackdrop,
 } from "../src/capture.ts";
 import { buildTextMask } from "../src/textmask.ts";
@@ -36,7 +36,7 @@ describe("defaultCaptureFilter", () => {
 
   test("anything opted out is skipped, subtree included", () => {
     const element = document.createElement("div");
-    element.setAttribute(DD_IGNORE_ATTR, "");
+    element.setAttribute(RAGEKIT_IGNORE_ATTR, "");
 
     expect(defaultCaptureFilter(element)).toBe(false);
   });
@@ -248,7 +248,7 @@ describe("buildTextMask", () => {
   test("filtered subtrees leave no phantom text behind", () => {
     const root = document.createElement("main");
     const ignored = document.createElement("div");
-    ignored.setAttribute(DD_IGNORE_ATTR, "");
+    ignored.setAttribute(RAGEKIT_IGNORE_ATTR, "");
     ignored.textContent = "toolbar";
     root.appendChild(ignored);
     document.body.appendChild(root);

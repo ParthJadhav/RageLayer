@@ -327,7 +327,7 @@ export interface DestroyerOptions {
   toolScale?: number;
   /** Suspend animation, simulation, and looped audio while the document is hidden. Default true. */
   pauseWhenHidden?: boolean;
-  /** Additional or overriding material definitions used by `[data-dd-material]` regions. */
+  /** Additional or overriding material definitions used by `[data-ragekit-material]` regions. */
   materials?: Iterable<MaterialDefinition>;
   /** Cross-tool combo detection. Pass false to disable or options to tune its bounds. */
   combos?: boolean | ComboTrackerOptions;
@@ -367,7 +367,7 @@ export interface DestroyerOptions {
   contentRoot?: HTMLElement;
   /**
    * Decides which nodes make it into the page capture. Defaults to
-   * `defaultCaptureFilter`, which drops `data-dd-ignore` nodes and framework
+   * `defaultCaptureFilter`, which drops `data-ragekit-ignore` nodes and framework
    * dev-tooling custom elements (Next.js's indicator portal, route
    * announcers, Vite/Astro overlays, …). Replace it to capture everything, or
    * compose with the default to add your own exclusions.
@@ -465,7 +465,7 @@ export interface DestroyerEngineApi {
    */
   readonly surfaceCtx: CanvasRenderingContext2D;
   readonly fxCtx: CanvasRenderingContext2D;
-  /** Material registry and the pre-capture map of `[data-dd-material]` regions. */
+  /** Material registry and the pre-capture map of `[data-ragekit-material]` regions. */
   readonly materials: MaterialSystem;
   materialAt(x: number, y: number): MaterialDefinition;
   /** Record a tool interaction and trigger any matching bounded combo. */

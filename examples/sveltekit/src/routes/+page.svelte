@@ -1,5 +1,5 @@
 <script lang="ts">
-import { desktopDestroyer } from "desktop-destroyer/svelte";
+import { rageKit } from "ragekit/svelte";
 import { onMount } from "svelte";
 
 let open = $state(false);
@@ -7,7 +7,7 @@ let open = $state(false);
 // Registering the custom element is a browser-only side effect, so it is
 // imported after mount rather than at module scope.
 onMount(() => {
-  import("desktop-destroyer/element");
+  import("ragekit/element");
 });
 </script>
 
@@ -24,14 +24,14 @@ onMount(() => {
   </button>
 
   <!-- Your own launcher, driving the engine directly. -->
-  <button use:desktopDestroyer={{ initialTool: "chainsaw" }}>Just the chainsaw</button>
+  <button use:rageKit={{ initialTool: "chainsaw" }}>Just the chainsaw</button>
 </main>
 
 {#if open}
-  <desktop-destroyer
+  <rage-kit
     initial-tool="hammer"
-    ondd-close={() => (open = false)}
-  ></desktop-destroyer>
+    onragekit-close={() => (open = false)}
+  ></rage-kit>
 {/if}
 
 <style>

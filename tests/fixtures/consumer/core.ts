@@ -1,9 +1,4 @@
-import {
-  createDesktopDestroyer,
-  type MountDesktopDestroyerOptions,
-  mountDesktopDestroyer,
-  type Tool,
-} from "desktop-destroyer";
+import { createRageKit, type MountRageKitOptions, mountRageKit, type Tool } from "ragekit";
 
 const customTool = {
   id: "consumer-stamp",
@@ -22,11 +17,11 @@ const options = {
   quality: "balanced",
   effectsPixelRatio: 1.25,
   loadout: "precision",
-} satisfies MountDesktopDestroyerOptions;
+} satisfies MountRageKitOptions;
 
-const controller = createDesktopDestroyer(options);
+const controller = createRageKit(options);
 const unsubscribe = controller.subscribe((engine) => engine?.setTool(customTool.id));
-const mounted = mountDesktopDestroyer(options);
+const mounted = mountRageKit(options);
 
 void controller.isOpen;
 void mounted;

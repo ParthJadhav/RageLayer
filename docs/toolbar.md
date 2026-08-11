@@ -1,15 +1,15 @@
 # Toolbars, translation and keyboard use
 
-Desktop Destroyer ships three ready-made toolbars — a React component, a Vue component and a
+RageKit ships three ready-made toolbars — a React component, a Vue component and a
 custom element — and they are all thin renderers over one framework-neutral `ToolbarModel`. If you
 are building your own UI, that model is published too, so you get the behaviour without the markup.
 
 | You are using | Import | What you get |
 | --- | --- | --- |
-| React / Next.js | `desktop-destroyer/react` | `<DesktopDestroyer />` |
-| Vue / Nuxt | `desktop-destroyer/vue` | `<DesktopDestroyer />` |
-| Anything else | `desktop-destroyer/element` | `<desktop-destroyer>` |
-| Your own UI | `desktop-destroyer/toolbar` | `ToolbarModel` |
+| React / Next.js | `ragekit/react` | `<RageKit />` |
+| Vue / Nuxt | `ragekit/vue` | `<RageKit />` |
+| Anything else | `ragekit/element` | `<rage-kit>` |
+| Your own UI | `ragekit/toolbar` | `ToolbarModel` |
 
 ## The custom element
 
@@ -18,13 +18,13 @@ Qwik, Astro, or plain HTML — because it is just an element.
 
 ```html
 <script type="module">
-  import "desktop-destroyer/element";
+  import "ragekit/element";
 </script>
 
-<desktop-destroyer loadout="chaos" initial-tool="hammer"></desktop-destroyer>
+<rage-kit loadout="chaos" initial-tool="hammer"></rage-kit>
 ```
 
-Importing the entry registers `<desktop-destroyer>`. It builds its UI in a shadow root, so the host
+Importing the entry registers `<rage-kit>`. It builds its UI in a shadow root, so the host
 page's CSS cannot reach in and its own styles cannot leak out, and it disposes the engine when the
 element leaves the document.
 
@@ -32,26 +32,26 @@ Attributes cover the common cases (`loadout`, `initial-tool`, `sound`). For anyt
 custom toolset, engine options, translated strings — call `configure()` before connecting it:
 
 ```ts
-import { DesktopDestroyerElement } from "desktop-destroyer/element";
-import { hammer, gun } from "desktop-destroyer/tools";
+import { RageKitElement } from "ragekit/element";
+import { hammer, gun } from "ragekit/tools";
 
-const destroyer = new DesktopDestroyerElement();
+const destroyer = new RageKitElement();
 destroyer.configure({
   tools: [hammer, gun],
   history: true,
   strings: { close: "Dismiss" },
 });
-destroyer.addEventListener("dd-close", () => destroyer.remove());
+destroyer.addEventListener("ragekit-close", () => destroyer.remove());
 document.body.append(destroyer);
 ```
 
-The element emits `dd-close` when the visitor presses the close button; hosts normally remove it in
+The element emits `ragekit-close` when the visitor presses the close button; hosts normally remove it in
 response. `destroyer.destroyerEngine` exposes the live engine.
 
 ::: tip Bundlers and the registration side effect
-`import "desktop-destroyer/element"` exists for its side effect. The package marks that one entry
+`import "ragekit/element"` exists for its side effect. The package marks that one entry
 as having side effects, so tree-shaking will not drop it — but if your bundler is configured to
-ignore `sideEffects`, import `defineDesktopDestroyerElement` and call it explicitly instead.
+ignore `sideEffects`, import `defineRageKitElement` and call it explicitly instead.
 :::
 
 ## The Vue component
@@ -59,14 +59,14 @@ ignore `sideEffects`, import `defineDesktopDestroyerElement` and call it explici
 ```vue
 <script setup lang="ts">
 import { ref } from "vue";
-import { DesktopDestroyer } from "desktop-destroyer/vue";
+import { RageKit } from "ragekit/vue";
 
 const open = ref(false);
 </script>
 
 <template>
   <button @click="open = true">Destroy this page</button>
-  <DesktopDestroyer v-if="open" loadout="chaos" @close="open = false" />
+  <RageKit v-if="open" loadout="chaos" @close="open = false" />
 </template>
 ```
 
@@ -81,10 +81,10 @@ is selected, whether undo is available, the capture-status chip, keyboard shortc
 ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export.
 
 ```ts
-import { mountDesktopDestroyer } from "desktop-destroyer";
-import { ToolbarModel } from "desktop-destroyer/toolbar";
+import { mountRageKit } from "ragekit";
+import { ToolbarModel } from "ragekit/toolbar";
 
-const engine = mountDesktopDestroyer({ history: true, initialTool: null });
+const engine = mountRageKit({ history: true, initialTool: null });
 const toolbar = new ToolbarModel(engine, { onClose: () => engine.dispose() });
 
 const unsubscribe = toolbar.subscribe((state) => {
@@ -160,7 +160,7 @@ Every user-visible string the built-in UI produces can be replaced. This is how 
 toy — and also how you match your own tone of voice.
 
 ```ts
-import type { DestroyerStrings } from "desktop-destroyer/toolbar";
+import type { DestroyerStrings } from "ragekit/toolbar";
 
 const french: Partial<DestroyerStrings> = {
   toolbarLabel: "Outils de destruction",

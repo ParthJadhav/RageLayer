@@ -9,7 +9,7 @@ use the same typed lifecycle as built-ins.
 Import all six without pulling them into an engine-only integration:
 
 ```ts
-import { advancedTools } from "desktop-destroyer/tools/advanced";
+import { advancedTools } from "ragekit/tools/advanced";
 // or: const advancedTools = await loadAdvancedTools()
 
 engine.registerTools(advancedTools);
@@ -29,13 +29,13 @@ texture request is added.
 
 ## Material regions
 
-Mark any captured element with `data-dd-material`. Nested regions are supported; the deepest match
+Mark any captured element with `data-ragekit-material`. Nested regions are supported; the deepest match
 wins.
 
 ```html
-<article data-dd-material="paper">
-  <img data-dd-material="glass" src="..." alt="..." />
-  <button data-dd-material="metal">Launch</button>
+<article data-ragekit-material="paper">
+  <img data-ragekit-material="glass" src="..." alt="..." />
+  <button data-ragekit-material="metal">Launch</button>
 </article>
 ```
 
@@ -100,7 +100,7 @@ retained pixels are hard-capped; a checkpoint larger than `maxPixels` is rejecte
 canvases are released immediately.
 
 ```ts
-const engine = mountDesktopDestroyer({
+const engine = mountRageKit({
   history: { maxEntries: 6, maxPixels: 24_000_000 },
 });
 
@@ -122,13 +122,13 @@ retained canvas.
 Every lifecycle and framework API accepts a `loadout` in place of a `tools` array:
 
 ```ts
-import { createToolLoadout } from "desktop-destroyer/loadouts";
-import { hammer, broom } from "desktop-destroyer/tools";
+import { createToolLoadout } from "ragekit/loadouts";
+import { hammer, broom } from "ragekit/tools";
 
-mountDesktopDestroyer({ loadout: "precision" });
+mountRageKit({ loadout: "precision" });
 
 const gentle = createToolLoadout("gentle", "Gentle", [hammer, broom]);
-mountDesktopDestroyer({ loadout: gentle });
+mountRageKit({ loadout: gentle });
 ```
 
 Built-ins are `all`, `classic`, `precision`, `elemental`, and `chaos`. Presets and their tool arrays
@@ -141,7 +141,7 @@ precedence over `loadout`. If no `initialTool` is supplied for a loadout, its fi
 the single-instance shortcut.
 
 ```ts
-import { createRateLimiter, defineTool } from "desktop-destroyer/sdk";
+import { createRateLimiter, defineTool } from "ragekit/sdk";
 
 export const makeConfettiDrill = defineTool({
   id: "confetti-drill",

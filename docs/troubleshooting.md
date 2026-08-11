@@ -2,10 +2,10 @@
 
 ## The package cannot be imported with `require()`
 
-Desktop Destroyer is ESM-only. Use an ESM module or dynamic import:
+RageKit is ESM-only. Use an ESM module or dynamic import:
 
 ```js
-const { createDesktopDestroyer } = await import("desktop-destroyer");
+const { createRageKit } = await import("ragekit");
 ```
 
 ## `document is not defined` during SSR
@@ -29,7 +29,7 @@ Try these checks:
 
 ## A launcher, cookie banner, or widget appears in the snapshot
 
-Add `data-dd-ignore` to the element, or compose a custom `captureFilter` with
+Add `data-ragekit-ignore` to the element, or compose a custom `captureFilter` with
 `defaultCaptureFilter`. The callback receives every `Node`, including text nodes.
 
 ## The overlay is behind a modal or app shell
@@ -56,13 +56,13 @@ Sound defaults off. Enable it from a user gesture with `engine.setSound(true)` o
 
 ## React StrictMode opens twice or leaks an overlay
 
-Use the current package version and mount one `DesktopDestroyer` component at a time. The wrapper is
+Use the current package version and mount one `RageKit` component at a time. The wrapper is
 StrictMode-safe and cleans up on unmount. If you use the headless hook, call its stable `open`, `close`,
 or `toggle` functions rather than constructing an engine during render.
 
 ## Multiple overlays interfere with each other
 
-Desktop Destroyer is a whole-page experience and the built-in tools retain a small amount of shared
+RageKit is a whole-page experience and the built-in tools retain a small amount of shared
 module state. Run one active engine per document. Use one controller at application scope rather than
 one controller per button.
 
@@ -82,4 +82,4 @@ Use `"auto"` unless you are explicitly testing that experiment.
 
 Include the package, framework, browser, and operating-system versions; `captureStatus`; console
 warnings; and a minimal public reproduction. Never attach a capture containing credentials or private
-page data. See the [support guide](https://github.com/ParthJadhav/desktop-destroyer/blob/main/SUPPORT.md).
+page data. See the [support guide](https://github.com/ParthJadhav/ragekit/blob/main/SUPPORT.md).

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DesktopDestroyer } from "desktop-destroyer/vue";
+import { RageKit } from "ragekit/vue";
 import { ref } from "vue";
 import CustomLauncher from "../components/CustomLauncher.vue";
 
@@ -18,6 +18,6 @@ const open = ref(false);
     <CustomLauncher />
 
     <!-- Safe during SSR: the component renders nothing until it is mounted. -->
-    <DesktopDestroyer v-if="open" :engine-options="{ history: true }" @close="open = false" />
+    <RageKit v-if="open" :engine-options="{ history: true }" @close="open = false" />
   </main>
 </template>

@@ -1,6 +1,6 @@
 # Getting started
 
-`desktop-destroyer` is a self-contained page-destruction toy: it rasterizes the live page into a
+`ragekit` is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
 shoot, burn, soak, saw, paint, freeze, bomb — and then sweep it all up. Zero assets, zero
 runtime dependencies, framework-agnostic core with a drop-in React component.
@@ -12,26 +12,26 @@ runtime dependencies, framework-agnostic core with a drop-in React component.
 Install from npm:
 
 ```sh
-npm install desktop-destroyer
+npm install ragekit
 ```
 
-Bun, pnpm and Yarn all work the same way (`bun add desktop-destroyer`, …).
+Bun, pnpm and Yarn all work the same way (`bun add ragekit`, …).
 
 The package ships modern ESM with TypeScript declarations. `react`/`react-dom` are **optional**
-peer dependencies — you only need them for the `desktop-destroyer/react` entry.
+peer dependencies — you only need them for the `ragekit/react` entry.
 
 ## 60-second React setup
 
 ```tsx
 import { useState } from "react";
-import { DesktopDestroyer } from "desktop-destroyer/react";
+import { RageKit } from "ragekit/react";
 
 function App() {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button onClick={() => setOpen(true)}>Destroy this page</button>
-      {open && <DesktopDestroyer onClose={() => setOpen(false)} />}
+      {open && <RageKit onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -46,9 +46,9 @@ That's the whole integration: a floating toolbar appears, the page becomes destr
 ## 60-second vanilla setup
 
 ```ts
-import { createDesktopDestroyer } from "desktop-destroyer";
+import { createRageKit } from "ragekit";
 
-const destroyer = createDesktopDestroyer({
+const destroyer = createRageKit({
   initialTool: "flamethrower",
   soundEnabled: true,
 });

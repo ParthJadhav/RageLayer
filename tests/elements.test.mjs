@@ -105,9 +105,9 @@ describe("harvesting", () => {
   });
 
   test("the destroyer's own furniture is filtered out", () => {
-    // The toolbar is marked `data-dd-ignore`; making it demolishable would let
+    // The toolbar is marked `data-ragekit-ignore`; making it demolishable would let
     // the toy destroy its own controls.
-    build(`<div class="ui" data-dd-ignore><span>Tools</span></div><div class="d">Real</div>`);
+    build(`<div class="ui" data-ragekit-ignore><span>Tools</span></div><div class="d">Real</div>`);
     place(".ui", 0, 0, 200, 120);
     place(".d", 0, 200, 200, 120);
 

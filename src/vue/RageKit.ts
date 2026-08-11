@@ -20,7 +20,7 @@ import {
   type VNode,
 } from "vue";
 
-import { DD_IGNORE_ATTR } from "../capture";
+import { RAGEKIT_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
 import { DestroyerEngine } from "../engine";
 import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "../loadouts";
@@ -29,8 +29,8 @@ import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar"
 import type { DestroyerOptions, Tool } from "../types";
 import { acquireToolbarStyles, BAR_CLASS, releaseToolbarStyles } from "./styles";
 
-export const DesktopDestroyer = defineComponent({
-  name: "DesktopDestroyer",
+export const RageKit = defineComponent({
+  name: "RageKit",
   props: {
     tools: { type: Array as PropType<readonly Tool[]>, default: undefined },
     loadout: {
@@ -125,7 +125,7 @@ export const DesktopDestroyer = defineComponent({
         {
           key: `${button.kind}:${button.id}`,
           type: "button",
-          class: "dd-btn",
+          class: "rk-btn",
           "aria-label": button.label,
           title: button.title,
           // Exactly one button is tabbable; arrows move within the group.
@@ -156,7 +156,7 @@ export const DesktopDestroyer = defineComponent({
       let previousKind: ToolbarButton["kind"] | null = null;
       current.buttons.forEach((button, index) => {
         if (previousKind === "tool" && button.kind === "action") {
-          children.push(h("span", { key: `divider:${button.id}`, class: "dd-divider" }));
+          children.push(h("span", { key: `divider:${button.id}`, class: "rk-divider" }));
         }
         previousKind = button.kind;
         children.push(renderButton(button, index, current));
@@ -164,9 +164,9 @@ export const DesktopDestroyer = defineComponent({
 
       if (current.status) {
         children.push(
-          h("span", { key: "status", class: "dd-chip", title: current.status.title }, [
+          h("span", { key: "status", class: "rk-chip", title: current.status.title }, [
             h("span", {
-              class: current.status.color ? "dd-dot" : "dd-dot dd-dot-pending",
+              class: current.status.color ? "rk-dot" : "rk-dot rk-dot-pending",
               style: current.status.color ? { color: current.status.color } : undefined,
             }),
             current.status.label,
@@ -175,21 +175,21 @@ export const DesktopDestroyer = defineComponent({
       }
 
       return h(Teleport, { to: "body" }, [
-        h("div", { class: "dd-host", [DD_IGNORE_ATTR]: "" }, [
+        h("div", { class: "rk-host", [RAGEKIT_IGNORE_ATTR]: "" }, [
           // Live region for keyboard aiming feedback.
           h(
             "div",
-            { class: "dd-sr-only", role: "status", "aria-live": "polite" },
+            { class: "rk-sr-only", role: "status", "aria-live": "polite" },
             current.announcement,
           ),
-          current.flash ? h("div", { class: "dd-flash", role: "status" }, current.flash) : null,
+          current.flash ? h("div", { class: "rk-flash", role: "status" }, current.flash) : null,
           h(
             "div",
             {
               ref: bar,
               class: BAR_CLASS,
               role: "toolbar",
-              "aria-label": props.strings?.toolbarLabel ?? "Desktop Destroyer tools",
+              "aria-label": props.strings?.toolbarLabel ?? "RageKit tools",
               "aria-orientation": "horizontal",
               onKeydown: onBarKeyDown,
             },
@@ -201,4 +201,4 @@ export const DesktopDestroyer = defineComponent({
   },
 });
 
-export default DesktopDestroyer;
+export default RageKit;

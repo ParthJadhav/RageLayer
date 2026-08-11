@@ -1,18 +1,18 @@
 # Versioning and API stability
 
-Desktop Destroyer follows semantic versioning and uses Changesets to record release intent.
+RageKit follows semantic versioning and uses Changesets to record release intent.
 
 ## Public API
 
 The supported public surface is everything reachable through the documented package exports:
 
-- `desktop-destroyer`
-- `desktop-destroyer/react`
-- `desktop-destroyer/vue`
-- `desktop-destroyer/svelte`
-- `desktop-destroyer/package.json`
+- `ragekit`
+- `ragekit/react`
+- `ragekit/vue`
+- `ragekit/svelte`
+- `ragekit/package.json`
 
-Files under `src/`, generated chunk filenames under `dist/`, DOM nodes/classes beginning with `dd-`,
+Files under `src/`, generated chunk filenames under `dist/`, DOM nodes/classes beginning with `rk-`,
 and debugging globals are implementation details unless explicitly documented. Do not import generated
 files by relative path from `node_modules`.
 
@@ -32,6 +32,6 @@ resolution modes.
 
 ## Reading releases
 
-Every user-visible pull request carries a Changeset. The generated [changelog](https://github.com/ParthJadhav/desktop-destroyer/blob/main/CHANGELOG.md)
+Every user-visible pull request carries a Changeset. The generated [changelog](https://github.com/ParthJadhav/ragekit/blob/main/CHANGELOG.md)
 and GitHub Release describe migration requirements. npm packages are published from tagged commits
 with provenance, and their registry tarball is attached to the matching GitHub Release.

@@ -19,7 +19,7 @@ import {
   releaseStyles,
 } from "./toolbar-styles";
 
-export interface DesktopDestroyerProps {
+export interface RageKitProps {
   /** Called when the user closes the toolbar. */
   onClose?: () => void;
   /** Extra or replacement tools. Defaults to the full built-in set. */
@@ -37,7 +37,7 @@ export interface DesktopDestroyerProps {
    */
   toolStyle?: ToolStyle;
   /**
-   * Expose the engine as `window.__desktopDestroyer` for debugging, E2E tests
+   * Expose the engine as `window.__rageKit` for debugging, E2E tests
    * and the profiling harness (`scripts/profile-effects.mjs` waits for this
    * global on the page it drives). Default false — no globals leak into the
    * host page unless asked for.
@@ -133,7 +133,7 @@ function ToolbarButton({
   return (
     <button
       type="button"
-      className="dd-tool"
+      className="rk-tool"
       style={{ ...buttonBase, ...style, ...(disabled ? { opacity: 0.35 } : null) }}
       data-active={active}
       tabIndex={tabIndex}
@@ -158,11 +158,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Drop-in Desktop Destroyer: mounts the canvas engine, renders the bottom
+ * Drop-in RageKit: mounts the canvas engine, renders the bottom
  * toolbar, and cleans everything up on unmount. Purely additive to the host
  * page — no styles leak in or out.
  */
-export function DesktopDestroyer({
+export function RageKit({
   onClose,
   tools,
   loadout,
@@ -170,7 +170,7 @@ export function DesktopDestroyer({
   soundDefault = false,
   toolStyle = "3d",
   debugGlobal = false,
-}: DesktopDestroyerProps) {
+}: RageKitProps) {
   const engineRef = useRef<DestroyerEngine | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
@@ -242,8 +242,8 @@ export function DesktopDestroyer({
     acquireStyles();
     // Opt-in debug/testing handle — lets host pages, E2E tests and the
     // profiling harness poke the engine.
-    const debugWindow = window as unknown as { __desktopDestroyer?: DestroyerEngine };
-    if (debugGlobal) debugWindow.__desktopDestroyer = engine;
+    const debugWindow = window as unknown as { __rageKit?: DestroyerEngine };
+    if (debugGlobal) debugWindow.__rageKit = engine;
     // The engine starts capturing inside its own constructor, so seed from it
     // rather than waiting for the first event.
     const sync = () =>
@@ -257,7 +257,7 @@ export function DesktopDestroyer({
       off();
       offHistory();
       engine.dispose();
-      if (debugWindow.__desktopDestroyer === engine) delete debugWindow.__desktopDestroyer;
+      if (debugWindow.__rageKit === engine) delete debugWindow.__rageKit;
       releaseStyles();
       if (flashTimerRef.current !== null) {
         window.clearTimeout(flashTimerRef.current);
@@ -290,7 +290,7 @@ export function DesktopDestroyer({
   useEffect(() => {
     if (!mounted) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    toolbarRef.current?.querySelector<HTMLButtonElement>("button.dd-tool")?.focus();
+    toolbarRef.current?.querySelector<HTMLButtonElement>("button.rk-tool")?.focus();
     return () => {
       if (previous?.isConnected) previous.focus();
     };
@@ -414,7 +414,7 @@ export function DesktopDestroyer({
     },
     {
       glyph: "✕",
-      label: "Close Desktop Destroyer",
+      label: "Close RageKit",
       title: "Close (Esc)",
       fontSize: 16,
       color: "rgba(255,255,255,0.8)",
@@ -428,7 +428,7 @@ export function DesktopDestroyer({
   const rovingIndex = Math.min(focusIndex, buttonCount - 1);
 
   const toolbarButtons = () =>
-    Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.dd-tool") ?? []);
+    Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.rk-tool") ?? []);
 
   const onToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     let next: number | null = null;
@@ -463,14 +463,14 @@ export function DesktopDestroyer({
       {/* Persistent live region: screen readers announce the tool description
           as the selection changes; sighted users see the floating pill. */}
       <div
-        className="dd-hint"
-        data-dd-ignore=""
+        className="rk-hint"
+        data-ragekit-ignore=""
         role="status"
         aria-live="polite"
         style={{ zIndex: 2147483001 }}
       >
         {activeTool && (
-          <span className="dd-hint-pill">
+          <span className="rk-hint-pill">
             {activeTool.name} — {activeTool.hint}
           </span>
         )}
@@ -479,14 +479,14 @@ export function DesktopDestroyer({
       {chip && (
         <div
           style={chipStyle}
-          data-dd-ignore=""
-          data-dd-capture-status={capture.status}
+          data-ragekit-ignore=""
+          data-ragekit-capture-status={capture.status}
           role="status"
           aria-live="polite"
           title={chip.title}
         >
           {capture.status === "capturing" ? (
-            <span className="dd-spinner" />
+            <span className="rk-spinner" />
           ) : (
             <span style={{ ...dotStyle, background: chip.color }} />
           )}
@@ -498,9 +498,9 @@ export function DesktopDestroyer({
         ref={toolbarRef}
         style={reducedMotion ? { ...barStyle, animation: "none" } : barStyle}
         role="toolbar"
-        aria-label="Desktop Destroyer tools"
+        aria-label="RageKit tools"
         aria-orientation="horizontal"
-        data-dd-ignore=""
+        data-ragekit-ignore=""
         onKeyDown={onToolbarKeyDown}
         onFocus={onToolbarFocus}
       >

@@ -17,10 +17,10 @@ export {
 } from "./advanced-tools";
 export type { CaptureGeometry, PageBackdrop } from "./capture";
 export {
-  DD_IGNORE_ATTR,
   DEV_TOOL_ELEMENT_PREFIXES,
   defaultCaptureFilter,
   measureCapture,
+  RAGEKIT_IGNORE_ATTR,
   resolvePageBackdrop,
 } from "./capture";
 export type { ComboEvent, ComboId, ComboTrackerOptions, InteractionKind } from "./combos";
@@ -67,12 +67,12 @@ export { LiveContentSource, supportsLiveCapture, supportsPaintEvents } from "./l
 export type { BuiltInLoadoutId, ToolLoadout } from "./loadouts";
 export { BUILT_IN_LOADOUTS, createToolLoadout, resolveToolLoadout } from "./loadouts";
 export type { BuiltInMaterialId, MaterialDefinition, MaterialRegion } from "./materials";
-export { BUILT_IN_MATERIALS, DD_MATERIAL_ATTR, MaterialSystem } from "./materials";
+export { BUILT_IN_MATERIALS, MaterialSystem, RAGEKIT_MATERIAL_ATTR } from "./materials";
 export type {
-  DesktopDestroyerController,
-  MountDesktopDestroyerOptions,
+  MountRageKitOptions,
+  RageKitController,
 } from "./mount";
-export { createDesktopDestroyer, mountDesktopDestroyer } from "./mount";
+export { createRageKit, mountRageKit } from "./mount";
 export { QUALITY_PROFILES } from "./performance";
 export type { BodyInit, WorldOptions } from "./physics";
 export { Body, MAX_BODIES, PhysicsWorld } from "./physics";

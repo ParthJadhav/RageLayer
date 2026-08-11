@@ -48,7 +48,8 @@ function memorySample(metrics) {
 }
 
 const server = await startStaticServer("/benchmarks/runtime.html");
-const benchmarkUrl = process.env.DD_BENCHMARK_URL ?? `${server.origin}/benchmarks/runtime.html`;
+const benchmarkUrl =
+  process.env.RAGEKIT_BENCHMARK_URL ?? `${server.origin}/benchmarks/runtime.html`;
 const browser = await launchChrome({ url: benchmarkUrl, cpuRate });
 const { cdp, sessionId, targetId, version } = browser;
 

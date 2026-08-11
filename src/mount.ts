@@ -4,7 +4,7 @@ import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "./l
 import type { DestroyerOptions, Tool } from "./types";
 
 /** Options shared by the vanilla helper and all framework adapters. */
-export interface MountDesktopDestroyerOptions extends DestroyerOptions {
+export interface MountRageKitOptions extends DestroyerOptions {
   /** Tools to register. Defaults to the complete built-in toolset. */
   tools?: readonly Tool[];
   /** Named or custom tool preset. Explicit `tools` take precedence. */
@@ -16,12 +16,12 @@ export interface MountDesktopDestroyerOptions extends DestroyerOptions {
 /**
  * Mount a ready-to-use engine with the built-in tools registered.
  *
- * This is the smallest useful browser API. Use `createDesktopDestroyer` when
+ * This is the smallest useful browser API. Use `createRageKit` when
  * opening and closing the engine from UI or framework lifecycle code.
  */
-export function mountDesktopDestroyer(options: MountDesktopDestroyerOptions = {}) {
+export function mountRageKit(options: MountRageKitOptions = {}) {
   if (typeof document === "undefined") {
-    throw new Error("mountDesktopDestroyer() must be called in a browser");
+    throw new Error("mountRageKit() must be called in a browser");
   }
 
   const { tools: explicitTools, loadout, initialTool, ...engineOptions } = options;
@@ -33,13 +33,13 @@ export function mountDesktopDestroyer(options: MountDesktopDestroyerOptions = {}
 
   if (selectedInitialTool !== null && !tools.some((tool) => tool.id === selectedInitialTool)) {
     engine.dispose();
-    throw new RangeError(`Unknown initial Desktop Destroyer tool: ${selectedInitialTool}`);
+    throw new RangeError(`Unknown initial RageKit tool: ${selectedInitialTool}`);
   }
   engine.setTool(selectedInitialTool);
   return engine;
 }
 
-export interface DesktopDestroyerController {
+export interface RageKitController {
   /** The mounted engine, or `null` while closed. */
   readonly engine: DestroyerEngine | null;
   readonly isOpen: boolean;
@@ -54,9 +54,7 @@ export interface DesktopDestroyerController {
  * Create a lazy lifecycle controller. It does no browser work until `open()`
  * and is therefore safe to create while a framework is rendering on a server.
  */
-export function createDesktopDestroyer(
-  options: MountDesktopDestroyerOptions = {},
-): DesktopDestroyerController {
+export function createRageKit(options: MountRageKitOptions = {}): RageKitController {
   let engine: DestroyerEngine | null = null;
   let detachDispose: (() => void) | null = null;
   const listeners = new Set<(engine: DestroyerEngine | null) => void>();
@@ -65,7 +63,7 @@ export function createDesktopDestroyer(
     for (const listener of listeners) listener(engine);
   };
 
-  const controller: DesktopDestroyerController = {
+  const controller: RageKitController = {
     get engine() {
       return engine;
     },
@@ -74,7 +72,7 @@ export function createDesktopDestroyer(
     },
     open() {
       if (engine) return engine;
-      const mounted = mountDesktopDestroyer(options);
+      const mounted = mountRageKit(options);
       engine = mounted;
       detachDispose = mounted.on("dispose", () => {
         if (engine !== mounted) return;

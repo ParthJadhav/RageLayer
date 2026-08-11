@@ -9,18 +9,16 @@ import { setViewport } from "./support/dom.mjs";
  * safe. A static import would be hoisted above the harness and the element
  * would be built on that stand-in.
  */
-const { DesktopDestroyerElement, defineDesktopDestroyerElement, TAG_NAME } = await import(
-  "../src/element.ts"
-);
+const { RageKitElement, defineRageKitElement, TAG_NAME } = await import("../src/element.ts");
 
 /**
- * `<desktop-destroyer>` is the toolbar every stack without a first-party
+ * `<rage-kit>` is the toolbar every stack without a first-party
  * component uses, so its contract — a real, labelled, keyboard-operable
  * toolbar in a shadow root that tears the engine down when it leaves the
  * document — is what these tests hold to.
  */
 
-defineDesktopDestroyerElement();
+defineRageKitElement();
 
 let element;
 
@@ -53,23 +51,23 @@ afterEach(() => {
 
 describe("registration", () => {
   test("the element is registered under its documented tag", () => {
-    expect(customElements.get(TAG_NAME)).toBe(DesktopDestroyerElement);
+    expect(customElements.get(TAG_NAME)).toBe(RageKitElement);
   });
 
   test("registering twice is harmless", () => {
     // Two bundles importing the entry must not throw a duplicate-definition
     // error and take the host page down with them.
-    expect(() => defineDesktopDestroyerElement()).not.toThrow();
+    expect(() => defineRageKitElement()).not.toThrow();
   });
 
   test("a second tag name gets its own working constructor", () => {
     // The platform allows a constructor to be registered only once, so an
     // extra name has to be given a subclass rather than throwing.
-    defineDesktopDestroyerElement("page-wrecker");
+    defineRageKitElement("page-wrecker");
 
     const elementClass = customElements.get("page-wrecker");
     expect(elementClass).toBeDefined();
-    expect(elementClass.prototype instanceof DesktopDestroyerElement).toBe(true);
+    expect(elementClass.prototype instanceof RageKitElement).toBe(true);
   });
 });
 
@@ -86,7 +84,7 @@ describe("mounting", () => {
   test("the toolbar excludes itself from the page it destroys", () => {
     mount((node) => node.configure({ captureContent: false }));
 
-    expect(element.hasAttribute("data-dd-ignore")).toBe(true);
+    expect(element.hasAttribute("data-ragekit-ignore")).toBe(true);
   });
 
   test("an engine is created and exposed", () => {
@@ -174,12 +172,12 @@ describe("interaction", () => {
     expect(buttonNamed(hammer.name).getAttribute("aria-pressed")).toBe("true");
   });
 
-  test("the close button emits dd-close", () => {
+  test("the close button emits ragekit-close", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
     let closes = 0;
-    element.addEventListener("dd-close", () => closes++);
+    element.addEventListener("ragekit-close", () => closes++);
 
-    buttonNamed("Close Desktop Destroyer").click();
+    buttonNamed("Close RageKit").click();
 
     expect(closes).toBe(1);
   });

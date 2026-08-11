@@ -1,6 +1,6 @@
-export type { MountDesktopDestroyerOptions } from "../mount";
-export { createDesktopDestroyer } from "../mount";
+export type { MountRageKitOptions } from "../mount";
+export { createRageKit } from "../mount";
 export type { DestroyerStrings } from "../strings";
-export { DesktopDestroyer } from "./DesktopDestroyer";
-export type { UseDesktopDestroyerResult } from "./useDesktopDestroyer";
-export { useDesktopDestroyer } from "./useDesktopDestroyer";
+export { RageKit } from "./RageKit";
+export type { UseRageKitResult } from "./useRageKit";
+export { useRageKit } from "./useRageKit";

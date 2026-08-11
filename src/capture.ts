@@ -29,7 +29,7 @@
  */
 
 /** Marker attribute: nodes carrying it are excluded from the page capture. */
-export const DD_IGNORE_ATTR = "data-dd-ignore";
+export const RAGEKIT_IGNORE_ATTR = "data-ragekit-ignore";
 
 /**
  * Device-pixel budget for a single document-sized canvas (≈80 MB of backing
@@ -105,7 +105,7 @@ function isDevToolElement(el: Element): boolean {
 export function defaultCaptureFilter(node: Node): boolean {
   if (node.nodeType !== 1) return true;
   const el = node as Element;
-  if (el.hasAttribute(DD_IGNORE_ATTR)) return false;
+  if (el.hasAttribute(RAGEKIT_IGNORE_ATTR)) return false;
   return !isDevToolElement(el);
 }
 
@@ -159,7 +159,7 @@ export function pinFixedDescendants(root: HTMLElement): () => void {
     if (getComputedStyle(el).position !== "fixed") continue;
     // Our own overlay and toolbar are fixed too, and are excluded from the
     // capture anyway — moving them would only make them jump on screen.
-    if (el.closest(`[${DD_IGNORE_ATTR}]`)) continue;
+    if (el.closest(`[${RAGEKIT_IGNORE_ATTR}]`)) continue;
     // Zero-size boxes (display:none subtrees, empty portals) contribute nothing.
     if (!el.offsetWidth && !el.offsetHeight) continue;
     // Only the declarations we are about to overwrite are remembered, so a

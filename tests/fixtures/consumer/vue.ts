@@ -1,6 +1,6 @@
-import { useDesktopDestroyer } from "desktop-destroyer/vue";
+import { useRageKit } from "ragekit/vue";
 
-const destroyer = useDesktopDestroyer({
+const destroyer = useRageKit({
   initialTool: "freeze",
   captureContent: false,
 });
@@ -15,10 +15,10 @@ void destroyer.toggle;
 
 // The ready-made Vue toolbar, so its props and events stay type-checked from
 // a consumer's perspective rather than only from inside the package.
-import { DesktopDestroyer } from "desktop-destroyer/vue";
+import { RageKit } from "ragekit/vue";
 import { h } from "vue";
 
-void h(DesktopDestroyer, {
+void h(RageKit, {
   loadout: "chaos",
   soundDefault: false,
   strings: { toolbarLabel: "Outils", close: "Fermer" },

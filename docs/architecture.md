@@ -1,8 +1,8 @@
 # Architecture
 
 How the package turns a live page into a destructible object. Deeper dives:
-the [repository README](https://github.com/ParthJadhav/desktop-destroyer#readme) covers the public
-overview, and [HTML-IN-CANVAS.md](https://github.com/ParthJadhav/desktop-destroyer/blob/main/HTML-IN-CANVAS.md)
+the [repository README](https://github.com/ParthJadhav/ragekit#readme) covers the public
+overview, and [HTML-IN-CANVAS.md](https://github.com/ParthJadhav/ragekit/blob/main/HTML-IN-CANVAS.md)
 is the research log behind live capture mode.
 
 ## The layer model
@@ -63,7 +63,7 @@ src/
 ├── audio.ts         SoundEngine — fully procedural WebAudio
 ├── performance.ts   Quality profiles, device detection, frame telemetry ring
 ├── share.ts         Blob download / clipboard helpers
-└── react/           DesktopDestroyer component + toolbar
+└── react/           RageKit component + toolbar
 ```
 
 ## The frame loop

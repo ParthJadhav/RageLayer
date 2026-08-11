@@ -26,7 +26,7 @@
  *   sits at `opacity: 0.005` behind every other layer instead.
  */
 
-import { DD_IGNORE_ATTR, type PageBackdrop } from "./capture";
+import { type PageBackdrop, RAGEKIT_IGNORE_ATTR } from "./capture";
 
 /** Shape of the experimental 2D-context method we depend on. */
 type DrawElementImageCtx = CanvasRenderingContext2D & {
@@ -439,7 +439,7 @@ export class LiveContentSource {
     if (!host) {
       host = document.createElement("canvas");
       host.setAttribute("layoutsubtree", "");
-      host.setAttribute(DD_IGNORE_ATTR, "");
+      host.setAttribute(RAGEKIT_IGNORE_ATTR, "");
       Object.assign(host.style, {
         position: "fixed",
         left: "0",

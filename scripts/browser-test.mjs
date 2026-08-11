@@ -10,7 +10,7 @@
  *
  *   node scripts/browser-test.mjs [--only <substring>]
  *
- * `DD_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
+ * `RAGEKIT_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
  */
 
 import { evaluate, launchChrome, startStaticServer, waitFor } from "./lib/browser.mjs";

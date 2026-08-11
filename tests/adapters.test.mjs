@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { effectScope } from "vue";
-import { useDesktopDestroyer as useReactDesktopDestroyer } from "../src/react/useDesktopDestroyer.ts";
-import { desktopDestroyer } from "../src/svelte/index.ts";
-import { useDesktopDestroyer as useVueDesktopDestroyer } from "../src/vue/index.ts";
+import { useRageKit as useReactRageKit } from "../src/react/useRageKit.ts";
+import { rageKit } from "../src/svelte/index.ts";
+import { useRageKit as useVueRageKit } from "../src/vue/index.ts";
 
 class FakeElement extends EventTarget {
   attributes = new Map();
@@ -25,7 +25,7 @@ class FakeElement extends EventTarget {
 describe("framework adapters", () => {
   test("the headless React hook is safe during server rendering", () => {
     function Consumer() {
-      const destroyer = useReactDesktopDestroyer({ initialTool: "hammer" });
+      const destroyer = useReactRageKit({ initialTool: "hammer" });
       return createElement("span", null, destroyer.isOpen ? "open" : "closed");
     }
 
@@ -35,7 +35,7 @@ describe("framework adapters", () => {
   test("the Vue composable starts closed and is safe inside an effect scope", () => {
     const scope = effectScope();
     const destroyer = scope.run(() =>
-      useVueDesktopDestroyer({ initialTool: "hammer", captureContent: false }),
+      useVueRageKit({ initialTool: "hammer", captureContent: false }),
     );
 
     expect(destroyer.engine.value).toBeNull();
@@ -48,9 +48,9 @@ describe("framework adapters", () => {
     const node = new FakeElement();
     node.setAttribute("aria-pressed", "mixed");
     const changes = [];
-    node.addEventListener("desktopdestroyerchange", (event) => changes.push(event.detail));
+    node.addEventListener("ragekitchange", (event) => changes.push(event.detail));
 
-    const action = desktopDestroyer(node, { initialTool: "hammer" });
+    const action = rageKit(node, { initialTool: "hammer" });
     expect(node.getAttribute("aria-pressed")).toBe("false");
     expect(changes).toEqual([{ engine: null, open: false }]);
 

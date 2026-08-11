@@ -1,6 +1,6 @@
 # Accessibility
 
-Desktop Destroyer is an optional visual toy, not primary application content. The host application
+RageKit is an optional visual toy, not primary application content. The host application
 remains responsible for deciding when it is appropriate and for providing an obvious way to close it.
 
 ## Built-in behavior
@@ -20,7 +20,7 @@ The canvas overlay is marked `aria-hidden="true"`; it is visual output rather th
 document structure. The Svelte launcher action maintains `aria-pressed`, while the Vue and headless
 React bindings expose `isOpen` so host controls can do the same.
 
-The Vue component and the `<desktop-destroyer>` custom element render the same toolbar with the
+The Vue component and the `<rage-kit>` custom element render the same toolbar with the
 same behaviour, so the list above is not React-only.
 
 ## Using the tools without a pointer
@@ -57,8 +57,8 @@ shake plus nonessential toolbar/vignette transitions. Tool, particle, and physic
 motion is the core output of this package rather than decorative navigation feedback.
 
 ```ts
-createDesktopDestroyer({ reducedMotion: true });  // always reduce camera/UI motion
-createDesktopDestroyer({ reducedMotion: false }); // explicitly keep full feedback
+createRageKit({ reducedMotion: true });  // always reduce camera/UI motion
+createRageKit({ reducedMotion: false }); // explicitly keep full feedback
 ```
 
 Do not open the destroyer automatically for a visitor who has requested reduced motion. Prefer an
@@ -68,7 +68,7 @@ explicit, clearly labelled launcher.
 
 - Use a real `<button>` for the launcher and reflect open state with `aria-pressed` or an expanded
   state appropriate to your UI.
-- Keep the launcher or close control outside the captured content with `data-dd-ignore`.
+- Keep the launcher or close control outside the captured content with `data-ragekit-ignore`.
 - Provide an accessible name that describes the effect; “Destroy this page” is clearer than an
   unexplained icon.
 - Ensure `Esc` or an equally reachable control closes custom toolbars.

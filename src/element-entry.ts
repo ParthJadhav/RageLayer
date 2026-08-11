@@ -1,19 +1,19 @@
 /**
- * Side-effecting entry: importing it registers `<desktop-destroyer>`.
+ * Side-effecting entry: importing it registers `<rage-kit>`.
  *
- *     import "desktop-destroyer/element";
+ *     import "ragekit/element";
  *
  * Use the named exports from this module instead if you want to choose the tag
  * name or subclass the element.
  */
 
-import { defineDesktopDestroyerElement } from "./element";
+import { defineRageKitElement } from "./element";
 
-defineDesktopDestroyerElement();
+defineRageKitElement();
 
 export {
-  DesktopDestroyerElement,
-  type DesktopDestroyerElementConfig,
-  defineDesktopDestroyerElement,
+  defineRageKitElement,
+  RageKitElement,
+  type RageKitElementConfig,
   TAG_NAME,
 } from "./element";

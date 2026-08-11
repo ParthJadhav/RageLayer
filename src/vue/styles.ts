@@ -7,17 +7,17 @@
  * not install it twice, and the last one to unmount takes it away again.
  */
 
-export const BAR_CLASS = "dd-bar";
+export const BAR_CLASS = "rk-bar";
 
 export const TOOLBAR_CSS = `
-.dd-host {
+.rk-host {
   position: fixed;
   inset: auto 0 0 0;
   z-index: 2147483001;
   pointer-events: none;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-.dd-bar {
+.rk-bar {
   pointer-events: auto;
   display: flex;
   align-items: center;
@@ -33,13 +33,13 @@ export const TOOLBAR_CSS = `
   background: rgba(20, 18, 16, 0.82);
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  animation: dd-rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  animation: rk-rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
-@keyframes dd-rise {
+@keyframes rk-rise {
   from { transform: translateY(14px); opacity: 0; }
   to { transform: none; opacity: 1; }
 }
-.dd-btn {
+.rk-btn {
   all: unset;
   box-sizing: border-box;
   display: grid;
@@ -53,20 +53,20 @@ export const TOOLBAR_CSS = `
   color: rgba(255, 255, 255, 0.92);
   transition: background 0.14s ease, transform 0.14s ease;
 }
-.dd-btn:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.1); }
-.dd-btn:active:not([aria-disabled="true"]) { transform: scale(0.94); }
-.dd-btn[aria-pressed="true"] { background: rgba(220, 90, 31, 0.9); color: #fff; }
+.rk-btn:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.1); }
+.rk-btn:active:not([aria-disabled="true"]) { transform: scale(0.94); }
+.rk-btn[aria-pressed="true"] { background: rgba(220, 90, 31, 0.9); color: #fff; }
 /* Keyboard operation depends on this ring being visible in every state. */
-.dd-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.dd-btn[aria-disabled="true"] { opacity: 0.38; cursor: default; }
-.dd-btn img { display: block; }
-.dd-divider {
+.rk-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.rk-btn[aria-disabled="true"] { opacity: 0.38; cursor: default; }
+.rk-btn img { display: block; }
+.rk-divider {
   width: 1px;
   height: 26px;
   margin: 0 2px;
   background: rgba(255, 255, 255, 0.14);
 }
-.dd-chip {
+.rk-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -79,10 +79,10 @@ export const TOOLBAR_CSS = `
   font-size: 12px;
   white-space: nowrap;
 }
-.dd-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.dd-dot-pending { animation: dd-pulse 1s ease-in-out infinite; }
-@keyframes dd-pulse { 50% { opacity: 0.25; } }
-.dd-flash {
+.rk-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.rk-dot-pending { animation: rk-pulse 1s ease-in-out infinite; }
+@keyframes rk-pulse { 50% { opacity: 0.25; } }
+.rk-flash {
   position: absolute;
   left: 50%;
   bottom: 72px;
@@ -94,7 +94,7 @@ export const TOOLBAR_CSS = `
   font-size: 12px;
   white-space: nowrap;
 }
-.dd-sr-only {
+.rk-sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -105,9 +105,9 @@ export const TOOLBAR_CSS = `
   white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
-  .dd-bar { animation: none; }
-  .dd-btn { transition: none; }
-  .dd-dot-pending { animation: none; }
+  .rk-bar { animation: none; }
+  .rk-btn { transition: none; }
+  .rk-dot-pending { animation: none; }
 }
 `;
 
@@ -119,7 +119,7 @@ export function acquireToolbarStyles() {
   refCount++;
   if (element) return;
   element = document.createElement("style");
-  element.dataset.desktopDestroyer = "toolbar";
+  element.dataset.rageKit = "toolbar";
   element.textContent = TOOLBAR_CSS;
   document.head.appendChild(element);
 }

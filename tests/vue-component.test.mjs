@@ -5,7 +5,7 @@ import { setViewport } from "./support/dom.mjs";
 // Mounted after the DOM harness for the same reason the custom element is:
 // these modules read browser globals while they evaluate.
 const { createApp, h, nextTick } = await import("vue");
-const { DesktopDestroyer } = await import("../src/vue/DesktopDestroyer.ts");
+const { RageKit } = await import("../src/vue/RageKit.ts");
 
 /**
  * Vue previously got a headless composable and a note to build the toolbar
@@ -25,7 +25,7 @@ let host;
 async function mount(props = {}) {
   host = document.createElement("div");
   document.body.appendChild(host);
-  app = createApp({ render: () => h(DesktopDestroyer, props) });
+  app = createApp({ render: () => h(RageKit, props) });
   app.mount(host);
   await nextTick();
   return app;
@@ -54,14 +54,14 @@ describe("rendering", () => {
     await mount({ tools: [hammer], engineOptions: { captureContent: false } });
 
     expect(bar()).not.toBeNull();
-    expect(bar().getAttribute("aria-label")).toBe("Desktop Destroyer tools");
+    expect(bar().getAttribute("aria-label")).toBe("RageKit tools");
     expect(buttons().length).toBeGreaterThan(1);
   });
 
   test("the toolbar is excluded from the page it destroys", async () => {
     await mount({ tools: [hammer], engineOptions: { captureContent: false } });
 
-    expect(document.querySelector("[data-dd-ignore]")).not.toBeNull();
+    expect(document.querySelector("[data-ragekit-ignore]")).not.toBeNull();
   });
 
   test("every button has an accessible name and exactly one is tabbable", async () => {
@@ -118,7 +118,7 @@ describe("interaction", () => {
     });
 
     buttons()
-      .find((button) => button.getAttribute("aria-label") === "Close Desktop Destroyer")
+      .find((button) => button.getAttribute("aria-label") === "Close RageKit")
       .click();
 
     expect(closes).toBe(1);

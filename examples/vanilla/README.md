@@ -10,7 +10,7 @@ python3 -m http.server 4321
 
 Shows two things:
 
-- `createDesktopDestroyer()`, the lazy lifecycle controller that does no browser work until
+- `createRageKit()`, the lazy lifecycle controller that does no browser work until
   `open()`;
 - `ToolbarModel`, driving a toolbar built entirely from the host's own markup — the same model the
   built-in toolbars use, so the shortcuts, roving focus and keyboard aiming come for free.

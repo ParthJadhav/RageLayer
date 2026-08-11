@@ -4,10 +4,9 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 
 // Loaded on demand: a normal page visit should not pay for the engine.
-const DesktopDestroyer = dynamic(
-  () => import("desktop-destroyer/react").then((module) => module.DesktopDestroyer),
-  { ssr: false },
-);
+const RageKit = dynamic(() => import("ragekit/react").then((module) => module.RageKit), {
+  ssr: false,
+});
 
 export function DestroyButton() {
   const [open, setOpen] = useState(false);
@@ -17,9 +16,7 @@ export function DestroyButton() {
       <button type="button" aria-pressed={open} onClick={() => setOpen(true)}>
         Destroy this page
       </button>
-      {open && (
-        <DesktopDestroyer engineOptions={{ history: true }} onClose={() => setOpen(false)} />
-      )}
+      {open && <RageKit engineOptions={{ history: true }} onClose={() => setOpen(false)} />}
     </>
   );
 }

@@ -1,4 +1,4 @@
-export const metadata = { title: "Desktop Destroyer — Next.js example" };
+export const metadata = { title: "RageKit — Next.js example" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

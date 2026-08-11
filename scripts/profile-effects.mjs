@@ -10,9 +10,7 @@ const durationMs = Math.max(1_500, Number(readFlag("--duration", "5000")));
 const variant = readFlag("--variant", "full");
 const metricsOnly = process.argv.includes("--metrics-only");
 const captureScreenshots = process.argv.includes("--screenshots");
-const outputDir = resolve(
-  readFlag("--output", join(tmpdir(), `desktop-destroyer-effects-${Date.now()}`)),
-);
+const outputDir = resolve(readFlag("--output", join(tmpdir(), `ragekit-effects-${Date.now()}`)));
 const effects = readFlag("--effects", "lightning,paintball,blackhole")
   .split(",")
   .map((value) => value.trim())
@@ -178,8 +176,8 @@ function traceSummary(events) {
 
 const RUN_EFFECT = `
 async ({ effect, durationMs, intervalMs, activeRatio, mode, movePx, moveHz, variant }) => {
-  const engine = window.__desktopDestroyer;
-  if (!engine) throw new Error("desktop-destroyer is not mounted");
+  const engine = window.__rageKit;
+  if (!engine) throw new Error("ragekit is not mounted");
   engine.clear();
   if (variant === "no-postfx") {
     engine.opts.postFX = false;
@@ -276,7 +274,7 @@ async ({ effect, durationMs, intervalMs, activeRatio, mode, movePx, moveHz, vari
 
 const PREPARE_SCREENSHOT = `
 async ({ effect, mode, movePx }) => {
-  const engine = window.__desktopDestroyer;
+  const engine = window.__rageKit;
   engine.clear();
   engine.setTool(effect);
   await new Promise((resolve) => setTimeout(resolve, 220));
@@ -393,17 +391,17 @@ try {
     `Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "DESTROY")?.click()`,
   );
   await evalValue(
-    `if (!window.__desktopDestroyer && window.ddBenchmark) window.ddBenchmark.setupScenario("idle")`,
+    `if (!window.__rageKit && window.ddBenchmark) window.ddBenchmark.setupScenario("idle")`,
   );
   await waitUntil(
-    "Boolean(window.__desktopDestroyer)",
+    "Boolean(window.__rageKit)",
     Math.max(45_000, 10_000 * cpuRate),
-    "Desktop Destroyer did not mount",
+    "RageKit did not mount",
   );
   await waitUntil(
-    "window.__desktopDestroyer.opts.captureContent === false || ['snapshot', 'live'].includes(window.__desktopDestroyer.captureStatus)",
+    "window.__rageKit.opts.captureContent === false || ['snapshot', 'live'].includes(window.__rageKit.captureStatus)",
     Math.max(30_000, 20_000 * cpuRate),
-    "Desktop Destroyer capture did not become ready",
+    "RageKit capture did not become ready",
   );
 
   const idle = await evalValue(`new Promise((resolve) => {
@@ -425,7 +423,7 @@ try {
       0.5,
     ) || 1000 / 60;
   const opacityCheck = await evaluate(`async () => {
-    const engine = window.__desktopDestroyer;
+    const engine = window.__rageKit;
     const layer = engine.content;
     if (!layer) return { available: false };
     const x = innerWidth * 0.64 + scrollX;
@@ -503,9 +501,9 @@ try {
 
     let screenshotPath = null;
     if (captureScreenshots) {
-      process.stderr.write(`[desktop-destroyer profile] preparing ${effect} screenshot\n`);
+      process.stderr.write(`[ragekit profile] preparing ${effect} screenshot\n`);
       await evaluate(PREPARE_SCREENSHOT, { effect, ...config });
-      process.stderr.write(`[desktop-destroyer profile] capturing ${effect} screenshot\n`);
+      process.stderr.write(`[ragekit profile] capturing ${effect} screenshot\n`);
       await cdp.send("Page.bringToFront", {}, sessionId);
       const nextFrame = cdp.once("Page.screencastFrame");
       await cdp.send(
@@ -527,9 +525,9 @@ try {
       await cdp.send("Page.stopScreencast", {}, sessionId);
       screenshotPath = join(outputDir, `${effect}-${cpuRate}x.png`);
       await writeFile(screenshotPath, Buffer.from(frameEvent.params.data, "base64"));
-      process.stderr.write(`[desktop-destroyer profile] wrote ${effect} screenshot\n`);
+      process.stderr.write(`[ragekit profile] wrote ${effect} screenshot\n`);
       await evaluate(`() => {
-        const engine = window.__desktopDestroyer;
+        const engine = window.__rageKit;
         engine.container.dispatchEvent(new PointerEvent("pointerup", {
           bubbles: true,
           pointerId: 7,
@@ -576,7 +574,7 @@ try {
             }
           : null,
     });
-    await evalValue("window.__desktopDestroyer.clear()");
+    await evalValue("window.__rageKit.clear()");
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   }
 

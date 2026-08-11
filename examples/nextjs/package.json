@@ -1,5 +1,5 @@
 {
-  "name": "desktop-destroyer-example-nextjs",
+  "name": "ragekit-example-nextjs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "desktop-destroyer": "file:../..",
+    "ragekit": "file:../..",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

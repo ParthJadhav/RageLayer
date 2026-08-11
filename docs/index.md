@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: Desktop Destroyer
+  name: RageKit
   text: Demolish any web page.
   tagline: A framework-neutral canvas toy with real page capture, rigid-body debris, procedural tools, and drop-in React, Vue, and Svelte integrations.
   image:
     src: /screenshots/aftermath.png
-    alt: A web page smashed, burned, frozen, and painted by Desktop Destroyer
+    alt: A web page smashed, burned, frozen, and painted by RageKit
   actions:
     - theme: brand
       text: Try the live demo
@@ -36,15 +36,15 @@ features:
 ::: code-group
 
 ```sh [npm]
-npm install desktop-destroyer
+npm install ragekit
 ```
 
 ```sh [pnpm]
-pnpm add desktop-destroyer
+pnpm add ragekit
 ```
 
 ```sh [Bun]
-bun add desktop-destroyer
+bun add ragekit
 ```
 
 :::
@@ -53,15 +53,15 @@ bun add desktop-destroyer
 
 | Stack | Import | Best for |
 | --- | --- | --- |
-| React / Next.js | `desktop-destroyer/react` | Ready-made toolbar or a headless hook |
-| Vue / Nuxt | `desktop-destroyer/vue` | Lifecycle-safe composable |
-| Svelte / SvelteKit | `desktop-destroyer/svelte` | One-line launcher action |
-| Astro, Angular, Solid, plain JS | `desktop-destroyer` | Framework-neutral controller |
+| React / Next.js | `ragekit/react` | Ready-made toolbar or a headless hook |
+| Vue / Nuxt | `ragekit/vue` | Lifecycle-safe composable |
+| Svelte / SvelteKit | `ragekit/svelte` | One-line launcher action |
+| Astro, Angular, Solid, plain JS | `ragekit` | Framework-neutral controller |
 
 ```ts
-import { createDesktopDestroyer } from "desktop-destroyer";
+import { createRageKit } from "ragekit";
 
-const destroyer = createDesktopDestroyer({ initialTool: "hammer" });
+const destroyer = createRageKit({ initialTool: "hammer" });
 document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
 ```
 

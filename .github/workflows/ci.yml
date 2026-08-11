@@ -118,7 +118,7 @@ jobs:
         run: |
           node --input-type=module -e "
             const dd = await import('./dist/index.js');
-            const controller = dd.createDesktopDestroyer();
+            const controller = dd.createRageKit();
             if (controller.isOpen) throw new Error('controller opened during import');
             if (dd.baseTools.length === 0) throw new Error('no tools exported');
             console.log('imported', dd.defaultTools.length, 'default tools on Node ' + process.version);
@@ -159,15 +159,15 @@ jobs:
         # The only place page capture, the WebGL2 surface shader and the
         # post-processing chain are executed for real.
         env:
-          DD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          RAGEKIT_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node scripts/browser-test.mjs
 
       - name: Benchmark smoke (short run)
         env:
-          DD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          RAGEKIT_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node scripts/benchmark.mjs --scenarios idle,mixed --duration 1500 --warmup 400 --assert
 
       - name: Memory leak gate
         env:
-          DD_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          RAGEKIT_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node scripts/benchmark.mjs --scenarios idle --duration 250 --warmup 100 --leak-cycles 20

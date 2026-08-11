@@ -63,7 +63,7 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         run: |
           version="$(jq -r .version package.json)"
-          npm pack "desktop-destroyer@${version}" --ignore-scripts
+          npm pack "ragekit@${version}" --ignore-scripts
 
       - name: Attach tarball to GitHub release
         if: steps.changesets.outputs.published == 'true'
@@ -71,4 +71,4 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           version="$(jq -r .version package.json)"
-          gh release upload "v${version}" desktop-destroyer-*.tgz --clobber
+          gh release upload "v${version}" ragekit-*.tgz --clobber

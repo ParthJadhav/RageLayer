@@ -1,15 +1,10 @@
-import { DestroyerEngine, type DestroyerOptions, type Tool } from "desktop-destroyer/engine";
-import {
-  loadAdvancedTools,
-  loadBaseTools,
-  loadDefaultTools,
-  loadHeavyTools,
-} from "desktop-destroyer/lazy";
-import { BUILT_IN_LOADOUTS, resolveToolLoadout } from "desktop-destroyer/loadouts";
-import { createRateLimiter, createTool } from "desktop-destroyer/sdk";
-import { baseTools, broom, hammer } from "desktop-destroyer/tools";
-import { advancedTools, gravityGun, laserCutter } from "desktop-destroyer/tools/advanced";
-import { blackHole, heavyTools, rocketLauncher } from "desktop-destroyer/tools/heavy";
+import { DestroyerEngine, type DestroyerOptions, type Tool } from "ragekit/engine";
+import { loadAdvancedTools, loadBaseTools, loadDefaultTools, loadHeavyTools } from "ragekit/lazy";
+import { BUILT_IN_LOADOUTS, resolveToolLoadout } from "ragekit/loadouts";
+import { createRateLimiter, createTool } from "ragekit/sdk";
+import { baseTools, broom, hammer } from "ragekit/tools";
+import { advancedTools, gravityGun, laserCutter } from "ragekit/tools/advanced";
+import { blackHole, heavyTools, rocketLauncher } from "ragekit/tools/heavy";
 
 const options = {
   captureContent: false,

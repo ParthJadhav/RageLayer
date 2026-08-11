@@ -58,12 +58,12 @@ bun run memory:check       # create/work/dispose cycles with forced GC — leak 
 bun run profile:effects    # per-tool frame profiles
 ```
 
-Set `DD_CHROME_PATH` to your Chrome binary. Output is JSON: browser task/script/layout time,
+Set `RAGEKIT_CHROME_PATH` to your Chrome binary. Output is JSON: browser task/script/layout time,
 rAF percentiles, long tasks, heap deltas, entity counts, and the engine's own phase breakdown.
 Add `--assert` to enforce the CI budgets for p95 engine cost, per-scenario heap growth, and layout
 work; the optional `--max-engine-p95`, `--max-heap-growth`, and `--max-layout` flags override them.
 A recorded baseline lives in
-[`benchmarks/RESULTS.md`](https://github.com/ParthJadhav/desktop-destroyer/blob/main/benchmarks/RESULTS.md).
+[`benchmarks/RESULTS.md`](https://github.com/ParthJadhav/ragekit/blob/main/benchmarks/RESULTS.md).
 
 ## Distribution budgets
 
