@@ -93,14 +93,24 @@ jobs:
       - name: Install dependencies from lockfile
         run: bun install --frozen-lockfile
 
-      - name: Build
-        run: bun run build
+      # The published artifact is built once by the release toolchain; what a
+      # Node 20/22/24 consumer touches is the result, not the bundler. tsdown
+      # itself needs Node 22+, so rebuilding per-major would test nothing real.
+      - name: Download dist from the verify job
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dist
+          path: dist
 
       - name: Consumer type tests
         run: bun run typecheck:consumers
 
       - name: Package correctness
         run: bun run check:package
+        env:
+          # attw --pack runs `npm pack`, whose prepack hook would rebuild with
+          # tsdown — the downloaded dist is the artifact under test here.
+          npm_config_ignore_scripts: "true"
 
       - name: Import the built package from Node
         # Importing on a server must not touch the DOM; this is the SSR
