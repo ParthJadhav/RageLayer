@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createDesktopDestroyer, mountDesktopDestroyer } from "../src/mount.ts";
+import { fileURLToPath } from "node:url";
+import { createDesktopDestroyer } from "../src/mount.ts";
 
 describe("framework-neutral lifecycle helpers", () => {
   test("the lazy controller is safe without browser globals", () => {
@@ -16,7 +17,24 @@ describe("framework-neutral lifecycle helpers", () => {
   });
 
   test("mounting on the server fails with an actionable error", () => {
-    expect(() => mountDesktopDestroyer()).toThrow("must be called in a browser");
-    expect(() => createDesktopDestroyer().open()).toThrow("must be called in a browser");
+    // Other test files register happy-dom globals for the whole process, and
+    // bun test's file order is filesystem-dependent, so a bare environment
+    // here is a matter of luck. Assert in a fresh process that has no DOM.
+    const script = `
+      const { createDesktopDestroyer, mountDesktopDestroyer } = await import("./src/mount.ts");
+      for (const open of [() => mountDesktopDestroyer(), () => createDesktopDestroyer().open()]) {
+        try {
+          open();
+          throw new Error("expected a server-side mount to throw");
+        } catch (error) {
+          if (!String(error.message).includes("must be called in a browser")) throw error;
+        }
+      }
+    `;
+    const result = Bun.spawnSync([process.execPath, "-e", script], {
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
+    });
+    expect(result.stderr.toString()).toBe("");
+    expect(result.exitCode).toBe(0);
   });
 });
