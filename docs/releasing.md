@@ -1,7 +1,7 @@
 # Releasing
 
 Releases use Changesets, GitHub Actions, and npm trusted publishing. A release should be reproducible
-from the tagged public commit and carry npm provenance.
+from the tagged commit. npm adds provenance automatically when the source repository is public.
 
 ## One-time npm setup
 
@@ -25,9 +25,9 @@ Then configure npm's trusted publisher for:
 | Workflow | `release.yml` |
 | Permission | Publish |
 
-The workflow grants `id-token: write`, uses a supported Node/npm environment, and enables
-provenance. After a successful trusted publish, remove the long-lived `NPM_TOKEN` secret and
-disallow token publishing in the npm package settings.
+The workflow grants `id-token: write` and uses a supported Node/npm environment. After a successful
+trusted publish, remove the long-lived `NPM_TOKEN` secret and disallow token publishing in the npm
+package settings.
 
 ## Normal release flow
 
@@ -62,4 +62,6 @@ The release job authenticates with the `NPM_TOKEN` secret today. Moving to trust
 
 The workflow already requests `id-token: write` and installs a recent npm, so nothing else needs
 to change: with a trusted publisher configured, npm exchanges the job's OIDC token for a
-short-lived credential and ignores `NODE_AUTH_TOKEN`. Provenance keeps working either way.
+short-lived credential and ignores `NODE_AUTH_TOKEN`. npm generates provenance automatically when
+the source repository is public; private source repositories can use trusted publishing but cannot
+publish provenance.
