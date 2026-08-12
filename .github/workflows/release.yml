@@ -63,7 +63,18 @@ jobs:
         if: steps.changesets.outputs.published == 'true'
         run: |
           version="$(jq -r .version package.json)"
-          npm pack "ragelayer@${version}" --ignore-scripts
+          for attempt in {1..6}; do
+            if npm pack "ragelayer@${version}" --ignore-scripts; then
+              exit 0
+            fi
+
+            if [ "$attempt" -eq 6 ]; then
+              echo "ragelayer@${version} did not become available from the registry in time" >&2
+              exit 1
+            fi
+
+            sleep $((attempt * 5))
+          done
 
       - name: Attach tarball to GitHub release
         if: steps.changesets.outputs.published == 'true'
