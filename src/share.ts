@@ -34,8 +34,8 @@ export async function copyBlobToClipboard(blob: Blob): Promise<boolean> {
   }
 }
 
-/** `ragekit-2026-08-04T12-00-00.png` — sortable and collision-free. */
+/** `ragelayer-2026-08-04T12-00-00.png` — sortable and collision-free. */
 export function snapshotFilename(ext = "png") {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return `ragekit-${stamp}.${ext}`;
+  return `ragelayer-${stamp}.${ext}`;
 }

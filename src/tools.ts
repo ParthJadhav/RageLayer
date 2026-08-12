@@ -946,7 +946,7 @@ export const broom: Tool & { sweepDebt: number } = {
 
 /**
  * The everyday tools without physics-heavy ordnance. Import this set from
- * `ragekit/tools` when startup size matters more than having every
+ * `ragelayer/tools` when startup size matters more than having every
  * effect available immediately.
  */
 export const baseTools: Tool[] = [hammer, gun, flamethrower, waterHose, chainsaw, paintball, broom];

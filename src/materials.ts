@@ -1,6 +1,6 @@
 import { clamp01 } from "./math";
 
-export const RAGEKIT_MATERIAL_ATTR = "data-ragekit-material";
+export const RAGELAYER_MATERIAL_ATTR = "data-ragelayer-material";
 
 export type BuiltInMaterialId = "paper" | "glass" | "metal" | "wood" | "stone" | "rubber" | "ice";
 
@@ -112,7 +112,7 @@ export interface MaterialRegion {
   material: MaterialDefinition;
 }
 
-/** Registry + document-space lookup for `[data-ragekit-material]` regions. */
+/** Registry + document-space lookup for `[data-ragelayer-material]` regions. */
 export class MaterialSystem {
   private readonly definitions = new Map<string, MaterialDefinition>();
   private regions: MaterialRegion[] = [];
@@ -149,11 +149,11 @@ export class MaterialSystem {
   /** Measure marked elements before the host DOM is hidden behind the capture. */
   scan(root: HTMLElement, scrollX = window.scrollX, scrollY = window.scrollY) {
     const elements: Element[] = [];
-    if (root.hasAttribute(RAGEKIT_MATERIAL_ATTR)) elements.push(root);
-    elements.push(...root.querySelectorAll(`[${RAGEKIT_MATERIAL_ATTR}]`));
+    if (root.hasAttribute(RAGELAYER_MATERIAL_ATTR)) elements.push(root);
+    elements.push(...root.querySelectorAll(`[${RAGELAYER_MATERIAL_ATTR}]`));
     const regions: MaterialRegion[] = [];
     for (const element of elements) {
-      const id = element.getAttribute(RAGEKIT_MATERIAL_ATTR)?.trim();
+      const id = element.getAttribute(RAGELAYER_MATERIAL_ATTR)?.trim();
       const material = id ? this.definitions.get(id) : undefined;
       if (!material) continue;
       const rect = element.getBoundingClientRect();

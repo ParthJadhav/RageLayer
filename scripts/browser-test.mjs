@@ -10,7 +10,7 @@
  *
  *   node scripts/browser-test.mjs [--only <substring>]
  *
- * `RAGEKIT_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
+ * `RAGELAYER_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
  */
 
 import { evaluate, launchChrome, startStaticServer, waitFor } from "./lib/browser.mjs";

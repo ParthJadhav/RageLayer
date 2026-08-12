@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions and integration help
-    url: https://github.com/ParthJadhav/ragekit/discussions
+    url: https://github.com/ParthJadhav/ragelayer/discussions
     about: Ask the community before filing a bug.
   - name: Security vulnerability
-    url: https://github.com/ParthJadhav/ragekit/security/advisories/new
+    url: https://github.com/ParthJadhav/ragelayer/security/advisories/new
     about: Report security issues privately.

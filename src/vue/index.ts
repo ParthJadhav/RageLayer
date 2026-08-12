@@ -1,6 +1,6 @@
-export type { MountRageKitOptions } from "../mount";
-export { createRageKit } from "../mount";
+export type { MountRageLayerOptions } from "../mount";
+export { createRageLayer } from "../mount";
 export type { DestroyerStrings } from "../strings";
-export { RageKit } from "./RageKit";
-export type { UseRageKitResult } from "./useRageKit";
-export { useRageKit } from "./useRageKit";
+export { RageLayer } from "./RageLayer";
+export type { UseRageLayerResult } from "./useRageLayer";
+export { useRageLayer } from "./useRageLayer";

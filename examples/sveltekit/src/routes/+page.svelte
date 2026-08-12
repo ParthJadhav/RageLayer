@@ -1,5 +1,5 @@
 <script lang="ts">
-import { rageKit } from "ragekit/svelte";
+import { rageLayer } from "ragelayer/svelte";
 import { onMount } from "svelte";
 
 let open = $state(false);
@@ -7,7 +7,7 @@ let open = $state(false);
 // Registering the custom element is a browser-only side effect, so it is
 // imported after mount rather than at module scope.
 onMount(() => {
-  import("ragekit/element");
+  import("ragelayer/element");
 });
 </script>
 
@@ -24,14 +24,14 @@ onMount(() => {
   </button>
 
   <!-- Your own launcher, driving the engine directly. -->
-  <button use:rageKit={{ initialTool: "chainsaw" }}>Just the chainsaw</button>
+  <button use:rageLayer={{ initialTool: "chainsaw" }}>Just the chainsaw</button>
 </main>
 
 {#if open}
-  <rage-kit
+  <rage-layer
     initial-tool="hammer"
-    onragekit-close={() => (open = false)}
-  ></rage-kit>
+    onragelayer-close={() => (open = false)}
+  ></rage-layer>
 {/if}
 
 <style>

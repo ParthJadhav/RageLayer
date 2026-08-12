@@ -2,17 +2,17 @@
 
 Eleven entry points:
 
-- `ragekit` — the framework-agnostic engine, tools, and every building block
-- `ragekit/engine` — engine + public contracts, without built-in tool models
-- `ragekit/tools` — seven everyday tools
-- `ragekit/tools/heavy` — six cinematic/physics-heavy tools
-- `ragekit/tools/advanced` — six interaction-focused tools
-- `ragekit/lazy` — asynchronous base/heavy/advanced/complete tool loaders
-- `ragekit/loadouts` — named and custom loadout helpers
-- `ragekit/sdk` — typed custom-tool factories and utilities
-- `ragekit/react` — toolbar component and headless hook
-- `ragekit/vue` — lifecycle-safe Vue composable
-- `ragekit/svelte` — Svelte action and lifecycle controller
+- `ragelayer` — the framework-agnostic engine, tools, and every building block
+- `ragelayer/engine` — engine + public contracts, without built-in tool models
+- `ragelayer/tools` — seven everyday tools
+- `ragelayer/tools/heavy` — six cinematic/physics-heavy tools
+- `ragelayer/tools/advanced` — six interaction-focused tools
+- `ragelayer/lazy` — asynchronous base/heavy/advanced/complete tool loaders
+- `ragelayer/loadouts` — named and custom loadout helpers
+- `ragelayer/sdk` — typed custom-tool factories and utilities
+- `ragelayer/react` — toolbar component and headless hook
+- `ragelayer/vue` — lifecycle-safe Vue composable
+- `ragelayer/svelte` — Svelte action and lifecycle controller
 
 Everything is fully typed; this page covers the surfaces you'll actually reach for. For the
 exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
@@ -22,9 +22,9 @@ exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../s
 For most custom integrations, start with the lazy controller:
 
 ```ts
-import { createRageKit } from "ragekit";
+import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageKit({
+const destroyer = createRageLayer({
   initialTool: "hammer",
   tools: myTools, // defaults to defaultTools
 });
@@ -37,7 +37,7 @@ destroyer.close();
 destroyer.subscribe((engine) => console.log(engine));
 ```
 
-`createRageKit()` is SSR-safe because it stays lazy. `mountRageKit(options)`
+`createRageLayer()` is SSR-safe because it stays lazy. `mountRageLayer(options)`
 registers the tools and returns a live engine immediately, so call it only in a browser. Construct
 `DestroyerEngine` directly when you want to register each tool yourself.
 
@@ -107,13 +107,13 @@ engine.onPerformance(cb);       // subscribe to telemetry; returns unsubscribe f
 
 ## Custom tools
 
-For stateful tools, prefer `defineTool()` from `ragekit/sdk`; it returns a factory so
+For stateful tools, prefer `defineTool()` from `ragelayer/sdk`; it returns a factory so
 multiple engines never share mutable tool state. The plain-object contract remains fully supported:
 
 A `Tool` is a plain object drawing onto the engine's canvases:
 
 ```ts
-import type { Tool } from "ragekit";
+import type { Tool } from "ragelayer";
 
 const stamp: Tool = {
   id: "stamp",
@@ -194,7 +194,7 @@ All exported for reuse without the engine:
 - **Decals** — `drawCrack`, `drawBulletHole`, `drawScorch`, `drawFrost`, `drawGash`,
   `drawSplat`, `drawPaintStreak`, `drawBurnChannel`, `PAINT_COLORS`, `randomPaint`.
 - **Capture** — `defaultCaptureFilter`, `measureCapture`, `resolvePageBackdrop`,
-  `RAGEKIT_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.
+  `RAGELAYER_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.
 - **Rendering** — `SurfaceRenderer`, `PostFX`, `createProgram`, `createQuad`, `createTexture`,
   `clearSpriteCache` (drop the shared baked-sprite atlas; rebuilt lazily on next use — the
   engine already calls it when the last engine is disposed).
@@ -209,7 +209,7 @@ None of the fallbacks below throw — that is the point of them — so a host th
 visitors are getting a reduced experience has to be told. `onError` is that channel:
 
 ```ts
-mountRageKit({
+mountRageLayer({
   onError(error) {
     // scope: "capture" | "live-capture" | "live-refresh"
     //      | "element-harvest" | "text-mask" | "page-height"

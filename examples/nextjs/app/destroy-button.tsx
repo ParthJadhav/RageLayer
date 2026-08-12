@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import { useState } from "react";
 
 // Loaded on demand: a normal page visit should not pay for the engine.
-const RageKit = dynamic(() => import("ragekit/react").then((module) => module.RageKit), {
+const RageLayer = dynamic(() => import("ragelayer/react").then((module) => module.RageLayer), {
   ssr: false,
 });
 
@@ -16,7 +16,7 @@ export function DestroyButton() {
       <button type="button" aria-pressed={open} onClick={() => setOpen(true)}>
         Destroy this page
       </button>
-      {open && <RageKit engineOptions={{ history: true }} onClose={() => setOpen(false)} />}
+      {open && <RageLayer engineOptions={{ history: true }} onClose={() => setOpen(false)} />}
     </>
   );
 }

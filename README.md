@@ -1,21 +1,21 @@
-# RageKit
+# RageLayer
 
-[![npm version](https://img.shields.io/npm/v/ragekit?color=dc5a1f)](https://www.npmjs.com/package/ragekit)
-[![CI](https://github.com/ParthJadhav/ragekit/actions/workflows/ci.yml/badge.svg)](https://github.com/ParthJadhav/ragekit/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/ragekit/api)
+[![npm version](https://img.shields.io/npm/v/ragelayer?color=dc5a1f)](https://www.npmjs.com/package/ragelayer)
+[![CI](https://github.com/ParthJadhav/ragelayer/actions/workflows/ci.yml/badge.svg)](https://github.com/ParthJadhav/ragelayer/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/ragelayer/api)
 [![MIT license](https://img.shields.io/badge/license-MIT-171310)](./LICENSE)
 
 Turn any web page into a destructible canvas. Smash, cut, corrode, freeze, explode, glitch, undo,
 and combine effects across material-aware page regions—then sweep everything back into place.
 
-[**Try the live demo**](https://parthjadhav.github.io/ragekit/demo/) ·
-[Documentation](https://parthjadhav.github.io/ragekit/) ·
-[Tool gallery](https://parthjadhav.github.io/ragekit/tools) ·
-[API reference](https://parthjadhav.github.io/ragekit/api)
+[**Try the live demo**](https://parthjadhav.github.io/ragelayer/demo/) ·
+[Documentation](https://parthjadhav.github.io/ragelayer/) ·
+[Tool gallery](https://parthjadhav.github.io/ragelayer/tools) ·
+[API reference](https://parthjadhav.github.io/ragelayer/api)
 
-![A page after a RageKit session](./docs/screenshots/aftermath.png)
+![A page after a RageLayer session](./docs/screenshots/aftermath.png)
 
-## Why RageKit?
+## Why RageLayer?
 
 - **It destroys the real page.** The DOM is captured into a canvas, so bullets punch holes
   through content and fire burns text and images away.
@@ -27,7 +27,7 @@ and combine effects across material-aware page regions—then sweep everything b
 - **Systems that make tools interact.** Seven spatial combos, seven built-in materials, bounded
   undo/redo history, named loadouts, and a typed stateful custom-tool SDK.
 - **A real toolbar on every stack.** A complete React component, a complete Vue component, and a
-  `<rage-kit>` custom element for everything else — all three rendering one shared,
+  `<rage-layer>` custom element for everything else — all three rendering one shared,
   framework-neutral toolbar model that you can also use to build your own.
 - **Operable without a mouse.** Keyboard aiming puts a cursor on the page that arrow keys steer
   and Enter fires, so the tools themselves — not just the toolbar — are reachable from the
@@ -41,9 +41,9 @@ and combine effects across material-aware page regions—then sweep everything b
 ## Install
 
 ```sh
-npm install ragekit
-# pnpm add ragekit
-# bun add ragekit
+npm install ragelayer
+# pnpm add ragelayer
+# bun add ragelayer
 ```
 
 Modern ESM and TypeScript declarations are included. React, React DOM, and Vue are optional peer
@@ -56,7 +56,7 @@ shortcuts, and disposes everything when it unmounts.
 
 ```tsx
 import { useState } from "react";
-import { RageKit } from "ragekit/react";
+import { RageLayer } from "ragelayer/react";
 
 export function DestroyButton() {
   const [open, setOpen] = useState(false);
@@ -64,7 +64,7 @@ export function DestroyButton() {
   return (
     <>
       <button onClick={() => setOpen(true)}>Destroy this page</button>
-      {open && <RageKit onClose={() => setOpen(false)} />}
+      {open && <RageLayer onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -76,10 +76,10 @@ load it behind the trigger if you want the normal page visit to pay no engine co
 For a custom UI, use the headless hook:
 
 ```tsx
-import { useRageKit } from "ragekit/react";
+import { useRageLayer } from "ragelayer/react";
 
 function DestroyButton() {
-  const destroyer = useRageKit({ initialTool: "flamethrower" });
+  const destroyer = useRageLayer({ initialTool: "flamethrower" });
   return <button onClick={destroyer.toggle}>{destroyer.isOpen ? "Repair" : "Destroy"}</button>;
 }
 ```
@@ -91,14 +91,14 @@ The Vue component is the same ready-made toolbar as the React one:
 ```vue
 <script setup lang="ts">
 import { ref } from "vue";
-import { RageKit } from "ragekit/vue";
+import { RageLayer } from "ragelayer/vue";
 
 const open = ref(false);
 </script>
 
 <template>
   <button @click="open = true">Destroy this page</button>
-  <RageKit v-if="open" @close="open = false" />
+  <RageLayer v-if="open" @close="open = false" />
 </template>
 ```
 
@@ -108,9 +108,9 @@ effect scope:
 
 ```vue
 <script setup lang="ts">
-import { useRageKit } from "ragekit/vue";
+import { useRageLayer } from "ragelayer/vue";
 
-const { isOpen, toggle } = useRageKit({ initialTool: "hammer" });
+const { isOpen, toggle } = useRageLayer({ initialTool: "hammer" });
 </script>
 
 <template>
@@ -124,13 +124,13 @@ The custom element is a complete toolbar that needs no framework wrapper:
 
 ```html
 <script type="module">
-  import "ragekit/element";
+  import "ragelayer/element";
 </script>
 
-<rage-kit initial-tool="hammer"></rage-kit>
+<rage-layer initial-tool="hammer"></rage-layer>
 ```
 
-It builds its UI in a shadow root, emits `ragekit-close` when the visitor closes it, and disposes the
+It builds its UI in a shadow root, emits `ragelayer-close` when the visitor closes it, and disposes the
 engine when the element leaves the document.
 
 ### Svelte's own action
@@ -139,10 +139,10 @@ To wire your own launcher instead:
 
 ```svelte
 <script lang="ts">
-  import { rageKit } from "ragekit/svelte";
+  import { rageLayer } from "ragelayer/svelte";
 </script>
 
-<button use:rageKit={{ initialTool: "hammer" }}>Destroy this page</button>
+<button use:rageLayer={{ initialTool: "hammer" }}>Destroy this page</button>
 ```
 
 It toggles on repeated clicks, maintains `aria-pressed`, and closes automatically when the button
@@ -153,9 +153,9 @@ is destroyed.
 The lazy controller does no browser work until `open()`, which makes it safe to create during SSR:
 
 ```ts
-import { createRageKit } from "ragekit";
+import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageKit({ initialTool: "hammer" });
+const destroyer = createRageLayer({ initialTool: "hammer" });
 
 document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
 window.addEventListener("pagehide", () => destroyer.close());
@@ -164,21 +164,21 @@ window.addEventListener("pagehide", () => destroyer.close());
 If you already own the lifecycle, mount the engine directly:
 
 ```ts
-import { mountRageKit } from "ragekit";
+import { mountRageLayer } from "ragelayer";
 
-const engine = mountRageKit({ initialTool: "blackhole", soundEnabled: true });
+const engine = mountRageLayer({ initialTool: "blackhole", soundEnabled: true });
 engine.clear();
 engine.dispose();
 ```
 
 | Stack | Supported API | Package entry |
 | --- | --- | --- |
-| React 18/19, Next.js | Component + headless hook | `ragekit/react` |
-| Vue 3, Nuxt | Component + composable | `ragekit/vue` |
-| Svelte, SvelteKit | Custom element + action | `ragekit/element`, `/svelte` |
-| Astro, Angular, Solid, Qwik | Custom element or controller | `ragekit/element` |
-| Plain JavaScript / TypeScript | Controller or direct engine | `ragekit` |
-| Your own toolbar UI | Headless toolbar model | `ragekit/toolbar` |
+| React 18/19, Next.js | Component + headless hook | `ragelayer/react` |
+| Vue 3, Nuxt | Component + composable | `ragelayer/vue` |
+| Svelte, SvelteKit | Custom element + action | `ragelayer/element`, `/svelte` |
+| Astro, Angular, Solid, Qwik | Custom element or controller | `ragelayer/element` |
+| Plain JavaScript / TypeScript | Controller or direct engine | `ragelayer` |
+| Your own toolbar UI | Headless toolbar model | `ragelayer/toolbar` |
 
 See the [integration guide](./docs/integrations.md) for SSR, cleanup and custom toolbars, and
 [`examples/`](./examples) for runnable Next.js, Nuxt, SvelteKit and no-framework starters.
@@ -188,7 +188,7 @@ See the [integration guide](./docs/integrations.md) for SSR, cleanup and custom 
 A tool is a small object. Persistent marks go on `surfaceCtx`; transient effects go on `fxCtx`.
 
 ```ts
-import type { Tool } from "ragekit";
+import type { Tool } from "ragelayer";
 
 export const stamp: Tool = {
   id: "stamp",
@@ -206,25 +206,25 @@ Pass custom tools through `tools` on any helper or framework adapter. The full c
 [custom tools guide](./docs/api.md#custom-tools).
 
 For isolated state, rate-limited effects, and exact custom icon bounds, use `defineTool()` from
-`ragekit/sdk`. See the [advanced systems guide](./docs/advanced.md).
+`ragelayer/sdk`. See the [advanced systems guide](./docs/advanced.md).
 
 ## Package entry points
 
 | Import | Exports |
 | --- | --- |
-| `ragekit` | Engine, lifecycle helpers, built-in tools, types, and low-level primitives |
-| `ragekit/engine` | Engine and public contracts without built-in tool models |
-| `ragekit/tools` | Seven everyday tools (`baseTools`) |
-| `ragekit/tools/heavy` | Six cinematic and physics-heavy tools |
-| `ragekit/tools/advanced` | Gravity, laser, acid, wrecking ball, sticky bombs, and glitch tools |
-| `ragekit/lazy` | On-demand loaders for base, heavy, or complete toolsets |
-| `ragekit/loadouts` | Immutable named presets and custom loadout helpers |
-| `ragekit/sdk` | Typed custom-tool factories, rate limiter, and icon metadata |
-| `ragekit/react` | `RageKit`, `useRageKit` |
-| `ragekit/vue` | `useRageKit` |
-| `ragekit/svelte` | `rageKit`, `createRageKit` |
-| `ragekit/element` | `<rage-kit>`, the toolbar for every other stack |
-| `ragekit/toolbar` | `ToolbarModel`, `DEFAULT_STRINGS` — build your own toolbar |
+| `ragelayer` | Engine, lifecycle helpers, built-in tools, types, and low-level primitives |
+| `ragelayer/engine` | Engine and public contracts without built-in tool models |
+| `ragelayer/tools` | Seven everyday tools (`baseTools`) |
+| `ragelayer/tools/heavy` | Six cinematic and physics-heavy tools |
+| `ragelayer/tools/advanced` | Gravity, laser, acid, wrecking ball, sticky bombs, and glitch tools |
+| `ragelayer/lazy` | On-demand loaders for base, heavy, or complete toolsets |
+| `ragelayer/loadouts` | Immutable named presets and custom loadout helpers |
+| `ragelayer/sdk` | Typed custom-tool factories, rate limiter, and icon metadata |
+| `ragelayer/react` | `RageLayer`, `useRageLayer` |
+| `ragelayer/vue` | `useRageLayer` |
+| `ragelayer/svelte` | `rageLayer`, `createRageLayer` |
+| `ragelayer/element` | `<rage-layer>`, the toolbar for every other stack |
+| `ragelayer/toolbar` | `ToolbarModel`, `DEFAULT_STRINGS` — build your own toolbar |
 
 The package is ESM-only, tree-shakeable, and has zero runtime dependencies — the `html-to-image`
 capture code ships inside the package as its own chunk that is loaded only when snapshot capture
@@ -233,20 +233,20 @@ runs, so `dist` also works loaded directly in a browser without a bundler.
 For the smallest deliberate setup, combine the engine-only and base-tool entries:
 
 ```ts
-import { DestroyerEngine } from "ragekit/engine";
-import { baseTools } from "ragekit/tools";
+import { DestroyerEngine } from "ragelayer/engine";
+import { baseTools } from "ragelayer/tools";
 
 const engine = new DestroyerEngine({ toolScale: 1.15 });
 engine.registerTools(baseTools);
 engine.setTool("hammer");
 ```
 
-Later, `loadHeavyTools()` from `ragekit/lazy` can unlock the cinematic tools without
+Later, `loadHeavyTools()` from `ragelayer/lazy` can unlock the cinematic tools without
 putting them in the initial graph. See [procedural 3D models](./docs/models.md).
 
 ## Browser support
 
-RageKit targets current evergreen browsers and requires Canvas 2D. Chrome is covered by
+RageLayer targets current evergreen browsers and requires Canvas 2D. Chrome is covered by
 the runtime smoke suite. WebGL/WebGL2, WebAudio, and experimental live capture are enhancements;
 the engine falls back without them. Construct or open an engine only in the browser.
 
@@ -283,7 +283,7 @@ bun run docs:dev      # local documentation site
 bun run docs:build    # production docs + live demo
 ```
 
-`test:browser` needs a Chrome binary; point `RAGEKIT_CHROME_PATH` at one if it is not on the default
+`test:browser` needs a Chrome binary; point `RAGELAYER_CHROME_PATH` at one if it is not on the default
 path. It is the only place page capture, the WebGL2 surface shader and the post-processing chain
 actually execute, so run it before changing any of them.
 

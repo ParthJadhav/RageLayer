@@ -2,7 +2,7 @@
 // demo page with real pointer input through the Chrome DevTools Protocol.
 //
 //   bun run screenshots            (build + capture)
-//   RAGEKIT_CHROME_PATH=/path/to/chrome node scripts/screenshots.mjs
+//   RAGELAYER_CHROME_PATH=/path/to/chrome node scripts/screenshots.mjs
 //
 // Every shot loads a fresh demo page, selects a tool, performs a scripted
 // gesture and captures a PNG — so the images always reflect the current build.
@@ -18,7 +18,8 @@ import { fileURLToPath } from "node:url";
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = join(packageRoot, "docs", "screenshots");
 const chromePath =
-  process.env.RAGEKIT_CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+  process.env.RAGELAYER_CHROME_PATH ??
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const WIDTH = 1280;
 const HEIGHT = 800;
 
@@ -116,14 +117,14 @@ const server = await startServer();
 const serverAddress = server.address();
 const serverPort = typeof serverAddress === "object" && serverAddress ? serverAddress.port : 0;
 const debugPort = await freePort();
-const profileDir = await mkdtemp(join(tmpdir(), "ragekit-shots-"));
+const profileDir = await mkdtemp(join(tmpdir(), "ragelayer-shots-"));
 const chrome = spawn(
   chromePath,
   [
     "--headless=new",
     // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which the
     // Chrome sandbox needs; these harnesses only ever load their own local files.
-    ...(process.env.CI || process.env.RAGEKIT_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
+    ...(process.env.CI || process.env.RAGELAYER_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
     `--remote-debugging-port=${debugPort}`,
     `--user-data-dir=${profileDir}`,
     "--no-first-run",

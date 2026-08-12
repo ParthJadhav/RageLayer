@@ -1,7 +1,7 @@
 # Contributing
 
-Thanks for helping improve RageKit. For usage questions, start in
-[GitHub Discussions](https://github.com/ParthJadhav/ragekit/discussions); use an issue for
+Thanks for helping improve RageLayer. For usage questions, start in
+[GitHub Discussions](https://github.com/ParthJadhav/ragelayer/discussions); use an issue for
 a reproducible defect or a scoped feature proposal. Participation is covered by the
 [code of conduct](./CODE_OF_CONDUCT.md).
 
@@ -47,7 +47,7 @@ Manual harnesses (also served from the repo root, build first):
 - `/harness-toolart.html` — drawn tool art
 
 Browser rules: primary target is Chrome. Runtime verification (benchmarks, screenshots,
-harnesses) is driven through headless Chrome via CDP — set `RAGEKIT_CHROME_PATH` if Chrome isn't in
+harnesses) is driven through headless Chrome via CDP — set `RAGELAYER_CHROME_PATH` if Chrome isn't in
 the default location.
 
 ## Before you push

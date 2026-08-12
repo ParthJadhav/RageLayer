@@ -1,6 +1,6 @@
 # Getting started
 
-`ragekit` is a self-contained page-destruction toy: it rasterizes the live page into a
+`ragelayer` is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
 shoot, burn, soak, saw, paint, freeze, bomb — and then sweep it all up. Zero assets, zero
 runtime dependencies, framework-agnostic core with a drop-in React component.
@@ -12,26 +12,26 @@ runtime dependencies, framework-agnostic core with a drop-in React component.
 Install from npm:
 
 ```sh
-npm install ragekit
+npm install ragelayer
 ```
 
-Bun, pnpm and Yarn all work the same way (`bun add ragekit`, …).
+Bun, pnpm and Yarn all work the same way (`bun add ragelayer`, …).
 
 The package ships modern ESM with TypeScript declarations. `react`/`react-dom` are **optional**
-peer dependencies — you only need them for the `ragekit/react` entry.
+peer dependencies — you only need them for the `ragelayer/react` entry.
 
 ## 60-second React setup
 
 ```tsx
 import { useState } from "react";
-import { RageKit } from "ragekit/react";
+import { RageLayer } from "ragelayer/react";
 
 function App() {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button onClick={() => setOpen(true)}>Destroy this page</button>
-      {open && <RageKit onClose={() => setOpen(false)} />}
+      {open && <RageLayer onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -46,9 +46,9 @@ That's the whole integration: a floating toolbar appears, the page becomes destr
 ## 60-second vanilla setup
 
 ```ts
-import { createRageKit } from "ragekit";
+import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageKit({
+const destroyer = createRageLayer({
   initialTool: "flamethrower",
   soundEnabled: true,
 });

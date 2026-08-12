@@ -1,7 +1,7 @@
-import { RageKit, useRageKit } from "ragekit/react";
+import { RageLayer, useRageLayer } from "ragelayer/react";
 import type { ComponentProps } from "react";
 
-type Props = ComponentProps<typeof RageKit>;
+type Props = ComponentProps<typeof RageLayer>;
 
 const props = {
   soundDefault: false,
@@ -11,13 +11,13 @@ const props = {
 } satisfies Props;
 
 export function Consumer() {
-  const { engine, isOpen, toggle } = useRageKit({ initialTool: "hammer" });
+  const { engine, isOpen, toggle } = useRageLayer({ initialTool: "hammer" });
   return (
     <>
       <button type="button" onClick={toggle}>
         {isOpen ? "Close" : "Open"}
       </button>
-      {isOpen ? <RageKit {...props} onClose={() => engine?.clear()} /> : null}
+      {isOpen ? <RageLayer {...props} onClose={() => engine?.clear()} /> : null}
     </>
   );
 }

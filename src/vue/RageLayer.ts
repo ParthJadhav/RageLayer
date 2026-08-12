@@ -20,7 +20,7 @@ import {
   type VNode,
 } from "vue";
 
-import { RAGEKIT_IGNORE_ATTR } from "../capture";
+import { RAGELAYER_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
 import { DestroyerEngine } from "../engine";
 import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "../loadouts";
@@ -29,8 +29,8 @@ import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar"
 import type { DestroyerOptions, Tool } from "../types";
 import { acquireToolbarStyles, BAR_CLASS, releaseToolbarStyles } from "./styles";
 
-export const RageKit = defineComponent({
-  name: "RageKit",
+export const RageLayer = defineComponent({
+  name: "RageLayer",
   props: {
     tools: { type: Array as PropType<readonly Tool[]>, default: undefined },
     loadout: {
@@ -125,7 +125,7 @@ export const RageKit = defineComponent({
         {
           key: `${button.kind}:${button.id}`,
           type: "button",
-          class: "rk-btn",
+          class: "rl-btn",
           "aria-label": button.label,
           title: button.title,
           // Exactly one button is tabbable; arrows move within the group.
@@ -156,7 +156,7 @@ export const RageKit = defineComponent({
       let previousKind: ToolbarButton["kind"] | null = null;
       current.buttons.forEach((button, index) => {
         if (previousKind === "tool" && button.kind === "action") {
-          children.push(h("span", { key: `divider:${button.id}`, class: "rk-divider" }));
+          children.push(h("span", { key: `divider:${button.id}`, class: "rl-divider" }));
         }
         previousKind = button.kind;
         children.push(renderButton(button, index, current));
@@ -164,9 +164,9 @@ export const RageKit = defineComponent({
 
       if (current.status) {
         children.push(
-          h("span", { key: "status", class: "rk-chip", title: current.status.title }, [
+          h("span", { key: "status", class: "rl-chip", title: current.status.title }, [
             h("span", {
-              class: current.status.color ? "rk-dot" : "rk-dot rk-dot-pending",
+              class: current.status.color ? "rl-dot" : "rl-dot rl-dot-pending",
               style: current.status.color ? { color: current.status.color } : undefined,
             }),
             current.status.label,
@@ -175,21 +175,21 @@ export const RageKit = defineComponent({
       }
 
       return h(Teleport, { to: "body" }, [
-        h("div", { class: "rk-host", [RAGEKIT_IGNORE_ATTR]: "" }, [
+        h("div", { class: "rl-host", [RAGELAYER_IGNORE_ATTR]: "" }, [
           // Live region for keyboard aiming feedback.
           h(
             "div",
-            { class: "rk-sr-only", role: "status", "aria-live": "polite" },
+            { class: "rl-sr-only", role: "status", "aria-live": "polite" },
             current.announcement,
           ),
-          current.flash ? h("div", { class: "rk-flash", role: "status" }, current.flash) : null,
+          current.flash ? h("div", { class: "rl-flash", role: "status" }, current.flash) : null,
           h(
             "div",
             {
               ref: bar,
               class: BAR_CLASS,
               role: "toolbar",
-              "aria-label": props.strings?.toolbarLabel ?? "RageKit tools",
+              "aria-label": props.strings?.toolbarLabel ?? "RageLayer tools",
               "aria-orientation": "horizontal",
               onKeydown: onBarKeyDown,
             },
@@ -201,4 +201,4 @@ export const RageKit = defineComponent({
   },
 });
 
-export default RageKit;
+export default RageLayer;

@@ -1,5 +1,5 @@
 {
-  "name": "ragekit-example-sveltekit",
+  "name": "ragelayer-example-sveltekit",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,6 +15,6 @@
     "vite": "^6.0.0"
   },
   "dependencies": {
-    "ragekit": "file:../.."
+    "ragelayer": "file:../.."
   }
 }

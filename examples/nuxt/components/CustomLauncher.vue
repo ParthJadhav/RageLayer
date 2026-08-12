@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // The headless composable, for hosts that want their own controls rather than
 // the built-in toolbar.
-import { useRageKit } from "ragekit/vue";
+import { useRageLayer } from "ragelayer/vue";
 
-const { isOpen, toggle, engine } = useRageKit({
+const { isOpen, toggle, engine } = useRageLayer({
   initialTool: "flamethrower",
   history: true,
 });

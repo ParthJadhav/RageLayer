@@ -49,7 +49,7 @@ export interface DestroyerStrings {
 }
 
 export const DEFAULT_STRINGS: DestroyerStrings = {
-  toolbarLabel: "RageKit tools",
+  toolbarLabel: "RageLayer tools",
   undo: "Undo destruction",
   redo: "Redo destruction",
   undoHint: "Cmd/Ctrl+Z",
@@ -59,7 +59,7 @@ export const DEFAULT_STRINGS: DestroyerStrings = {
   muteSound: "Mute sound",
   enableSound: "Enable sound",
   repair: "Repair everything",
-  close: "Close RageKit",
+  close: "Close RageLayer",
   closeTitle: "Close (Esc)",
   copiedToClipboard: "Copied to clipboard",
   saved: "Saved",

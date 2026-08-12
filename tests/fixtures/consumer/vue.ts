@@ -1,6 +1,6 @@
-import { useRageKit } from "ragekit/vue";
+import { useRageLayer } from "ragelayer/vue";
 
-const destroyer = useRageKit({
+const destroyer = useRageLayer({
   initialTool: "freeze",
   captureContent: false,
 });
@@ -15,10 +15,10 @@ void destroyer.toggle;
 
 // The ready-made Vue toolbar, so its props and events stay type-checked from
 // a consumer's perspective rather than only from inside the package.
-import { RageKit } from "ragekit/vue";
+import { RageLayer } from "ragelayer/vue";
 import { h } from "vue";
 
-void h(RageKit, {
+void h(RageLayer, {
   loadout: "chaos",
   soundDefault: false,
   strings: { toolbarLabel: "Outils", close: "Fermer" },

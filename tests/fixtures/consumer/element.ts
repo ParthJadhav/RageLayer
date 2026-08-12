@@ -1,15 +1,15 @@
-import { defineRageKitElement, RageKitElement, TAG_NAME } from "ragekit/element";
-import { hammer } from "ragekit/tools";
+import { defineRageLayerElement, RageLayerElement, TAG_NAME } from "ragelayer/element";
+import { hammer } from "ragelayer/tools";
 
-defineRageKitElement();
-defineRageKitElement("page-destroyer");
+defineRageLayerElement();
+defineRageLayerElement("page-destroyer");
 
-const element = new RageKitElement();
+const element = new RageLayerElement();
 element.configure({
   tools: [hammer],
   captureContent: false,
   strings: { close: "Close it" },
 });
-element.addEventListener("ragekit-close", () => {});
+element.addEventListener("ragelayer-close", () => {});
 void element.destroyerEngine;
 void TAG_NAME;

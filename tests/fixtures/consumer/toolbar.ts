@@ -1,6 +1,11 @@
-import { DestroyerEngine } from "ragekit/engine";
-import { DEFAULT_STRINGS, resolveStrings, ToolbarModel, type ToolbarState } from "ragekit/toolbar";
-import { baseTools } from "ragekit/tools";
+import { DestroyerEngine } from "ragelayer/engine";
+import {
+  DEFAULT_STRINGS,
+  resolveStrings,
+  ToolbarModel,
+  type ToolbarState,
+} from "ragelayer/toolbar";
+import { baseTools } from "ragelayer/tools";
 
 const engine = new DestroyerEngine({ captureContent: false });
 engine.registerTools(baseTools);

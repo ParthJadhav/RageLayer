@@ -1,11 +1,11 @@
 name: Bug report
-description: Report a reproducible problem with RageKit
+description: Report a reproducible problem with RageLayer
 title: "[Bug]: "
 labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Thanks for helping improve RageKit. Please use the latest release and remove private page data from reproductions.
+      value: Thanks for helping improve RageLayer. Please use the latest release and remove private page data from reproductions.
   - type: input
     id: version
     attributes:

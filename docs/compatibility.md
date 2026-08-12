@@ -1,6 +1,6 @@
 # Compatibility
 
-RageKit is a browser library distributed as modern ESM. Importing it is server-safe;
+RageLayer is a browser library distributed as modern ESM. Importing it is server-safe;
 opening an engine requires a real browser document.
 
 ## Browser support
@@ -43,7 +43,7 @@ HTML-in-Canvas experiment are optional.
 | TypeScript | Modern bundler or Node16 resolution | Both modes compile in CI |
 | Node.js tooling | 20 and newer | The runtime itself is browser-only |
 
-The package is ESM-only. CommonJS applications must use dynamic `import("ragekit")` or
+The package is ESM-only. CommonJS applications must use dynamic `import("ragelayer")` or
 move the browser integration into an ESM module.
 
 ## SSR behavior
@@ -51,12 +51,12 @@ move the browser integration into an ESM module.
 These operations are safe on a server:
 
 ```ts
-import { createRageKit } from "ragekit";
+import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageKit(); // lazy; does not read document
+const destroyer = createRageLayer(); // lazy; does not read document
 ```
 
-`destroyer.open()`, `mountRageKit()`, and `new DestroyerEngine()` are browser operations.
+`destroyer.open()`, `mountRageLayer()`, and `new DestroyerEngine()` are browser operations.
 The direct mount helper throws an actionable error when used during SSR.
 
 ## Content Security Policy

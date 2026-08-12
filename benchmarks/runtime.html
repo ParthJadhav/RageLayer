@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ragekit runtime benchmark</title>
+    <title>ragelayer runtime benchmark</title>
     <style>
       html,
       body {
@@ -33,7 +33,7 @@
   <body>
     <main>
       <section data-benchmark-marker>
-        <h1>ragekit runtime benchmark</h1>
+        <h1>ragelayer runtime benchmark</h1>
         <p>Automated Chrome workload. This page is intentionally synthetic and network-free.</p>
       </section>
     </main>
@@ -147,7 +147,7 @@
         if (!engine) return lastDisposeState;
         const disposed = engine;
         disposed.dispose();
-        if (window.__rageKit === disposed) delete window.__rageKit;
+        if (window.__rageLayer === disposed) delete window.__rageLayer;
         lastDisposeState = {
           connected: disposed.container.isConnected,
           containerChildren: disposed.container.childElementCount,
@@ -162,7 +162,7 @@
           contentRoot: disposed.capture.contentRoot !== null,
           heatCanvas: disposed.heatCanvas !== null,
           contentReady: disposed.content !== null,
-          debugHandle: Boolean(window.__rageKit),
+          debugHandle: Boolean(window.__rageLayer),
         };
         engine = null;
         return lastDisposeState;
@@ -179,7 +179,7 @@
           addFire(24);
           addBodies(150);
         }
-        window.__rageKit = engine;
+        window.__rageLayer = engine;
       }
 
       async function cycleScenario(name, count, activeMs = 80) {

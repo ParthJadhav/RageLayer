@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
-import { createRageKit } from "../src/mount.ts";
+import { createRageLayer } from "../src/mount.ts";
 
 describe("framework-neutral lifecycle helpers", () => {
   test("the lazy controller is safe without browser globals", () => {
-    const destroyer = createRageKit();
+    const destroyer = createRageLayer();
     const states = [];
     const unsubscribe = destroyer.subscribe((engine) => states.push(engine));
 
@@ -21,8 +21,8 @@ describe("framework-neutral lifecycle helpers", () => {
     // bun test's file order is filesystem-dependent, so a bare environment
     // here is a matter of luck. Assert in a fresh process that has no DOM.
     const script = `
-      const { createRageKit, mountRageKit } = await import("./src/mount.ts");
-      for (const open of [() => mountRageKit(), () => createRageKit().open()]) {
+      const { createRageLayer, mountRageLayer } = await import("./src/mount.ts");
+      for (const open of [() => mountRageLayer(), () => createRageLayer().open()]) {
         try {
           open();
           throw new Error("expected a server-side mount to throw");

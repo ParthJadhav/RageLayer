@@ -1,5 +1,5 @@
 {
-  "name": "ragekit-example-nextjs",
+  "name": "ragelayer-example-nextjs",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
-    "ragekit": "file:../..",
+    "ragelayer": "file:../..",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

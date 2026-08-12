@@ -597,8 +597,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private reportError(scope: EngineErrorScope, message: string, cause?: unknown) {
     this.lastError = { scope, message, ...(cause === undefined ? {} : { cause }) };
     if (this.errorListeners.size === 0) {
-      if (cause === undefined) console.warn(`[ragekit] ${message}`);
-      else console.warn(`[ragekit] ${message}`, cause);
+      if (cause === undefined) console.warn(`[ragelayer] ${message}`);
+      else console.warn(`[ragelayer] ${message}`, cause);
     } else {
       for (const callback of this.errorListeners) callback(this.lastError);
     }

@@ -1,5 +1,5 @@
 /**
- * `<rage-kit>` — the toolbar as a custom element.
+ * `<rage-layer>` — the toolbar as a custom element.
  *
  * React gets a component; before this, every other stack got a headless
  * controller and a note to build the toolbar themselves, which meant
@@ -10,11 +10,11 @@
  * The UI lives in a shadow root, so the host page's CSS cannot reach in and
  * these styles cannot leak out. All behaviour comes from `ToolbarModel`.
  *
- *     import "ragekit/element";
- *     document.body.append(document.createElement("rage-kit"));
+ *     import "ragelayer/element";
+ *     document.body.append(document.createElement("rage-layer"));
  */
 
-import { RAGEKIT_IGNORE_ATTR } from "./capture";
+import { RAGELAYER_IGNORE_ATTR } from "./capture";
 import { defaultTools } from "./default-tools";
 import { DestroyerEngine } from "./engine";
 import { type BuiltInLoadoutId, resolveToolLoadout } from "./loadouts";
@@ -22,7 +22,7 @@ import type { DestroyerStrings } from "./strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "./toolbar";
 import type { DestroyerOptions, Tool } from "./types";
 
-export const TAG_NAME = "rage-kit";
+export const TAG_NAME = "rage-layer";
 
 const SHEET = `
 :host {
@@ -136,7 +136,7 @@ button img { width: 30px; height: 30px; display: block; }
 }
 `;
 
-export interface RageKitElementConfig extends DestroyerOptions {
+export interface RageLayerElementConfig extends DestroyerOptions {
   tools?: readonly Tool[];
   loadout?: BuiltInLoadoutId;
   strings?: Partial<DestroyerStrings>;
@@ -154,10 +154,10 @@ const ElementBase: typeof HTMLElement =
   typeof HTMLElement === "undefined" ? (class {} as unknown as typeof HTMLElement) : HTMLElement;
 
 /**
- * The element fires `ragekit-close` when the visitor closes the toolbar; hosts
+ * The element fires `ragelayer-close` when the visitor closes the toolbar; hosts
  * usually remove the element in response.
  */
-export class RageKitElement extends ElementBase {
+export class RageLayerElement extends ElementBase {
   static observedAttributes = ["loadout", "initial-tool", "sound"];
 
   private engine: DestroyerEngine | null = null;
@@ -167,10 +167,10 @@ export class RageKitElement extends ElementBase {
   private live!: HTMLDivElement;
   private buttons: HTMLButtonElement[] = [];
   private previousFocus: HTMLElement | null = null;
-  private config: RageKitElementConfig = {};
+  private config: RageLayerElementConfig = {};
 
   /** Set richer options than attributes can express, before connecting. */
-  configure(config: RageKitElementConfig) {
+  configure(config: RageLayerElementConfig) {
     this.config = config;
     if (this.isConnected) {
       this.teardown();
@@ -184,7 +184,7 @@ export class RageKitElement extends ElementBase {
 
   connectedCallback() {
     // The toolbar is part of the destroyer, not part of the page it destroys.
-    this.setAttribute(RAGEKIT_IGNORE_ATTR, "");
+    this.setAttribute(RAGELAYER_IGNORE_ATTR, "");
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this.setup();
   }
@@ -232,12 +232,12 @@ export class RageKitElement extends ElementBase {
     const model = new ToolbarModel(engine, {
       tools,
       strings: this.config.strings,
-      onClose: () => this.dispatchEvent(new CustomEvent("ragekit-close", { bubbles: true })),
+      onClose: () => this.dispatchEvent(new CustomEvent("ragelayer-close", { bubbles: true })),
     });
     this.model = model;
     this.bar.setAttribute(
       "aria-label",
-      model.state.buttons.length > 0 ? "RageKit tools" : "RageKit",
+      model.state.buttons.length > 0 ? "RageLayer tools" : "RageLayer",
     );
 
     this.unsubscribe = model.subscribe((state) => this.render(state));
@@ -380,16 +380,16 @@ const registered = new Set<string>();
  * be used only once, so additional names get a trivial subclass rather than
  * failing.
  */
-export function defineRageKitElement(tag = TAG_NAME) {
+export function defineRageLayerElement(tag = TAG_NAME) {
   if (typeof customElements === "undefined") return;
   if (customElements.get(tag)) return;
-  const elementClass = registered.size === 0 ? RageKitElement : class extends RageKitElement {};
+  const elementClass = registered.size === 0 ? RageLayerElement : class extends RageLayerElement {};
   try {
     customElements.define(tag, elementClass);
   } catch {
     // Another copy of this module registered the base constructor already;
     // a fresh subclass is always definable.
-    customElements.define(tag, class extends RageKitElement {});
+    customElements.define(tag, class extends RageLayerElement {});
   }
   registered.add(tag);
 }

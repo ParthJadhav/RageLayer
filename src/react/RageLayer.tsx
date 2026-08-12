@@ -19,7 +19,7 @@ import {
   releaseStyles,
 } from "./toolbar-styles";
 
-export interface RageKitProps {
+export interface RageLayerProps {
   /** Called when the user closes the toolbar. */
   onClose?: () => void;
   /** Extra or replacement tools. Defaults to the full built-in set. */
@@ -37,7 +37,7 @@ export interface RageKitProps {
    */
   toolStyle?: ToolStyle;
   /**
-   * Expose the engine as `window.__rageKit` for debugging, E2E tests
+   * Expose the engine as `window.__rageLayer` for debugging, E2E tests
    * and the profiling harness (`scripts/profile-effects.mjs` waits for this
    * global on the page it drives). Default false — no globals leak into the
    * host page unless asked for.
@@ -133,7 +133,7 @@ function ToolbarButton({
   return (
     <button
       type="button"
-      className="rk-tool"
+      className="rl-tool"
       style={{ ...buttonBase, ...style, ...(disabled ? { opacity: 0.35 } : null) }}
       data-active={active}
       tabIndex={tabIndex}
@@ -158,11 +158,11 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 /**
- * Drop-in RageKit: mounts the canvas engine, renders the bottom
+ * Drop-in RageLayer: mounts the canvas engine, renders the bottom
  * toolbar, and cleans everything up on unmount. Purely additive to the host
  * page — no styles leak in or out.
  */
-export function RageKit({
+export function RageLayer({
   onClose,
   tools,
   loadout,
@@ -170,7 +170,7 @@ export function RageKit({
   soundDefault = false,
   toolStyle = "3d",
   debugGlobal = false,
-}: RageKitProps) {
+}: RageLayerProps) {
   const engineRef = useRef<DestroyerEngine | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
@@ -242,8 +242,8 @@ export function RageKit({
     acquireStyles();
     // Opt-in debug/testing handle — lets host pages, E2E tests and the
     // profiling harness poke the engine.
-    const debugWindow = window as unknown as { __rageKit?: DestroyerEngine };
-    if (debugGlobal) debugWindow.__rageKit = engine;
+    const debugWindow = window as unknown as { __rageLayer?: DestroyerEngine };
+    if (debugGlobal) debugWindow.__rageLayer = engine;
     // The engine starts capturing inside its own constructor, so seed from it
     // rather than waiting for the first event.
     const sync = () =>
@@ -257,7 +257,7 @@ export function RageKit({
       off();
       offHistory();
       engine.dispose();
-      if (debugWindow.__rageKit === engine) delete debugWindow.__rageKit;
+      if (debugWindow.__rageLayer === engine) delete debugWindow.__rageLayer;
       releaseStyles();
       if (flashTimerRef.current !== null) {
         window.clearTimeout(flashTimerRef.current);
@@ -290,7 +290,7 @@ export function RageKit({
   useEffect(() => {
     if (!mounted) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    toolbarRef.current?.querySelector<HTMLButtonElement>("button.rk-tool")?.focus();
+    toolbarRef.current?.querySelector<HTMLButtonElement>("button.rl-tool")?.focus();
     return () => {
       if (previous?.isConnected) previous.focus();
     };
@@ -414,7 +414,7 @@ export function RageKit({
     },
     {
       glyph: "✕",
-      label: "Close RageKit",
+      label: "Close RageLayer",
       title: "Close (Esc)",
       fontSize: 16,
       color: "rgba(255,255,255,0.8)",
@@ -428,7 +428,7 @@ export function RageKit({
   const rovingIndex = Math.min(focusIndex, buttonCount - 1);
 
   const toolbarButtons = () =>
-    Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.rk-tool") ?? []);
+    Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.rl-tool") ?? []);
 
   const onToolbarKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     let next: number | null = null;
@@ -463,14 +463,14 @@ export function RageKit({
       {/* Persistent live region: screen readers announce the tool description
           as the selection changes; sighted users see the floating pill. */}
       <div
-        className="rk-hint"
-        data-ragekit-ignore=""
+        className="rl-hint"
+        data-ragelayer-ignore=""
         role="status"
         aria-live="polite"
         style={{ zIndex: 2147483001 }}
       >
         {activeTool && (
-          <span className="rk-hint-pill">
+          <span className="rl-hint-pill">
             {activeTool.name} — {activeTool.hint}
           </span>
         )}
@@ -479,14 +479,14 @@ export function RageKit({
       {chip && (
         <div
           style={chipStyle}
-          data-ragekit-ignore=""
-          data-ragekit-capture-status={capture.status}
+          data-ragelayer-ignore=""
+          data-ragelayer-capture-status={capture.status}
           role="status"
           aria-live="polite"
           title={chip.title}
         >
           {capture.status === "capturing" ? (
-            <span className="rk-spinner" />
+            <span className="rl-spinner" />
           ) : (
             <span style={{ ...dotStyle, background: chip.color }} />
           )}
@@ -498,9 +498,9 @@ export function RageKit({
         ref={toolbarRef}
         style={reducedMotion ? { ...barStyle, animation: "none" } : barStyle}
         role="toolbar"
-        aria-label="RageKit tools"
+        aria-label="RageLayer tools"
         aria-orientation="horizontal"
-        data-ragekit-ignore=""
+        data-ragelayer-ignore=""
         onKeyDown={onToolbarKeyDown}
         onFocus={onToolbarFocus}
       >

@@ -57,6 +57,6 @@ export const BUILT_IN_LOADOUTS: Readonly<Record<BuiltInLoadoutId, ToolLoadout>> 
 
 export function resolveToolLoadout(loadout: BuiltInLoadoutId | ToolLoadout): Tool[] {
   const resolved = typeof loadout === "string" ? BUILT_IN_LOADOUTS[loadout] : loadout;
-  if (!resolved) throw new RangeError(`Unknown RageKit loadout: ${loadout}`);
+  if (!resolved) throw new RangeError(`Unknown RageLayer loadout: ${loadout}`);
   return [...resolved.tools];
 }

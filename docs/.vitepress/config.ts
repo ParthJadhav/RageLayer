@@ -1,15 +1,15 @@
 import { defineConfig } from "vitepress";
 
 export default defineConfig({
-  title: "RageKit",
+  title: "RageLayer",
   description: "Turn any web page into a destructible canvas.",
-  base: "/ragekit/",
+  base: "/ragelayer/",
   cleanUrls: true,
   lastUpdated: true,
   head: [
     ["meta", { name: "theme-color", content: "#171310" }],
     ["meta", { property: "og:type", content: "website" }],
-    ["meta", { property: "og:title", content: "RageKit for the web" }],
+    ["meta", { property: "og:title", content: "RageLayer for the web" }],
     [
       "meta",
       {
@@ -19,7 +19,7 @@ export default defineConfig({
     ],
   ],
   sitemap: {
-    hostname: "https://parthjadhav.github.io/ragekit/",
+    hostname: "https://parthjadhav.github.io/ragelayer/",
   },
   themeConfig: {
     nav: [
@@ -58,18 +58,18 @@ export default defineConfig({
       },
     ],
     socialLinks: [
-      { icon: "github", link: "https://github.com/ParthJadhav/ragekit" },
-      { icon: "npm", link: "https://www.npmjs.com/package/ragekit" },
+      { icon: "github", link: "https://github.com/ParthJadhav/ragelayer" },
+      { icon: "npm", link: "https://www.npmjs.com/package/ragelayer" },
     ],
     search: { provider: "local" },
     editLink: {
-      pattern: "https://github.com/ParthJadhav/ragekit/edit/main/docs/:path",
+      pattern: "https://github.com/ParthJadhav/ragelayer/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     outline: [2, 3],
     footer: {
       message: "Released under the MIT License.",
-      copyright: "RageKit by Parth Jadhav",
+      copyright: "RageLayer by Parth Jadhav",
     },
   },
 });

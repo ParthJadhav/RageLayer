@@ -23,7 +23,7 @@
  * pixels end up.
  */
 
-import { pickPixelRatio, RAGEKIT_IGNORE_ATTR } from "./capture";
+import { pickPixelRatio, RAGELAYER_IGNORE_ATTR } from "./capture";
 
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
 export const FX_MARGIN = 120;
@@ -97,7 +97,7 @@ export class Overlay {
     this.reducedMotion = options.reducedMotion;
 
     this.container = document.createElement("div");
-    this.container.setAttribute(RAGEKIT_IGNORE_ATTR, "");
+    this.container.setAttribute(RAGELAYER_IGNORE_ATTR, "");
     // Pure visual overlay: keep the canvases out of the accessibility tree.
     this.container.setAttribute("aria-hidden", "true");
     Object.assign(this.container.style, {

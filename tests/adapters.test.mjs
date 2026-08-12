@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { effectScope } from "vue";
-import { useRageKit as useReactRageKit } from "../src/react/useRageKit.ts";
-import { rageKit } from "../src/svelte/index.ts";
-import { useRageKit as useVueRageKit } from "../src/vue/index.ts";
+import { useRageLayer as useReactRageLayer } from "../src/react/useRageLayer.ts";
+import { rageLayer } from "../src/svelte/index.ts";
+import { useRageLayer as useVueRageLayer } from "../src/vue/index.ts";
 
 class FakeElement extends EventTarget {
   attributes = new Map();
@@ -25,7 +25,7 @@ class FakeElement extends EventTarget {
 describe("framework adapters", () => {
   test("the headless React hook is safe during server rendering", () => {
     function Consumer() {
-      const destroyer = useReactRageKit({ initialTool: "hammer" });
+      const destroyer = useReactRageLayer({ initialTool: "hammer" });
       return createElement("span", null, destroyer.isOpen ? "open" : "closed");
     }
 
@@ -35,7 +35,7 @@ describe("framework adapters", () => {
   test("the Vue composable starts closed and is safe inside an effect scope", () => {
     const scope = effectScope();
     const destroyer = scope.run(() =>
-      useVueRageKit({ initialTool: "hammer", captureContent: false }),
+      useVueRageLayer({ initialTool: "hammer", captureContent: false }),
     );
 
     expect(destroyer.engine.value).toBeNull();
@@ -48,9 +48,9 @@ describe("framework adapters", () => {
     const node = new FakeElement();
     node.setAttribute("aria-pressed", "mixed");
     const changes = [];
-    node.addEventListener("ragekitchange", (event) => changes.push(event.detail));
+    node.addEventListener("ragelayerchange", (event) => changes.push(event.detail));
 
-    const action = rageKit(node, { initialTool: "hammer" });
+    const action = rageLayer(node, { initialTool: "hammer" });
     expect(node.getAttribute("aria-pressed")).toBe("false");
     expect(changes).toEqual([{ engine: null, open: false }]);
 

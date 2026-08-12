@@ -1,20 +1,20 @@
 import {
-  createRageKit,
-  type RageKitActionOptions,
-  type RageKitActionReturn,
-  rageKit,
-} from "ragekit/svelte";
+  createRageLayer,
+  type RageLayerActionOptions,
+  type RageLayerActionReturn,
+  rageLayer,
+} from "ragelayer/svelte";
 
 const options = {
   initialTool: "rocket",
   toggle: true,
   captureContent: false,
-} satisfies RageKitActionOptions;
+} satisfies RageLayerActionOptions;
 
 declare const button: HTMLButtonElement;
-const action: RageKitActionReturn = rageKit(button, options);
-const controller = createRageKit(options);
-button.addEventListener("ragekitchange", (event) => event.detail.engine?.clear());
+const action: RageLayerActionReturn = rageLayer(button, options);
+const controller = createRageLayer(options);
+button.addEventListener("ragelayerchange", (event) => event.detail.engine?.clear());
 
 void action.update;
 void action.destroy;

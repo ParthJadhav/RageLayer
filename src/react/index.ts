@@ -1,4 +1,4 @@
-export type { RageKitProps } from "./RageKit";
-export { RageKit } from "./RageKit";
-export type { UseRageKitResult } from "./useRageKit";
-export { useRageKit } from "./useRageKit";
+export type { RageLayerProps } from "./RageLayer";
+export { RageLayer } from "./RageLayer";
+export type { UseRageLayerResult } from "./useRageLayer";
+export { useRageLayer } from "./useRageLayer";

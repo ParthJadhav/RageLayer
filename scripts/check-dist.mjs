@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const expected = {
-  "dist/index.js": ["createRageKit", "mountRageKit", "DestroyerEngine"],
+  "dist/index.js": ["createRageLayer", "mountRageLayer", "DestroyerEngine"],
   "dist/engine/index.js": ["DestroyerEngine"],
   "dist/tools/index.js": ["baseTools", "hammer", "broom"],
   "dist/tools/heavy.js": ["heavyTools", "blackHole", "rocketLauncher"],
@@ -16,10 +16,10 @@ const expected = {
   ],
   "dist/loadouts/index.js": ["BUILT_IN_LOADOUTS", "resolveToolLoadout"],
   "dist/sdk/index.js": ["defineTool", "createTool", "createRateLimiter"],
-  "dist/react/index.js": ["RageKit", "useRageKit"],
-  "dist/vue/index.js": ["useRageKit"],
-  "dist/svelte/index.js": ["rageKit", "createRageKit"],
-  "dist/element/index.js": ["RageKitElement", "defineRageKitElement"],
+  "dist/react/index.js": ["RageLayer", "useRageLayer"],
+  "dist/vue/index.js": ["useRageLayer"],
+  "dist/svelte/index.js": ["rageLayer", "createRageLayer"],
+  "dist/element/index.js": ["RageLayerElement", "defineRageLayerElement"],
   "dist/toolbar/index.js": ["ToolbarModel", "DEFAULT_STRINGS", "resolveStrings"],
 };
 

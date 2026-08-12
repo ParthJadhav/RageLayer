@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { DestroyerEngine } from "../engine";
-import { createRageKit, type MountRageKitOptions, type RageKitController } from "../mount";
+import { createRageLayer, type MountRageLayerOptions, type RageLayerController } from "../mount";
 
-export interface UseRageKitResult {
+export interface UseRageLayerResult {
   engine: DestroyerEngine | null;
   isOpen: boolean;
   open(): DestroyerEngine;
@@ -13,9 +13,9 @@ export interface UseRageKitResult {
 }
 
 /** Headless React binding for applications that provide their own controls. */
-export function useRageKit(options: MountRageKitOptions = {}): UseRageKitResult {
-  const controllerRef = useRef<RageKitController | null>(null);
-  if (!controllerRef.current) controllerRef.current = createRageKit(options);
+export function useRageLayer(options: MountRageLayerOptions = {}): UseRageLayerResult {
+  const controllerRef = useRef<RageLayerController | null>(null);
+  if (!controllerRef.current) controllerRef.current = createRageLayer(options);
   const [engine, setEngine] = useState<DestroyerEngine | null>(null);
 
   useEffect(() => {

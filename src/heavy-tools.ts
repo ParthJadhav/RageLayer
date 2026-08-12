@@ -618,7 +618,7 @@ export const demolition: Tool = {
 };
 
 /**
- * The classic RageKit pest: each click releases one bug that
+ * The classic RageLayer pest: each click releases one bug that
  * wanders and gnaws trails through the page until it is dealt with. Bugs live
  * in the engine (like flames do), so switching to another tool doesn't pause
  * the eating — and every other tool is a valid exterminator: shoot it, burn

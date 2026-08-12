@@ -46,7 +46,7 @@ describe("engine lifecycle", () => {
     expect(container.parentElement).toBe(document.body);
     expect(container.getAttribute("aria-hidden")).toBe("true");
     // The overlay must not be swept into its own page capture.
-    expect(container.hasAttribute("data-ragekit-ignore")).toBe(true);
+    expect(container.hasAttribute("data-ragelayer-ignore")).toBe(true);
     // With no tool selected the page underneath stays fully usable.
     expect(container.style.pointerEvents).toBe("none");
   });

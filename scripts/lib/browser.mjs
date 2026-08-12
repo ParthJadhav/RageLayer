@@ -144,7 +144,7 @@ async function freePort() {
 
 export function resolveChromePath() {
   return (
-    process.env.RAGEKIT_CHROME_PATH ??
+    process.env.RAGELAYER_CHROME_PATH ??
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
   );
 }
@@ -159,7 +159,7 @@ export async function launchChrome({ url, flags = [], cpuRate = 1 } = {}) {
   const chromePath = resolveChromePath();
   const isHeadlessShell = /headless[-_]shell/.test(chromePath);
   const debugPort = await freePort();
-  const profileDir = await mkdtemp(join(tmpdir(), "ragekit-"));
+  const profileDir = await mkdtemp(join(tmpdir(), "ragelayer-"));
 
   const chrome = spawn(
     chromePath,
@@ -167,7 +167,7 @@ export async function launchChrome({ url, flags = [], cpuRate = 1 } = {}) {
       ...(isHeadlessShell ? [] : ["--headless=new"]),
       // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which
       // the Chrome sandbox needs; these harnesses only load their own files.
-      ...(process.env.CI || process.env.RAGEKIT_CHROME_NO_SANDBOX
+      ...(process.env.CI || process.env.RAGELAYER_CHROME_NO_SANDBOX
         ? ["--no-sandbox", "--no-zygote"]
         : []),
       ...(String(url).startsWith("file:") ? ["--allow-file-access-from-files"] : []),

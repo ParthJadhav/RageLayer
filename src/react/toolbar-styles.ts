@@ -33,7 +33,7 @@ export const barStyle: React.CSSProperties = {
   boxShadow: "0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
   fontFamily: "ui-sans-serif, system-ui, sans-serif",
   userSelect: "none",
-  animation: "rk-rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2)",
+  animation: "rl-rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2)",
   maxWidth: "calc(100vw - 24px)",
 };
 
@@ -104,35 +104,35 @@ export const dividerStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-const STYLE_ATTR = "data-ragekit-toolbar-styles";
+const STYLE_ATTR = "data-ragelayer-toolbar-styles";
 
 const KEYFRAMES = `
-@keyframes rk-rise {
+@keyframes rl-rise {
   from { opacity: 0; transform: translateX(-50%) translateY(24px) scale(0.92); }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
-.rk-tool:hover { background: rgba(255,255,255,0.10); transform: translateY(-2px); }
-.rk-tool:active { transform: translateY(0) scale(0.92); }
-.rk-tool:focus-visible {
+.rl-tool:hover { background: rgba(255,255,255,0.10); transform: translateY(-2px); }
+.rl-tool:active { transform: translateY(0) scale(0.92); }
+.rl-tool:focus-visible {
   outline: 2px solid rgba(255, 170, 90, 0.9);
   outline-offset: 1px;
 }
-.rk-tool[data-active="true"] {
+.rl-tool[data-active="true"] {
   background: rgba(255, 122, 40, 0.18);
   border-color: rgba(255, 150, 70, 0.55);
   box-shadow: 0 0 14px rgba(255, 130, 50, 0.25) inset;
 }
-@keyframes rk-spin { to { transform: rotate(360deg); } }
-.rk-spinner {
+@keyframes rl-spin { to { transform: rotate(360deg); } }
+.rl-spinner {
   width: 9px;
   height: 9px;
   flex-shrink: 0;
   border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,0.22);
   border-top-color: rgba(255,255,255,0.85);
-  animation: rk-spin 0.7s linear infinite;
+  animation: rl-spin 0.7s linear infinite;
 }
-.rk-hint {
+.rl-hint {
   visibility: visible;
   position: fixed;
   /* Clears the capture-status chip, which sits at 72px. */
@@ -141,7 +141,7 @@ const KEYFRAMES = `
   transform: translateX(-50%);
   pointer-events: none;
 }
-.rk-hint-pill {
+.rl-hint-pill {
   display: inline-block;
   padding: 5px 12px;
   border-radius: 999px;
@@ -154,8 +154,8 @@ const KEYFRAMES = `
   white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
-  .rk-tool { transition: none; }
-  .rk-tool:hover { transform: none; }
+  .rl-tool { transition: none; }
+  .rl-tool:hover { transform: none; }
 }
 `;
 

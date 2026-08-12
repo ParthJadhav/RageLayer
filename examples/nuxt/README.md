@@ -9,7 +9,7 @@ bun run dev
 
 Shows both Vue integrations:
 
-- `pages/index.vue` renders the ready-made `<RageKit>` component. It renders nothing
+- `pages/index.vue` renders the ready-made `<RageLayer>` component. It renders nothing
   until it is mounted in a browser, so no `<ClientOnly>` wrapper is needed.
-- `components/CustomLauncher.vue` uses the headless `useRageKit` composable to drive the
+- `components/CustomLauncher.vue` uses the headless `useRageLayer` composable to drive the
   engine from your own controls.

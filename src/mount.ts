@@ -4,7 +4,7 @@ import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "./l
 import type { DestroyerOptions, Tool } from "./types";
 
 /** Options shared by the vanilla helper and all framework adapters. */
-export interface MountRageKitOptions extends DestroyerOptions {
+export interface MountRageLayerOptions extends DestroyerOptions {
   /** Tools to register. Defaults to the complete built-in toolset. */
   tools?: readonly Tool[];
   /** Named or custom tool preset. Explicit `tools` take precedence. */
@@ -16,12 +16,12 @@ export interface MountRageKitOptions extends DestroyerOptions {
 /**
  * Mount a ready-to-use engine with the built-in tools registered.
  *
- * This is the smallest useful browser API. Use `createRageKit` when
+ * This is the smallest useful browser API. Use `createRageLayer` when
  * opening and closing the engine from UI or framework lifecycle code.
  */
-export function mountRageKit(options: MountRageKitOptions = {}) {
+export function mountRageLayer(options: MountRageLayerOptions = {}) {
   if (typeof document === "undefined") {
-    throw new Error("mountRageKit() must be called in a browser");
+    throw new Error("mountRageLayer() must be called in a browser");
   }
 
   const { tools: explicitTools, loadout, initialTool, ...engineOptions } = options;
@@ -33,13 +33,13 @@ export function mountRageKit(options: MountRageKitOptions = {}) {
 
   if (selectedInitialTool !== null && !tools.some((tool) => tool.id === selectedInitialTool)) {
     engine.dispose();
-    throw new RangeError(`Unknown initial RageKit tool: ${selectedInitialTool}`);
+    throw new RangeError(`Unknown initial RageLayer tool: ${selectedInitialTool}`);
   }
   engine.setTool(selectedInitialTool);
   return engine;
 }
 
-export interface RageKitController {
+export interface RageLayerController {
   /** The mounted engine, or `null` while closed. */
   readonly engine: DestroyerEngine | null;
   readonly isOpen: boolean;
@@ -54,7 +54,7 @@ export interface RageKitController {
  * Create a lazy lifecycle controller. It does no browser work until `open()`
  * and is therefore safe to create while a framework is rendering on a server.
  */
-export function createRageKit(options: MountRageKitOptions = {}): RageKitController {
+export function createRageLayer(options: MountRageLayerOptions = {}): RageLayerController {
   let engine: DestroyerEngine | null = null;
   let detachDispose: (() => void) | null = null;
   const listeners = new Set<(engine: DestroyerEngine | null) => void>();
@@ -63,7 +63,7 @@ export function createRageKit(options: MountRageKitOptions = {}): RageKitControl
     for (const listener of listeners) listener(engine);
   };
 
-  const controller: RageKitController = {
+  const controller: RageLayerController = {
     get engine() {
       return engine;
     },
@@ -72,7 +72,7 @@ export function createRageKit(options: MountRageKitOptions = {}): RageKitControl
     },
     open() {
       if (engine) return engine;
-      const mounted = mountRageKit(options);
+      const mounted = mountRageLayer(options);
       engine = mounted;
       detachDispose = mounted.on("dispose", () => {
         if (engine !== mounted) return;

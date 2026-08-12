@@ -3,12 +3,12 @@ import { setViewport } from "./support/dom.mjs";
 
 // Imported after the DOM harness so the engine sees a browser, the same way a
 // real host does. `mount.test.mjs` covers the opposite case deliberately.
-const { createRageKit, mountRageKit } = await import("../src/mount.ts");
+const { createRageLayer, mountRageLayer } = await import("../src/mount.ts");
 const { baseTools, hammer } = await import("../src/tools.ts");
 const { createElement, useState } = await import("react");
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { useRageKit } = await import("../src/react/useRageKit.ts");
+const { useRageLayer } = await import("../src/react/useRageLayer.ts");
 
 /**
  * The lifecycle helpers are the smallest useful API and the one every adapter
@@ -34,9 +34,9 @@ function track(engine) {
   return engine;
 }
 
-describe("mountRageKit", () => {
+describe("mountRageLayer", () => {
   test("mounting registers the full toolset and selects the hammer", () => {
-    const engine = track(mountRageKit({ captureContent: false }));
+    const engine = track(mountRageLayer({ captureContent: false }));
 
     expect(engine.getTools().length).toBeGreaterThan(1);
     expect(engine.tool?.id).toBe("hammer");
@@ -45,20 +45,20 @@ describe("mountRageKit", () => {
 
   test("an explicit toolset replaces the defaults", () => {
     const engine = track(
-      mountRageKit({ captureContent: false, tools: [hammer], initialTool: "hammer" }),
+      mountRageLayer({ captureContent: false, tools: [hammer], initialTool: "hammer" }),
     );
 
     expect(engine.getTools().map((tool) => tool.id)).toEqual(["hammer"]);
   });
 
   test("a loadout selects its own first tool", () => {
-    const engine = track(mountRageKit({ captureContent: false, loadout: "precision" }));
+    const engine = track(mountRageLayer({ captureContent: false, loadout: "precision" }));
 
     expect(engine.tool?.id).toBe(engine.getTools()[0].id);
   });
 
   test("initialTool: null mounts click-through", () => {
-    const engine = track(mountRageKit({ captureContent: false, initialTool: null }));
+    const engine = track(mountRageLayer({ captureContent: false, initialTool: null }));
 
     expect(engine.tool).toBeNull();
     expect(engine.container.style.pointerEvents).toBe("none");
@@ -69,17 +69,17 @@ describe("mountRageKit", () => {
     // nothing, which is far harder to diagnose than an error at mount.
     const before = document.body.childElementCount;
 
-    expect(() => mountRageKit({ captureContent: false, initialTool: "no-such-tool" })).toThrow(
-      "Unknown initial RageKit tool",
+    expect(() => mountRageLayer({ captureContent: false, initialTool: "no-such-tool" })).toThrow(
+      "Unknown initial RageLayer tool",
     );
 
     expect(document.body.childElementCount).toBe(before);
   });
 });
 
-describe("createRageKit", () => {
+describe("createRageLayer", () => {
   test("nothing is created until open()", () => {
-    const controller = createRageKit({ captureContent: false });
+    const controller = createRageLayer({ captureContent: false });
 
     expect(controller.engine).toBeNull();
     expect(controller.isOpen).toBe(false);
@@ -87,7 +87,7 @@ describe("createRageKit", () => {
   });
 
   test("open, toggle and close move through the expected states", () => {
-    const controller = createRageKit({ captureContent: false, tools: baseTools });
+    const controller = createRageLayer({ captureContent: false, tools: baseTools });
 
     const engine = track(controller.open());
     expect(controller.isOpen).toBe(true);
@@ -104,7 +104,7 @@ describe("createRageKit", () => {
   });
 
   test("subscribers see the current engine immediately and on every change", () => {
-    const controller = createRageKit({ captureContent: false });
+    const controller = createRageLayer({ captureContent: false });
     const seen = [];
     const unsubscribe = controller.subscribe((engine) => seen.push(engine));
 
@@ -124,7 +124,7 @@ describe("createRageKit", () => {
   test("an engine disposed from underneath is noticed by the controller", () => {
     // A host can call `engine.dispose()` directly; the controller must not go
     // on reporting itself open with a dead engine.
-    const controller = createRageKit({ captureContent: false });
+    const controller = createRageLayer({ captureContent: false });
     const engine = track(controller.open());
 
     engine.dispose();
@@ -134,7 +134,7 @@ describe("createRageKit", () => {
   });
 
   test("closing when already closed is a no-op", () => {
-    const controller = createRageKit({ captureContent: false });
+    const controller = createRageLayer({ captureContent: false });
 
     expect(controller.close()).toBeUndefined();
     expect(controller.isOpen).toBe(false);
@@ -156,7 +156,7 @@ describe("the headless React hook", () => {
   test("toggling from a host control opens and closes the engine", () => {
     let destroyer;
     function Consumer() {
-      destroyer = useRageKit({ captureContent: false, tools: [hammer] });
+      destroyer = useRageLayer({ captureContent: false, tools: [hammer] });
       return createElement("span", null, destroyer.isOpen ? "open" : "closed");
     }
 
@@ -177,7 +177,7 @@ describe("the headless React hook", () => {
   test("unmounting closes the engine it opened", () => {
     let destroyer;
     function Consumer() {
-      destroyer = useRageKit({ captureContent: false, tools: [hammer] });
+      destroyer = useRageLayer({ captureContent: false, tools: [hammer] });
       return null;
     }
 

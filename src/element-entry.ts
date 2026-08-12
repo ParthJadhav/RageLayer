@@ -1,19 +1,19 @@
 /**
- * Side-effecting entry: importing it registers `<rage-kit>`.
+ * Side-effecting entry: importing it registers `<rage-layer>`.
  *
- *     import "ragekit/element";
+ *     import "ragelayer/element";
  *
  * Use the named exports from this module instead if you want to choose the tag
  * name or subclass the element.
  */
 
-import { defineRageKitElement } from "./element";
+import { defineRageLayerElement } from "./element";
 
-defineRageKitElement();
+defineRageLayerElement();
 
 export {
-  defineRageKitElement,
-  RageKitElement,
-  type RageKitElementConfig,
+  defineRageLayerElement,
+  RageLayerElement,
+  type RageLayerElementConfig,
   TAG_NAME,
 } from "./element";

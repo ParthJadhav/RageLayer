@@ -1,4 +1,4 @@
-import { createRageKit, type MountRageKitOptions, mountRageKit, type Tool } from "ragekit";
+import { createRageLayer, type MountRageLayerOptions, mountRageLayer, type Tool } from "ragelayer";
 
 const customTool = {
   id: "consumer-stamp",
@@ -17,11 +17,11 @@ const options = {
   quality: "balanced",
   effectsPixelRatio: 1.25,
   loadout: "precision",
-} satisfies MountRageKitOptions;
+} satisfies MountRageLayerOptions;
 
-const controller = createRageKit(options);
+const controller = createRageLayer(options);
 const unsubscribe = controller.subscribe((engine) => engine?.setTool(customTool.id));
-const mounted = mountRageKit(options);
+const mounted = mountRageLayer(options);
 
 void controller.isOpen;
 void mounted;

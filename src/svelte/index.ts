@@ -1,59 +1,59 @@
 import type { DestroyerEngine } from "../engine";
-import { createRageKit, type MountRageKitOptions, type RageKitController } from "../mount";
+import { createRageLayer, type MountRageLayerOptions, type RageLayerController } from "../mount";
 
-export interface RageKitActionOptions extends MountRageKitOptions {
+export interface RageLayerActionOptions extends MountRageLayerOptions {
   /** Close on a second click. Defaults to true. */
   toggle?: boolean;
 }
 
-export interface RageKitActionReturn {
-  update(options?: RageKitActionOptions): void;
+export interface RageLayerActionReturn {
+  update(options?: RageLayerActionOptions): void;
   destroy(): void;
 }
 
-export interface RageKitChangeDetail {
+export interface RageLayerChangeDetail {
   engine: DestroyerEngine | null;
   open: boolean;
 }
 
-export type RageKitChangeEvent = CustomEvent<RageKitChangeDetail>;
+export type RageLayerChangeEvent = CustomEvent<RageLayerChangeDetail>;
 
 declare global {
   interface HTMLElementEventMap {
-    ragekitchange: RageKitChangeEvent;
+    ragelayerchange: RageLayerChangeEvent;
   }
 }
 
 /**
  * Svelte action for turning any button into a lifecycle-safe launcher.
  *
- * It maintains `aria-pressed` and emits `ragekitchange` with the
+ * It maintains `aria-pressed` and emits `ragelayerchange` with the
  * current engine in `event.detail.engine`.
  */
-export function rageKit(
+export function rageLayer(
   node: HTMLElement,
-  options: RageKitActionOptions = {},
-): RageKitActionReturn {
+  options: RageLayerActionOptions = {},
+): RageLayerActionReturn {
   const previousPressed = node.getAttribute("aria-pressed");
-  let controller: RageKitController;
+  let controller: RageLayerController;
   let unsubscribe: () => void;
   let toggles = true;
 
-  const sync = (engine: ReturnType<RageKitController["open"]> | null) => {
+  const sync = (engine: ReturnType<RageLayerController["open"]> | null) => {
     node.setAttribute("aria-pressed", String(engine !== null));
     node.dispatchEvent(
-      new CustomEvent<RageKitChangeDetail>("ragekitchange", {
+      new CustomEvent<RageLayerChangeDetail>("ragelayerchange", {
         detail: { engine, open: engine !== null },
       }),
     );
   };
 
-  const configure = (next: RageKitActionOptions) => {
+  const configure = (next: RageLayerActionOptions) => {
     unsubscribe?.();
     controller?.close();
     const { toggle = true, ...mountOptions } = next;
     toggles = toggle;
-    controller = createRageKit(mountOptions);
+    controller = createRageLayer(mountOptions);
     unsubscribe = controller.subscribe(sync);
   };
 
@@ -79,5 +79,5 @@ export function rageKit(
   };
 }
 
-export type { MountRageKitOptions, RageKitController } from "../mount";
-export { createRageKit } from "../mount";
+export type { MountRageLayerOptions, RageLayerController } from "../mount";
+export { createRageLayer } from "../mount";

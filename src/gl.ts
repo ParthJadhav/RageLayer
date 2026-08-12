@@ -51,7 +51,7 @@ export function createProgram(gl: WebGL2RenderingContext, frag: string): GLProgr
   gl.deleteShader(vs);
   gl.deleteShader(fs);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.warn("[ragekit] shader link failed:", gl.getProgramInfoLog(program));
+    console.warn("[ragelayer] shader link failed:", gl.getProgramInfoLog(program));
     gl.deleteProgram(program);
     return null;
   }
@@ -72,7 +72,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
-  console.warn("[ragekit] shader compile failed:", gl.getShaderInfoLog(shader));
+  console.warn("[ragelayer] shader compile failed:", gl.getShaderInfoLog(shader));
   gl.deleteShader(shader);
   return null;
 }

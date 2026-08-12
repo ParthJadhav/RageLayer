@@ -25,7 +25,7 @@ import {
 
 if (!globalThis.__ddDomRegistered) {
   globalThis.__ddDomRegistered = true;
-  GlobalRegistrator.register({ url: "https://ragekit.test/" });
+  GlobalRegistrator.register({ url: "https://ragelayer.test/" });
   installCanvas();
   installMissingGlobals();
 }

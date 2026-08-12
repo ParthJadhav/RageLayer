@@ -1,15 +1,15 @@
 # Toolbars, translation and keyboard use
 
-RageKit ships three ready-made toolbars — a React component, a Vue component and a
+RageLayer ships three ready-made toolbars — a React component, a Vue component and a
 custom element — and they are all thin renderers over one framework-neutral `ToolbarModel`. If you
 are building your own UI, that model is published too, so you get the behaviour without the markup.
 
 | You are using | Import | What you get |
 | --- | --- | --- |
-| React / Next.js | `ragekit/react` | `<RageKit />` |
-| Vue / Nuxt | `ragekit/vue` | `<RageKit />` |
-| Anything else | `ragekit/element` | `<rage-kit>` |
-| Your own UI | `ragekit/toolbar` | `ToolbarModel` |
+| React / Next.js | `ragelayer/react` | `<RageLayer />` |
+| Vue / Nuxt | `ragelayer/vue` | `<RageLayer />` |
+| Anything else | `ragelayer/element` | `<rage-layer>` |
+| Your own UI | `ragelayer/toolbar` | `ToolbarModel` |
 
 ## The custom element
 
@@ -18,13 +18,13 @@ Qwik, Astro, or plain HTML — because it is just an element.
 
 ```html
 <script type="module">
-  import "ragekit/element";
+  import "ragelayer/element";
 </script>
 
-<rage-kit loadout="chaos" initial-tool="hammer"></rage-kit>
+<rage-layer loadout="chaos" initial-tool="hammer"></rage-layer>
 ```
 
-Importing the entry registers `<rage-kit>`. It builds its UI in a shadow root, so the host
+Importing the entry registers `<rage-layer>`. It builds its UI in a shadow root, so the host
 page's CSS cannot reach in and its own styles cannot leak out, and it disposes the engine when the
 element leaves the document.
 
@@ -32,26 +32,26 @@ Attributes cover the common cases (`loadout`, `initial-tool`, `sound`). For anyt
 custom toolset, engine options, translated strings — call `configure()` before connecting it:
 
 ```ts
-import { RageKitElement } from "ragekit/element";
-import { hammer, gun } from "ragekit/tools";
+import { RageLayerElement } from "ragelayer/element";
+import { hammer, gun } from "ragelayer/tools";
 
-const destroyer = new RageKitElement();
+const destroyer = new RageLayerElement();
 destroyer.configure({
   tools: [hammer, gun],
   history: true,
   strings: { close: "Dismiss" },
 });
-destroyer.addEventListener("ragekit-close", () => destroyer.remove());
+destroyer.addEventListener("ragelayer-close", () => destroyer.remove());
 document.body.append(destroyer);
 ```
 
-The element emits `ragekit-close` when the visitor presses the close button; hosts normally remove it in
+The element emits `ragelayer-close` when the visitor presses the close button; hosts normally remove it in
 response. `destroyer.destroyerEngine` exposes the live engine.
 
 ::: tip Bundlers and the registration side effect
-`import "ragekit/element"` exists for its side effect. The package marks that one entry
+`import "ragelayer/element"` exists for its side effect. The package marks that one entry
 as having side effects, so tree-shaking will not drop it — but if your bundler is configured to
-ignore `sideEffects`, import `defineRageKitElement` and call it explicitly instead.
+ignore `sideEffects`, import `defineRageLayerElement` and call it explicitly instead.
 :::
 
 ## The Vue component
@@ -59,14 +59,14 @@ ignore `sideEffects`, import `defineRageKitElement` and call it explicitly inste
 ```vue
 <script setup lang="ts">
 import { ref } from "vue";
-import { RageKit } from "ragekit/vue";
+import { RageLayer } from "ragelayer/vue";
 
 const open = ref(false);
 </script>
 
 <template>
   <button @click="open = true">Destroy this page</button>
-  <RageKit v-if="open" loadout="chaos" @close="open = false" />
+  <RageLayer v-if="open" loadout="chaos" @close="open = false" />
 </template>
 ```
 
@@ -81,10 +81,10 @@ is selected, whether undo is available, the capture-status chip, keyboard shortc
 ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export.
 
 ```ts
-import { mountRageKit } from "ragekit";
-import { ToolbarModel } from "ragekit/toolbar";
+import { mountRageLayer } from "ragelayer";
+import { ToolbarModel } from "ragelayer/toolbar";
 
-const engine = mountRageKit({ history: true, initialTool: null });
+const engine = mountRageLayer({ history: true, initialTool: null });
 const toolbar = new ToolbarModel(engine, { onClose: () => engine.dispose() });
 
 const unsubscribe = toolbar.subscribe((state) => {
@@ -160,7 +160,7 @@ Every user-visible string the built-in UI produces can be replaced. This is how 
 toy — and also how you match your own tone of voice.
 
 ```ts
-import type { DestroyerStrings } from "ragekit/toolbar";
+import type { DestroyerStrings } from "ragelayer/toolbar";
 
 const french: Partial<DestroyerStrings> = {
   toolbarLabel: "Outils de destruction",

@@ -21,7 +21,7 @@ Then configure npm's trusted publisher for:
 | Field | Value |
 | --- | --- |
 | Provider | GitHub Actions |
-| Repository | `ParthJadhav/ragekit` |
+| Repository | `ParthJadhav/ragelayer` |
 | Workflow | `release.yml` |
 | Permission | Publish |
 
@@ -42,7 +42,7 @@ Do not edit `CHANGELOG.md` or the package version manually; Changesets owns both
 
 ## Failed publish checklist
 
-- `npm view ragekit version` reports whether that exact version already exists.
+- `npm view ragelayer version` reports whether that exact version already exists.
 - The npm trusted publisher repository and workflow filename are case-sensitive.
 - The workflow must run on a GitHub-hosted runner with `id-token: write`.
 - A first public publish needs `access: public`; this is set in both Changesets and `publishConfig`.
@@ -56,7 +56,7 @@ The release job authenticates with the `NPM_TOKEN` secret today. Moving to trust
 (OIDC) removes that long-lived credential entirely:
 
 1. On npmjs.com, open the package's **Settings → Trusted publishers**.
-2. Add a GitHub Actions publisher for `ParthJadhav/ragekit`, workflow `release.yml`,
+2. Add a GitHub Actions publisher for `ParthJadhav/ragelayer`, workflow `release.yml`,
    on the `main` branch.
 3. Delete the `NPM_TOKEN` repository secret.
 

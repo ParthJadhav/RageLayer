@@ -1,5 +1,5 @@
 {
-  "name": "ragekit-example-nuxt",
+  "name": "ragelayer-example-nuxt",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,7 +8,7 @@
     "preview": "nuxt preview"
   },
   "dependencies": {
-    "ragekit": "file:../..",
+    "ragelayer": "file:../..",
     "nuxt": "^3.14.0",
     "vue": "^3.5.0"
   }

@@ -1,16 +1,16 @@
 {
-  "name": "ragekit",
+  "name": "ragelayer",
   "version": "0.5.0",
   "description": "A framework-neutral web toy that lets visitors smash, burn, freeze, and physically demolish any page.",
   "license": "MIT",
   "author": "Parth Jadhav <jadhavparth99@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ParthJadhav/ragekit.git"
+    "url": "git+https://github.com/ParthJadhav/ragelayer.git"
   },
-  "homepage": "https://parthjadhav.github.io/ragekit/",
+  "homepage": "https://parthjadhav.github.io/ragelayer/",
   "bugs": {
-    "url": "https://github.com/ParthJadhav/ragekit/issues"
+    "url": "https://github.com/ParthJadhav/ragelayer/issues"
   },
   "type": "module",
   "sideEffects": [
@@ -173,7 +173,7 @@
   },
   "keywords": [
     "canvas",
-    "ragekit",
+    "ragelayer",
     "easter-egg",
     "particles",
     "fire",

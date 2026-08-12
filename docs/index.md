@@ -2,12 +2,12 @@
 layout: home
 
 hero:
-  name: RageKit
+  name: RageLayer
   text: Demolish any web page.
   tagline: A framework-neutral canvas toy with real page capture, rigid-body debris, procedural tools, and drop-in React, Vue, and Svelte integrations.
   image:
     src: /screenshots/aftermath.png
-    alt: A web page smashed, burned, frozen, and painted by RageKit
+    alt: A web page smashed, burned, frozen, and painted by RageLayer
   actions:
     - theme: brand
       text: Try the live demo
@@ -36,15 +36,15 @@ features:
 ::: code-group
 
 ```sh [npm]
-npm install ragekit
+npm install ragelayer
 ```
 
 ```sh [pnpm]
-pnpm add ragekit
+pnpm add ragelayer
 ```
 
 ```sh [Bun]
-bun add ragekit
+bun add ragelayer
 ```
 
 :::
@@ -53,15 +53,15 @@ bun add ragekit
 
 | Stack | Import | Best for |
 | --- | --- | --- |
-| React / Next.js | `ragekit/react` | Ready-made toolbar or a headless hook |
-| Vue / Nuxt | `ragekit/vue` | Lifecycle-safe composable |
-| Svelte / SvelteKit | `ragekit/svelte` | One-line launcher action |
-| Astro, Angular, Solid, plain JS | `ragekit` | Framework-neutral controller |
+| React / Next.js | `ragelayer/react` | Ready-made toolbar or a headless hook |
+| Vue / Nuxt | `ragelayer/vue` | Lifecycle-safe composable |
+| Svelte / SvelteKit | `ragelayer/svelte` | One-line launcher action |
+| Astro, Angular, Solid, plain JS | `ragelayer` | Framework-neutral controller |
 
 ```ts
-import { createRageKit } from "ragekit";
+import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageKit({ initialTool: "hammer" });
+const destroyer = createRageLayer({ initialTool: "hammer" });
 document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
 ```
 
