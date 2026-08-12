@@ -36,11 +36,9 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing (OIDC) needs npm 11.5.1 or newer. With a trusted
-      # publisher configured for this workflow on npmjs.com, the job exchanges
-      # its `id-token` for a short-lived credential and `NPM_TOKEN` is ignored;
-      # until then the long-lived token below is what authenticates. See
-      # docs/releasing.md.
+      # Trusted publishing (OIDC) needs npm 11.5.1 or newer. npm exchanges the
+      # job's `id-token` for a short-lived publishing credential; no long-lived
+      # npm token is stored in GitHub. See docs/releasing.md.
       - name: Use an npm that supports trusted publishing
         run: npm install --global npm@latest
 
@@ -57,7 +55,6 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Download published registry artifact
         if: steps.changesets.outputs.published == 'true'

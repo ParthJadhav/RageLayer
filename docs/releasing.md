@@ -3,20 +3,9 @@
 Releases use Changesets, GitHub Actions, and npm trusted publishing. A release should be reproducible
 from the tagged commit. npm adds provenance automatically when the source repository is public.
 
-## One-time npm setup
+## npm trusted publisher
 
-The package name must exist on npm before its settings can nominate a trusted publisher. For the
-first release, either add a granular `NPM_TOKEN` repository secret or publish once from a verified
-maintainer machine:
-
-```sh
-bun install --frozen-lockfile
-bun run check
-npm login
-npm publish --access public
-```
-
-Then configure npm's trusted publisher for:
+The package publishes exclusively through npm trusted publishing. npm is configured with:
 
 | Field | Value |
 | --- | --- |
@@ -25,9 +14,9 @@ Then configure npm's trusted publisher for:
 | Workflow | `release.yml` |
 | Permission | Publish |
 
-The workflow grants `id-token: write` and uses a supported Node/npm environment. After a successful
-trusted publish, remove the long-lived `NPM_TOKEN` secret and disallow token publishing in the npm
-package settings.
+The workflow grants `id-token: write` and uses a supported Node/npm environment. npm exchanges the
+GitHub Actions OIDC identity for a short-lived publishing credential. The repository stores no npm
+token, and the package disallows bypass-2FA token publishing.
 
 ## Normal release flow
 
@@ -50,18 +39,7 @@ Do not edit `CHANGELOG.md` or the package version manually; Changesets owns both
 
 Re-running the workflow is safe: `changeset publish` skips versions already present on npm.
 
-## npm trusted publishing
-
-The release job authenticates with the `NPM_TOKEN` secret today. Moving to trusted publishing
-(OIDC) removes that long-lived credential entirely:
-
-1. On npmjs.com, open the package's **Settings → Trusted publishers**.
-2. Add a GitHub Actions publisher for `ParthJadhav/ragelayer`, workflow `release.yml`,
-   on the `main` branch.
-3. Delete the `NPM_TOKEN` repository secret.
-
-The workflow already requests `id-token: write` and installs a recent npm, so nothing else needs
-to change: with a trusted publisher configured, npm exchanges the job's OIDC token for a
-short-lived credential and ignores `NODE_AUTH_TOKEN`. npm generates provenance automatically when
-the source repository is public; private source repositories can use trusted publishing but cannot
-publish provenance.
+Trusted publishing requires the exact repository and workflow filename configured on npm. Keep
+`id-token: write`, use npm 11.5.1 or newer, and do not add `NODE_AUTH_TOKEN` or an `NPM_TOKEN`
+repository secret. npm generates provenance automatically when the source repository is public;
+private source repositories can use trusted publishing but cannot publish provenance.
