@@ -1,5 +1,11 @@
 # ragelayer
 
+## 0.6.1
+
+### Patch Changes
+
+- [`67a435e`](https://github.com/ParthJadhav/ragelayer/commit/67a435e8f7f4d0e146156d321eafbf28d069c4fd) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Harden npm releases with token-free trusted publishing and retry registry artifact downloads while a new version propagates.
+
 ## 0.6.0
 
 ### Minor Changes
