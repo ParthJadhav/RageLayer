@@ -15,6 +15,7 @@ permissions:
 jobs:
   analyze:
     name: Analyze JavaScript/TypeScript
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
