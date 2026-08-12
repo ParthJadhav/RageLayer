@@ -1,5 +1,11 @@
 # ragelayer
 
+## 0.6.0
+
+### Minor Changes
+
+- [`dcad2c8`](https://github.com/ParthJadhav/ragelayer/commit/dcad2c8e1d3f56e73d2a7c1b019f89b81e838096) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageLayer. Public framework components and lifecycle helpers now use the `RageLayer` name, the Svelte action is `rageLayer`, and the custom element is `<rage-layer>`. Package-prefixed DOM attributes, events, constants, CSS hooks, and development environment variables now use the `ragelayer`, `RAGELAYER`, or `rl-` prefix.
+
 ## 0.5.0
 
 ### Minor Changes
