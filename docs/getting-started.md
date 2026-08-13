@@ -1,6 +1,6 @@
 # Getting started
 
-`ragelayer` is a self-contained page-destruction toy: it rasterizes the live page into a
+RageLayer is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
 shoot, burn, soak, saw, paint, corrode, bomb — and then sweep it all up. Zero assets, zero
 runtime dependencies, framework-agnostic core with a drop-in React component.

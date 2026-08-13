@@ -107,7 +107,7 @@ describe("console behaviour", () => {
       makeEngine();
 
       expect(warn).toHaveBeenCalled();
-      expect(String(warn.mock.calls[0][0])).toContain("[ragelayer]");
+      expect(String(warn.mock.calls[0][0])).toContain("[RageLayer]");
     } finally {
       warn.mockRestore();
     }

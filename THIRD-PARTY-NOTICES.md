@@ -1,10 +1,10 @@
 # Third-party notices
 
-`ragelayer` bundles the following third-party software into its
+RageLayer bundles the following third-party software into its
 distributed files. Their licences are reproduced below, as those licences
 require of any copy that carries the code.
 
-Everything else in `dist/` is ragelayer's own, under the MIT licence in
+Everything else in `dist/` is RageLayer's own, under the MIT licence in
 `LICENSE`.
 
 ---

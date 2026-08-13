@@ -1,28 +1,28 @@
-# ragelayer
+# RageLayer
 
 ## 0.6.1
 
 ### Patch Changes
 
-- [`67a435e`](https://github.com/ParthJadhav/ragelayer/commit/67a435e8f7f4d0e146156d321eafbf28d069c4fd) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Harden npm releases with token-free trusted publishing and retry registry artifact downloads while a new version propagates.
+- [`67a435e`](https://github.com/ParthJadhav/RageLayer/commit/67a435e8f7f4d0e146156d321eafbf28d069c4fd) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Harden npm releases with token-free trusted publishing and retry registry artifact downloads while a new version propagates.
 
 ## 0.6.0
 
 ### Minor Changes
 
-- [`dcad2c8`](https://github.com/ParthJadhav/ragelayer/commit/dcad2c8e1d3f56e73d2a7c1b019f89b81e838096) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageLayer. Public framework components and lifecycle helpers now use the `RageLayer` name, the Svelte action is `rageLayer`, and the custom element is `<rage-layer>`. Package-prefixed DOM attributes, events, constants, CSS hooks, and development environment variables now use the `ragelayer`, `RAGELAYER`, or `rl-` prefix.
+- [`dcad2c8`](https://github.com/ParthJadhav/RageLayer/commit/dcad2c8e1d3f56e73d2a7c1b019f89b81e838096) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageLayer. Public framework components and lifecycle helpers now use the `RageLayer` name, the Svelte action is `rageLayer`, and the custom element is `<rage-layer>`. Package-prefixed DOM attributes, events, constants, CSS hooks, and development environment variables now use the `ragelayer`, `RAGELAYER`, or `rl-` prefix.
 
 ## 0.5.0
 
 ### Minor Changes
 
-- [`b3b99ea`](https://github.com/ParthJadhav/ragelayer/commit/b3b99eab59d80ddb01c08d4e1daa93f87f514ba5) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageLayer. The React and Vue components are now `RageLayer`, lifecycle helpers are `createRageLayer`, `mountRageLayer`, and `useRageLayer`, the Svelte action is `rageLayer`, and the custom element is `<rage-layer>`. Package-prefixed DOM attributes, events, constants, and development environment variables now use the `ragelayer` or `RAGELAYER` prefix.
+- [`b3b99ea`](https://github.com/ParthJadhav/RageLayer/commit/b3b99eab59d80ddb01c08d4e1daa93f87f514ba5) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the package and project to RageLayer. The React and Vue components are now `RageLayer`, lifecycle helpers are `createRageLayer`, `mountRageLayer`, and `useRageLayer`, the Svelte action is `rageLayer`, and the custom element is `<rage-layer>`. Package-prefixed DOM attributes, events, constants, and development environment variables now use the `ragelayer` or `RAGELAYER` prefix.
 
 ## 0.4.0
 
 ### Minor Changes
 
-- [`1289409`](https://github.com/ParthJadhav/ragelayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a framework-neutral lifecycle controller, a headless React hook, a Vue composable, and a
+- [`1289409`](https://github.com/ParthJadhav/RageLayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a framework-neutral lifecycle controller, a headless React hook, a Vue composable, and a
   Svelte action. Publish explicit `react`, `vue`, and `svelte` entry points, preserve React's client
   boundary for Next.js, reduce the package contents, and add a documentation site and reliable npm
   release workflow. The engine now defaults sound off and follows `prefers-reduced-motion` for camera
@@ -45,7 +45,7 @@
   The balanced adaptive-quality tier now disables the measured post-processing bottleneck immediately
   instead of retaining it until a second downgrade.
 
-- [`1289409`](https://github.com/ParthJadhav/ragelayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a ready-made toolbar for every stack, keyboard-operable tools, translatable strings, and a
+- [`1289409`](https://github.com/ParthJadhav/RageLayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Add a ready-made toolbar for every stack, keyboard-operable tools, translatable strings, and a
   channel for reporting degradation.
 
   - `ragelayer/element` registers `<rage-layer>`, a complete toolbar in a shadow root
@@ -67,7 +67,7 @@
 
 ### Patch Changes
 
-- [`1289409`](https://github.com/ParthJadhav/ragelayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Bundle the `html-to-image` capture code into the package as a lazily-loaded chunk and drop the
+- [`1289409`](https://github.com/ParthJadhav/RageLayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Bundle the `html-to-image` capture code into the package as a lazily-loaded chunk and drop the
   runtime dependency. Loading `dist` directly in a browser (the demo, harnesses, benchmarks, CDN
   usage) previously failed to resolve the bare specifier and silently degraded to overlay mode —
   no destructible page content, no fracture debris, and content-dependent tools (laser cutter, acid
@@ -86,7 +86,7 @@
   whole-page repair, snapshot download, sound and pause toggles, combo toasts, and a live
   fps/capture status readout.
 
-- [`1289409`](https://github.com/ParthJadhav/ragelayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Test the destruction pipeline for real, and harden the release path.
+- [`1289409`](https://github.com/ParthJadhav/RageLayer/commit/12894091dc19266d5c91320c49709ace7bdc7f79) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Test the destruction pipeline for real, and harden the release path.
 
   Unit tests now run against a DOM with a real Canvas2D rasterizer, so the coverage map, wound
   compositing, physics solver and every built-in tool are asserted on actual pixels rather than
@@ -103,7 +103,7 @@
 
 ### Minor Changes
 
-- [`ce9a406`](https://github.com/ParthJadhav/ragelayer/commit/ce9a406f3b6b43d37512b7c3ebfcfc856855458e) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Realistic feedback effects, all procedural and physically motivated:
+- [`ce9a406`](https://github.com/ParthJadhav/RageLayer/commit/ce9a406f3b6b43d37512b7c3ebfcfc856855458e) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Realistic feedback effects, all procedural and physically motivated:
 
   - **Impact dust** — rigid debris chunks that land hard (or slam into each other) now knock a puff of pale paper dust loose at the contact point. Hooked into the physics solver's contact pass with a hard impulse threshold, rate-gated, and scaled by the quality profile.
   - **Ember dynamics** — burning pages shed drifting embers that ride the thermal plume, sway, flicker, and cool through the full white-orange → orange → dull-red arc (new `emberDark` sprite) before dying.
@@ -114,9 +114,9 @@
 
 ### Patch Changes
 
-- [`22ce63c`](https://github.com/ParthJadhav/ragelayer/commit/22ce63ce689567ee93c1c3a2e7ee16501ee2e1e6) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Engine bug fixes: fire spread now respects the quality-scaled flame limit instead of the raw `maxFlames` option; a failed live refresh backs off and retries instead of permanently disabling scheduled refreshes (and no longer mutates the caller's `liveRefreshMs`); `spawnBugs` only plays its pop sound when a bug is actually released; tools gained an optional `reset()` hook that the engine invokes on `registerTool`, `clear()` and `dispose()`, so module-level tool state (in-flight rockets, lightning restrikes, hammer strike sites, aim smoothing, spawn debts) no longer leaks between engine instances; the performance monitor's frame sample buffer is now a proper wrap-around ring (long sample intervals no longer skew percentiles, and fps/frame counts reflect every observed frame); `dispose()` releases the damage-tool context wrapper and the opacity map's hit-test canvas backing; a `pagehide` listener restores the hidden page's visibility if the document navigates away mid-destruction; and documents taller than the 12000px capture cap now log a one-time warning instead of being silently truncated.
+- [`22ce63c`](https://github.com/ParthJadhav/RageLayer/commit/22ce63ce689567ee93c1c3a2e7ee16501ee2e1e6) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Engine bug fixes: fire spread now respects the quality-scaled flame limit instead of the raw `maxFlames` option; a failed live refresh backs off and retries instead of permanently disabling scheduled refreshes (and no longer mutates the caller's `liveRefreshMs`); `spawnBugs` only plays its pop sound when a bug is actually released; tools gained an optional `reset()` hook that the engine invokes on `registerTool`, `clear()` and `dispose()`, so module-level tool state (in-flight rockets, lightning restrikes, hammer strike sites, aim smoothing, spawn debts) no longer leaks between engine instances; the performance monitor's frame sample buffer is now a proper wrap-around ring (long sample intervals no longer skew percentiles, and fps/frame counts reflect every observed frame); `dispose()` releases the damage-tool context wrapper and the opacity map's hit-test canvas backing; a `pagehide` listener restores the hidden page's visibility if the document navigates away mid-destruction; and documents taller than the 12000px capture cap now log a one-time warning instead of being silently truncated.
 
-- [`da72ff7`](https://github.com/ParthJadhav/ragelayer/commit/da72ff72c4acde65d953f89011af04a7f436e5ca) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - React wrapper fixes and accessibility pass.
+- [`da72ff7`](https://github.com/ParthJadhav/RageLayer/commit/da72ff72c4acde65d953f89011af04a7f436e5ca) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - React wrapper fixes and accessibility pass.
 
   - StrictMode safety: `engine.setTool` no longer runs inside a `setState` updater; the engine now syncs from state in an effect.
   - Keyboard shortcuts ignore typing contexts (inputs, textareas, contenteditable, IME composition) and held-down key repeats, so pressing `R` in a search box no longer repairs the page.
@@ -126,7 +126,7 @@
   - Accessibility: engine overlay container is `aria-hidden`; toolbar gets a roving tabindex with ArrowLeft/ArrowRight/Home/End navigation and a `:focus-visible` ring; the tool hint is a persistent `aria-live="polite"` region; focus moves into the toolbar on mount and returns to the previously focused element on close; `prefers-reduced-motion` disables the toolbar rise animation and hover motion. Known limitation: the engine has no reduced-motion knob yet, so in-canvas screen shake still plays under `prefers-reduced-motion`.
   - The toolbar wraps onto multiple rows on narrow viewports instead of clipping behind a hidden horizontal scroll.
 
-- [`d35a488`](https://github.com/ParthJadhav/ragelayer/commit/d35a488a2cb27630fea0151d0b33980a664b15c4) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Performance pass on the per-frame and page-query hot paths:
+- [`d35a488`](https://github.com/ParthJadhav/RageLayer/commit/d35a488a2cb27630fea0151d0b33980a664b15c4) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Performance pass on the per-frame and page-query hot paths:
 
   - `OpacityMap` no longer grows without bound under sustained destruction: when a
     128px cell accumulates more than 32 wound operations they are flattened — in
@@ -153,7 +153,7 @@
   (wound queries, decal proxying) rather than moving the synthetic scenario
   averages. Leak gate stays green. No visual or public API changes.
 
-- [`78db15c`](https://github.com/ParthJadhav/ragelayer/commit/78db15cb9b12e0a85158fb5365cb88ed17dcba57) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Code-quality sweep: truthful types, new exports, sprite-cache release, tests.
+- [`78db15c`](https://github.com/ParthJadhav/RageLayer/commit/78db15cb9b12e0a85158fb5365cb88ed17dcba57) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Code-quality sweep: truthful types, new exports, sprite-cache release, tests.
 
   - `captureFilter` is now truthfully typed `(node: Node) => boolean` — html-to-image
     calls the filter for every cloned node (text and comment nodes included), not just

@@ -184,7 +184,7 @@ function traceSummary(events) {
 const RUN_EFFECT = `
 async ({ effect, durationMs, intervalMs, activeRatio, mode, movePx, moveHz, variant }) => {
   const engine = window.__rageLayer;
-  if (!engine) throw new Error("ragelayer is not mounted");
+  if (!engine) throw new Error("RageLayer is not mounted");
   engine.clear();
   if (variant === "no-postfx") {
     engine.opts.postFX = false;
@@ -485,9 +485,9 @@ try {
 
     let screenshotPath = null;
     if (captureScreenshots) {
-      process.stderr.write(`[ragelayer profile] preparing ${effect} screenshot\n`);
+      process.stderr.write(`[RageLayer profile] preparing ${effect} screenshot\n`);
       await evaluate(PREPARE_SCREENSHOT, { effect, ...config });
-      process.stderr.write(`[ragelayer profile] capturing ${effect} screenshot\n`);
+      process.stderr.write(`[RageLayer profile] capturing ${effect} screenshot\n`);
       await cdp.send("Page.bringToFront", {}, sessionId);
       const nextFrame = cdp.once("Page.screencastFrame");
       await cdp.send(
@@ -509,7 +509,7 @@ try {
       await cdp.send("Page.stopScreencast", {}, sessionId);
       screenshotPath = join(outputDir, `${effect}-${cpuRate}x.png`);
       await writeFile(screenshotPath, Buffer.from(frameEvent.params.data, "base64"));
-      process.stderr.write(`[ragelayer profile] wrote ${effect} screenshot\n`);
+      process.stderr.write(`[RageLayer profile] wrote ${effect} screenshot\n`);
       await evaluate(`() => {
         const engine = window.__rageLayer;
         engine.container.dispatchEvent(new PointerEvent("pointerup", {

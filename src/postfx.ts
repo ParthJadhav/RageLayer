@@ -114,7 +114,7 @@ function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLSha
   gl.shaderSource(shader, src);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.warn("[ragelayer] shader compile failed:", gl.getShaderInfoLog(shader));
+    console.warn("[RageLayer] shader compile failed:", gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
     return null;
   }
@@ -134,7 +134,7 @@ function link(gl: WebGLRenderingContext, fragSrc: string): WebGLProgram | null {
   gl.deleteShader(vs);
   gl.deleteShader(fs);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.warn("[ragelayer] program link failed:", gl.getProgramInfoLog(program));
+    console.warn("[RageLayer] program link failed:", gl.getProgramInfoLog(program));
     return null;
   }
   return program;
