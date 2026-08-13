@@ -1,7 +1,7 @@
 import { useRageLayer } from "ragelayer/vue";
 
 const destroyer = useRageLayer({
-  initialTool: "freeze",
+  initialTool: "water",
   captureContent: false,
 });
 
@@ -19,7 +19,6 @@ import { RageLayer } from "ragelayer/vue";
 import { h } from "vue";
 
 void h(RageLayer, {
-  loadout: "chaos",
   soundDefault: false,
   strings: { toolbarLabel: "Outils", close: "Fermer" },
   engineOptions: { captureContent: false, history: true },

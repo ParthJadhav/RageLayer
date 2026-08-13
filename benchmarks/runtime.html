@@ -125,7 +125,7 @@
         }
       }
 
-      function createEngine() {
+      function createEngine(options = {}) {
         const next = new DestroyerEngine({
           captureContent: false,
           soundEnabled: false,
@@ -135,7 +135,8 @@
           physics: true,
           maxFlames: 32,
           maxParticles: 1400,
-          toolStyle: "emoji",
+          toolStyle: options.toolStyle ?? "emoji",
+          quality: options.quality ?? "auto",
         });
         next.registerTools(defaultTools);
         return next;
@@ -168,9 +169,9 @@
         return lastDisposeState;
       }
 
-      function setupScenario(name) {
+      function setupScenario(name, options) {
         disposeEngine();
-        engine = createEngine();
+        engine = createEngine(options);
         if (name === "particles") addParticles(1_200);
         if (name === "fire") addFire(32);
         if (name === "physics") addBodies(170);

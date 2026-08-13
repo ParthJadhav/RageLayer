@@ -2,18 +2,14 @@
 
 export {
   acidSprayerArt,
-  glitchGunArt,
   gravityGunArt,
   laserCutterArt,
   stickyBombArt,
-  wreckingBallArt,
 } from "./advanced-toolart";
 export {
   acidSprayer,
   advancedTools,
-  glitchGun,
   gravityGun,
   laserCutter,
   stickyBombs,
-  wreckingBall,
 } from "./advanced-tools";

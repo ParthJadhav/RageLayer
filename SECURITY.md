@@ -8,7 +8,7 @@ reporting an issue that may already be fixed.
 ## Reporting a vulnerability
 
 Please do not open a public issue for a suspected vulnerability. Use GitHub's
-[private vulnerability reporting](https://github.com/ParthJadhav/ragelayer/security/advisories/new)
+[private vulnerability reporting](https://github.com/ParthJadhav/RageLayer/security/advisories/new)
 and include:
 
 - the affected version and browser;

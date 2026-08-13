@@ -2,8 +2,8 @@
  * FlameField — fire, and the wood it eats.
  *
  * Fire is the engine's one ecological effect: it needs ground to stand on (a
- * flame never lives over the void), fuel to consume, and it loses to both
- * frost and water. Everything about burning lives here — the flame list, the
+ * flame never lives over the void), fuel to consume, and it loses to water.
+ * Everything about burning lives here — the flame list, the
  * cap, spread, and the fuel grid.
  *
  * The page is material with finite fuel rather than an infinite wick: each
@@ -18,19 +18,21 @@
 import type { ComboEvent, InteractionKind } from "./combos";
 import { drawScorch } from "./decals";
 import { type FieldSnapshot, ScalarField } from "./fields";
-import type { MaterialDefinition } from "./materials";
 import { TAU } from "./math";
 import type { ContentApi, Flame, Particle, SoundApi } from "./types";
+import { WOOD } from "./wood.js";
 
 /**
  * Wood-fuel grid resolution, CSS px per cell. Coarse cells are enough — the
  * questions asked are "can fire live here" and "how hungry is it", both
- * regional, the same reasoning as the frost grid.
+ * regional.
  */
 const FUEL_CELL = 26;
 
 /** Absolute floor for the flame cap, whatever the quality profile says. */
 const MIN_LIMIT = 4;
+/** Smoke puffs per second at full intensity. Kept below the flame cadence so smoke reveals fire. */
+const SMOKE_PUFFS_PER_SECOND = 8;
 
 /** The slice of the engine fire touches. */
 export interface FlameHost {
@@ -39,10 +41,7 @@ export interface FlameHost {
   readonly content: ContentApi | null;
   readonly damageCtx: CanvasRenderingContext2D;
   readonly sound: SoundApi;
-  materialAt(x: number, y: number): MaterialDefinition;
   pageOpacityAt(x: number, y: number): number;
-  frostAt(x: number, y: number): number;
-  meltFrost(x: number, y: number, radius: number, amount?: number): void;
   spawnParticle(p: Particle): void;
   signalInteraction(kind: InteractionKind, x: number, y: number): ComboEvent[];
 }
@@ -55,7 +54,6 @@ export class FlameField {
     cell: FUEL_CELL,
     max: 255,
     initial: 255,
-    outside: "edge",
   });
   private limit = MIN_LIMIT;
   /** Rate gates so repeated hits don't stack into a buzz. */
@@ -125,43 +123,8 @@ export class FlameField {
   /** Returns true when a new flame was actually lit (the caller repaints). */
   spawn(host: FlameHost, x: number, y: number, intensity = 0.35): boolean {
     this.fuel.ensure(host.width, host.height);
-    const material = host.materialAt(x, y);
-    intensity *= material.flammability;
-    if (intensity <= 0.015) {
-      if (material.conductivity > 0.7) {
-        host.spawnParticle({
-          kind: "spark",
-          x,
-          y,
-          vx: (Math.random() - 0.5) * 90,
-          vy: -30 - Math.random() * 70,
-          life: 0,
-          maxLife: 0.35,
-          size: 2.5,
-          color: material.color,
-        });
-      }
-      return false;
-    }
-    // Frost fights fire. A well-iced region simply refuses to light, which is
-    // what makes the freeze ray a defensive tool rather than a reskinned brush.
-    const frost = host.frostAt(x, y);
-    if (frost > 0.15) {
-      intensity *= Math.max(0, 1 - frost * 1.4);
-      host.meltFrost(x, y, 40);
-      host.spawnParticle({
-        kind: "steam",
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 40,
-        vy: -50 - Math.random() * 50,
-        life: 0,
-        maxLife: 0.7 + Math.random() * 0.6,
-        size: 8 + Math.random() * 10,
-        drag: 1.5,
-      });
-      if (intensity <= 0.02) return false;
-    }
+    intensity *= WOOD.flammability;
+    if (intensity <= 0.015) return false;
     // Fire needs a page to burn. Where the content is mostly gone the void
     // shows through, and the void is not a place — a flame floating on it
     // reads as a rendering bug, not as fire. Strict on purpose: half-eroded
@@ -184,7 +147,7 @@ export class FlameField {
       radius: 17 + Math.random() * 21,
       age: 0,
       seed: Math.random() * 1000,
-      spreadCooldown: 1.5 + Math.random() * 2,
+      spreadCooldown: 0.45 + Math.random() * 0.55,
       scorchCooldown: 0.4,
       popCooldown: 1 + Math.random() * 3,
     });
@@ -263,24 +226,6 @@ export class FlameField {
         // lit in the same frame stays in lockstep forever, so all of them
         // repaint the (document-sized) content canvas on the same frame.
         f.scorchCooldown = 0.26 + Math.random() * 0.14;
-        // Fire returns frost's favour: rime stops a fire catching (see
-        // `spawnFlame`), and an established flame steadily melts the rime
-        // around it — boiling off as steam, so a frozen patch next to a blaze
-        // doesn't stay improbably frozen.
-        if (host.frostAt(f.x, f.y) > 0.04) {
-          host.meltFrost(f.x, f.y, f.radius * 1.8, 0.5);
-          host.spawnParticle({
-            kind: "steam",
-            x: f.x + (Math.random() - 0.5) * f.radius * 1.6,
-            y: f.y - Math.random() * 8,
-            vx: (Math.random() - 0.5) * 60,
-            vy: -60 - Math.random() * 70,
-            life: 0,
-            maxLife: 0.8 + Math.random() * 0.8,
-            size: 8 + Math.random() * 12,
-            drag: 1.5,
-          });
-        }
         const layer = host.content;
         if (layer?.ready) {
           const opacity = host.pageOpacityAt(f.x, f.y);
@@ -327,12 +272,12 @@ export class FlameField {
             // Stage 2 — burning: the char deepens and erosion begins.
             layer.char(f.x, f.y + 2, f.radius * 0.85, 0.16);
             layer.burn(f.x, f.y + 2, f.radius * 0.22);
-            this.consumeFuel(host, f.x, f.y, 9 + 13 * f.intensity);
+            this.consumeFuel(host, f.x, f.y, (9 + 13 * f.intensity) * WOOD.burnRate);
           } else {
             // Stage 3 — deepening: the fire is inside the material now, eating
             // fast toward breakthrough, and the rim glows with thrown embers.
             layer.burn(f.x, f.y + 2, f.radius * (0.3 + f.intensity * 0.35));
-            this.consumeFuel(host, f.x, f.y, 13 + 16 * f.intensity);
+            this.consumeFuel(host, f.x, f.y, (13 + 16 * f.intensity) * WOOD.burnRate);
             if (Math.random() < 0.5) {
               const a = Math.random() * TAU;
               host.spawnParticle({
@@ -360,20 +305,49 @@ export class FlameField {
         }
       }
 
-      // Fire spreads: strong flames seed children nearby.
+      // Fire spreads through contact heat, not by throwing unrelated random
+      // fires across the page. Each attempt creeps around the current flame's
+      // rim, biased upward, and only catches where both intact wood and local
+      // fuel remain. Cooldown overshoot is carried forward, so a 30 Hz frame
+      // and two 60 Hz frames produce the same number of spread opportunities.
       f.spreadCooldown -= dt;
-      if (f.spreadCooldown <= 0 && f.intensity > 0.75 && this.list.length < this.limit) {
-        f.spreadCooldown = 2 + Math.random() * 3;
-        const angle = Math.random() * TAU;
-        const dist = f.radius * (1.2 + Math.random());
-        const nx = f.x + Math.cos(angle) * dist;
-        // Heat rises: children bias upward, so a fire climbs the page the way
-        // flame climbs a board rather than blooming symmetrically.
-        const ny = f.y + Math.sin(angle) * dist * 0.6 - dist * 0.3;
-        // And it only takes hold where there is still wood to take.
-        if (nx > 0 && nx < host.width && ny > 0 && ny < host.height && this.fuelAt(nx, ny) > 0.22) {
-          this.spawn(host, nx, ny, 0.25);
+      let spreadAttempts = 0;
+      while (f.spreadCooldown <= 0 && spreadAttempts++ < 2) {
+        f.spreadCooldown += 0.55 + Math.random() * 0.45;
+        if (f.intensity < 0.48 || this.list.length >= this.limit) continue;
+
+        let localHeat = f.intensity * (0.55 + fuel * 0.45);
+        for (const neighbour of this.list) {
+          if (neighbour === f) continue;
+          const distance = Math.hypot(neighbour.x - f.x, neighbour.y - f.y);
+          const contact = 1 - distance / (f.radius + neighbour.radius * 1.4);
+          if (contact > 0) localHeat += neighbour.intensity * contact * 0.22;
         }
+        if (localHeat < 0.5) continue;
+
+        // Tangential jitter creates irregular fronts, while the short step
+        // keeps every child in thermal contact with its parent.
+        const angle = Math.random() * TAU;
+        const dist = f.radius * (0.72 + Math.random() * 0.52);
+        let offsetX = Math.cos(angle) * dist;
+        let offsetY = Math.sin(angle) * dist * 0.72 - dist * (0.12 + localHeat * 0.12);
+        // The upward heat bias can shorten some vectors enough that `spawn()`
+        // merges them straight back into the parent. Push those candidates to
+        // the rim so every eligible spread opportunity advances the front.
+        const offsetLength = Math.hypot(offsetX, offsetY);
+        const minimumStep = f.radius * 0.68;
+        if (offsetLength < minimumStep) {
+          const scale = minimumStep / Math.max(0.001, offsetLength);
+          offsetX *= scale;
+          offsetY *= scale;
+        }
+        const nx = f.x + offsetX;
+        const ny = f.y + offsetY;
+        if (nx <= 0 || nx >= host.width || ny <= 0 || ny >= host.height) continue;
+        const nextFuel = this.fuelAt(nx, ny);
+        const surface = host.content?.ready ? host.pageOpacityAt(nx, ny) : 1;
+        if (nextFuel < 0.28 || surface < 0.5) continue;
+        this.spawn(host, nx, ny, 0.16 + Math.min(0.2, localHeat * nextFuel * 0.14));
       }
 
       // Sap-pocket pops: an audible crack that throws a fistful of embers, so a
@@ -409,10 +383,10 @@ export class FlameField {
       // and every extra puff was overdraw nobody asked for.
       if (f.intensity > 0.2) {
         // Smoke is the single biggest particle cost of a big fire: each puff
-        // lives for seconds and is drawn twice while warm. Fewer, larger, and
-        // shorter-lived puffs keep the rolling-column look at a fraction of
-        // the population — 14/s per flame, down from 34/s.
-        if (Math.random() < f.intensity * 14 * dt) {
+        // lives for seconds and is drawn twice while warm. A restrained plume
+        // leaves the luminous body readable instead of burying it under an
+        // opaque stack, while also bounding overdraw in a 32-flame blaze.
+        if (Math.random() < f.intensity * SMOKE_PUFFS_PER_SECOND * dt) {
           // Rolling column: puffs are launched hard, then dragged to a crawl, so
           // they bunch up and billow overhead instead of streaming away as dots.
           host.spawnParticle({
@@ -422,7 +396,7 @@ export class FlameField {
             vx: (Math.random() - 0.5) * 55,
             vy: -70 - Math.random() * 90 * f.intensity,
             life: 0,
-            maxLife: 1.7 + Math.random() * 1.7,
+            maxLife: 1.4 + Math.random() * 1.3,
             size: 12 + Math.random() * 18 * f.intensity,
             gravity: -18,
             drag: 1.5,

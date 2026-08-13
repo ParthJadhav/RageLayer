@@ -1,14 +1,45 @@
 /**
  * Shared building blocks for the built-in tools.
  *
- * Three things every second tool wants and nobody should re-derive: a scatter
- * of solid chips, a puff of pale page dust, and a smoothed aim direction taken
- * from pointer motion. Internal to the package — tool authors outside it use
- * `engine.spawnParticle` directly, or the `sdk` entry point.
+ * The things every second tool wants and nobody should re-derive: retained
+ * per-engine state, a scatter of solid chips, and a puff of pale page dust.
+ * Internal to the package — tool authors outside it use `engine.spawnParticle`
+ * directly, or the `sdk` entry point. Anything that needs a direction reads
+ * `engine.toolAim`, so the whole package points one way.
  */
 
 import { TAU } from "./math";
-import type { DestroyerEngineApi, Vec2 } from "./types";
+import type { DestroyerEngineApi } from "./types";
+
+/**
+ * Retained tool state keyed by engine.
+ *
+ * Built-in tools are exported as shared singletons, so module-level cooldowns
+ * or projectile arrays let one mounted layer advance or clear another one's
+ * work. This tiny store gives singleton tools instance semantics without
+ * exposing state on the public `Tool` object or retaining disposed engines.
+ */
+export function createEngineState<T>(create: () => T) {
+  let states = new WeakMap<DestroyerEngineApi, T>();
+  return {
+    get(engine: DestroyerEngineApi): T {
+      let state = states.get(engine);
+      if (state === undefined) {
+        state = create();
+        states.set(engine, state);
+      }
+      return state;
+    },
+    /** Read existing state without allocating it solely for an idle-work check. */
+    peek(engine: DestroyerEngineApi): T | undefined {
+      return states.get(engine);
+    },
+    reset(engine?: DestroyerEngineApi) {
+      if (engine) states.delete(engine);
+      else states = new WeakMap();
+    },
+  };
+}
 
 export function debris(
   engine: DestroyerEngineApi,
@@ -68,47 +99,4 @@ export function dustPuff(
       drag: 2.2,
     });
   }
-}
-
-/**
- * A smoothed aim direction taken from pointer motion.
- *
- * The jet tools need to point *somewhere*; a cone that always sprays straight
- * up ignores where you are actually painting. Motion direction is the only
- * signal a mouse gives, and smoothing it stops the cone snapping around on
- * every jittery pixel of movement.
- */
-export function makeAim(defaultX: number, defaultY: number) {
-  return {
-    x: defaultX,
-    y: defaultY,
-    lastX: -10000,
-    lastY: -10000,
-    update(pointer: Vec2, dt: number) {
-      const dx = pointer.x - this.lastX;
-      const dy = pointer.y - this.lastY;
-      const moved = Math.hypot(dx, dy);
-      if (this.lastX > -9999 && moved > 1.5) {
-        // Snap harder the faster the pointer is moving, so a decisive sweep
-        // redirects the jet immediately but a twitch barely nudges it.
-        const k = Math.min(1, dt * (6 + moved * 0.6));
-        this.x += (dx / moved - this.x) * k;
-        this.y += (dy / moved - this.y) * k;
-        const m = Math.hypot(this.x, this.y) || 1;
-        this.x /= m;
-        this.y /= m;
-      }
-      this.lastX = pointer.x;
-      this.lastY = pointer.y;
-    },
-    reset() {
-      this.lastX = this.lastY = -10000;
-    },
-    /** Full reset for `Tool.reset`: forget the direction as well. */
-    hardReset() {
-      this.x = defaultX;
-      this.y = defaultY;
-      this.reset();
-    },
-  };
 }

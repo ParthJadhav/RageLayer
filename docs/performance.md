@@ -41,6 +41,16 @@ The engine schedules no animation frames while idle. It also suspends simulation
 when the document is hidden by default. Hosts can preserve the current wreckage without doing frame
 work via `engine.pause()` / `engine.resume()`.
 
+Built-in tools declare their pending work too. A selected but settled tool does not keep rAF alive,
+even while its 3D model remains visible under a stationary pointer; pointer movement redraws that
+model on demand. Timed effects such as rockets, lightning restrikes, acid creep, and sticky-bomb
+fuses continue in small background ticks even after the user selects another tool.
+
+When an idle loop wakes, its simulation clock is rebased to the wake request. Time deliberately
+spent asleep is therefore neither integrated as one catch-up step nor reported as a late frame.
+Looped tool audio follows the same lifecycle: release ramps it down, then stops and disconnects the
+silent WebAudio source; restarting during the short fade reuses that source instead of churning it.
+
 The captured page keeps its independently budgeted device pixel ratio, while the transient effects
 layer defaults to `effectsPixelRatio: 1`. This avoids a fourfold Canvas2D→WebGL upload on DPR-2
 screens for imagery that is already soft, glowing, or in motion. Set a value up to `2` to opt into
@@ -55,7 +65,8 @@ dependency — raw CDP over WebSocket):
 bun run benchmark          # idle, 1200 particles, 32 fires, 170 bodies, mixed — native CPU
 bun run benchmark:low-end  # the same at 6× CPU throttling
 bun run memory:check       # create/work/dispose cycles with forced GC — leak gate
-bun run profile:effects    # per-tool frame profiles
+bun run profile:effects    # all 16 tools, fixed high quality
+bun run profile:effects:low-end
 ```
 
 Set `RAGELAYER_CHROME_PATH` to your Chrome binary. Output is JSON: browser task/script/layout time,
@@ -63,14 +74,55 @@ rAF percentiles, long tasks, heap deltas, entity counts, and the engine's own ph
 Add `--assert` to enforce the CI budgets for p95 engine cost, per-scenario heap growth, and layout
 work; the optional `--max-engine-p95`, `--max-heap-growth`, and `--max-layout` flags override them.
 A recorded baseline lives in
-[`benchmarks/RESULTS.md`](https://github.com/ParthJadhav/ragelayer/blob/main/benchmarks/RESULTS.md).
+[`benchmarks/RESULTS.md`](https://github.com/ParthJadhav/RageLayer/blob/main/benchmarks/RESULTS.md).
+
+### Isolate one effect
+
+The effect profiler starts its own ephemeral static server unless `--url` is supplied, so the
+command is self-contained. Fix the quality tier for before/after comparisons; `auto` is useful for
+testing adaptation, but a tier change makes a rendering optimization impossible to isolate.
+
+```sh
+node scripts/profile-effects.mjs \
+  --effects flamethrower \
+  --cpu 6 \
+  --duration 5000 \
+  --quality high \
+  --output artifacts/flamethrower-profile
+```
+
+Useful options:
+
+| Option | Purpose |
+| --- | --- |
+| `--effects a,b` | Profile only the named tool IDs |
+| `--cpu 6` | Apply Chrome's 6× CPU throttle |
+| `--dpr 2` | Fix the device pixel ratio |
+| `--quality high\|balanced\|low\|auto` | Fix or exercise the quality controller |
+| `--variant no-postfx\|no-warp` | Disable one subsystem for diagnosis |
+| `--metrics-only` | Skip the CPU profile and trace for a faster sweep |
+| `--screenshots` | Capture the visual state beside the numeric report |
+| `--url http://…` | Profile an already-served fixture or application |
+
+Each non-metrics run writes a `.cpuprofile`, Chrome trace, and JSON summary. Compare at least three
+runs with identical Chrome, viewport, DPR, quality, duration, and throttle settings; short Canvas2D
+and GPU measurements vary enough that a single run can point in the wrong direction.
+
+### Visual regression loop
+
+`bun run test:tools:visual` runs every built-in tool on the same fixed wood surface in real Chrome.
+It writes 16 PNGs plus `report.json`, `README.md`, and a browsable `index.html` under
+`artifacts/tool-gallery/`. The assertions cover both structural outcomes and visual-evidence
+preconditions—for example, the fire image must contain live flames and the acid image an active
+reaction, not only the settled damage left after the spread checks finish. Use
+`node scripts/tool-gallery.mjs --only acid-sprayer` to iterate on one tool before the full pass.
 
 ## Distribution budgets
 
 `scripts/check-dist.mjs` follows every relative JavaScript import from each public entry and measures
 the complete graph. CI fails if any entry exceeds its reviewed allowance. Current measured graphs
-are approximately 116 KiB gzip for all 19 tools and systems, 87 KiB for the engine without built-in
-models, 27 KiB for base tools, 21 KiB for heavy tools, 11 KiB for advanced tools, and under 1 KiB
+are approximately 103 KiB gzip for all 16 tools and systems, 72 KiB for the engine without built-in
+models, 20 KiB for base tools, 14 KiB for heavy tools, 10 KiB for advanced tools, and under 1 KiB
 for the standalone SDK. The lazy loader's initial entry is under 1 KiB gzip.
 
 These are distribution budgets, not the amount every application downloads. Consumer bundlers can

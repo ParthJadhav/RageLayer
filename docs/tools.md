@@ -5,6 +5,14 @@ Every screenshot below is generated from the current build by
 [demo page](./demo/) with real pointer input in headless Chrome.
 Regenerate them any time with `bun run screenshots`.
 
+RageLayer ships 16 built-in tools in three entry-point groups:
+
+| Group | Count | Tools |
+|---|---:|---|
+| Base | 7 | Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, Broom |
+| Heavy | 5 | Demolition, Rocket Launcher, Lightning, Black Hole, Bugs |
+| Advanced | 4 | Gravity Gun, Laser Cutter, Acid Sprayer, Sticky Bombs |
+
 ## The demo page, pristine
 
 The engine is open (toolbar at the bottom) but nothing has been destroyed yet — an undamaged
@@ -21,8 +29,9 @@ into rigid-body debris that tumbles and piles up.
 
 ## Gun
 
-Held trigger goes full-auto: aimed spray, transparent holes punched through the real content,
-casings and barrel smoke.
+A click fires one aimed round; hold briefly for full-auto spray, transparent holes through the real
+content, ejected casings, and barrel smoke. The procedural pistol has a detailed frame, open trigger
+guard, working slide, and recoil timed to the firing cadence.
 
 ![Full-auto bullet spray across the hero](./screenshots/gun.png)
 
@@ -42,15 +51,16 @@ slice of the page with it.
 
 ## Paintball
 
-Splatters that drip and dry, clipped to surviving page pixels.
+Click for one splat or hold for automatic paintball fire. Every hit drips and dries, clipped to
+surviving page pixels.
 
 ![Paint splats across the page](./screenshots/paintball.png)
 
 ## Water hose
 
-Hold to spray. Water sheets down the page under gravity, puts out fires it reaches, and rinses
-paint, soot and rime off surviving pixels — washing cleans stains but does not repair structure,
-so a hole stays a hole.
+The compact pistol-grip pressure nozzle sprays a tight ballistic stream that breaks into droplets,
+puts out fires it reaches, and rinses paint and soot off surviving pixels. Washing cleans stains but
+does not repair structure, so a hole stays a hole.
 
 ![Water sheeting down the page and dousing a fire](./screenshots/water.png)
 
@@ -99,13 +109,6 @@ with any impact tool, shot, or swept up with the broom.
 
 ![Bugs crawling across the surviving page](./screenshots/bugs.png)
 
-## Freeze ray + hammer: frost shatter
-
-A frozen patch doesn't tear like paper — it comes apart like glass: more, lighter,
-blue-tinted shards with a crystalline glint twinkling over the break for an instant.
-
-![Frozen page shattering under the hammer](./screenshots/frost-shatter.png)
-
 ## Gravity gun
 
 Hold over wreckage to pull rigid chunks into orbit, then release to launch the nearest piece along
@@ -113,33 +116,26 @@ the tool's aim. Using it around a sticky-bomb blast triggers the orbital-bomb co
 
 ## Laser cutter
 
-Drag for a precise heated kerf. Paper yields quickly; metal and stone require dwell. Laser against
-frozen material causes a thermal-shock fracture.
+Drag for a straight, constant-width heated kerf. Like the chainsaw, the laser removes structure
+along its entire path and drops any isolated piece as rigid debris; its edge stays clean instead of
+chattering like a saw cut.
 
 ## Acid sprayer
 
-Hold to paint corrosive droplets. Each marked material has its own resistance; acid meeting fire
-causes a volatile-corrosion blast.
-
-## Wrecking ball
-
-Swing the pointer. Impact force is derived from motion speed and material density, so deliberate
-arcs hit harder than small movements.
+Hold to spray along the direction of the drawn nozzle. The visible droplets, stains, and structural
+corrosion share the same impact points, then each deposit creeps a short, bounded distance nearby.
+Acid meeting fire causes a volatile-corrosion blast.
 
 ## Sticky bombs
 
 Click to attach up to eight timed charges. Charges remain visible on the surface, spark near the
 end of their fuse, then fracture and ignite the attachment point.
 
-## Glitch gun
+## Physical behavior and combos
 
-Corrupts the page with bounded RGB slices, pulses, and occasional structural faults. Glitch plus
-lightning triggers reality overload.
-
-## Materials and combos
-
-Add `data-ragelayer-material="glass|metal|wood|stone|rubber|ice|paper"` to page regions to change their
-behavior. See the [advanced systems guide](./advanced.md) for all seven combos and custom materials.
+All captured content uses the same built-in wood-like physical response, so tool strength and
+timing are predictable across a page. Nearby effects can still combine; see the
+[advanced systems guide](./advanced.md) for the four built-in combos.
 
 ## A mixed session
 

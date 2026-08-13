@@ -18,7 +18,7 @@
  */
 
 import { rand, TAU } from "./math";
-import { blit, sprites } from "./sprites";
+import { blit, blitRect, sprites } from "./sprites";
 
 /**
  * Stroke the current path twice: a dark shadow offset away from the light, then
@@ -73,10 +73,14 @@ export function drawCrack(
   ctx.globalCompositeOperation = "source-atop";
   ctx.translate(x, y);
 
-  // Bruised shading under the cracks, plus a pale dust halo so the impact reads
-  // against a dark page as well as a light one.
+  // Bruised shading under the cracks, plus a low dust scuff. The dust used to
+  // be a circular radial sprite; repeated heavy impacts made those circles
+  // read as bubbles rather than material thrown along the contact plane.
   blit(ctx, sprites().dent, 0, 0, 30 * scale, 0.2);
-  blit(ctx, sprites().dust, 0, 0, 54 * scale, 0.09);
+  ctx.save();
+  ctx.rotate(bias ?? rand(-0.65, 0.65));
+  blitRect(ctx, sprites().dust, 0, 0, 46 * scale, 15 * scale, 0.075);
+  ctx.restore();
   ctx.globalAlpha = 1;
 
   // Few and uneven: plaster gives way along a handful of dominant faults, not
@@ -131,6 +135,47 @@ export function drawCrack(
     ctx.arc(Math.cos(a) * d, Math.sin(a) * d, rand(0.7, 2.4) * scale, 0, TAU);
     ctx.fill();
   }
+  ctx.restore();
+}
+
+/**
+ * Radial fracture for brittle sheets such as glass and ice.
+ *
+ * Unlike the wandering plaster faults above, a brittle impact carries straight
+ * rays away from the contact point and joins them with uneven circumferential
+ * cracks. There is deliberately no opaque dent or powder halo: neither belongs
+ * on a transparent pane and both obscure the fracture geometry.
+ */
+export function drawBrittleFracture(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  radius = 42,
+) {
+  const reach = Math.max(12, radius);
+  const radial = new Path2D();
+  const ring = new Path2D();
+
+  ctx.save();
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.translate(x, y);
+  ctx.rotate(Math.random() * TAU);
+
+  for (let index = 0; index < 10; index++) {
+    const angle = (index / 10) * TAU + rand(-0.12, 0.12);
+    const length = reach * rand(0.72, 1.08);
+    radial.moveTo(Math.cos(angle) * 3, Math.sin(angle) * 3);
+    radial.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
+    const ringRadius = reach * rand(0.44, 0.58);
+    const px = Math.cos(angle) * ringRadius;
+    const py = Math.sin(angle) * ringRadius;
+    if (index === 0) ring.moveTo(px, py);
+    else ring.lineTo(px, py);
+  }
+  ring.closePath();
+
+  fractureStroke(ctx, radial, 1.3, 0.72, 0.38);
+  fractureStroke(ctx, ring, 0.75, 0.48, 0.3);
   ctx.restore();
 }
 
@@ -198,58 +243,6 @@ export function drawScorch(
 }
 
 /**
- * Frost creeping across the page.
- *
- * Rime is drawn in two registers because that is how it actually looks: a pale
- * milky bloom that dulls whatever is underneath, and, on top of it, a handful
- * of hard bright needles radiating from the coldest point. The bloom alone
- * reads as fog; the needles alone read as scratches. Together they read as ice.
- */
-export function drawFrost(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius: number,
-  amount: number,
-) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  blit(ctx, sprites().frost, x, y, radius, Math.min(0.5, amount * 0.55));
-  ctx.globalAlpha = Math.min(0.85, amount * 0.9);
-  ctx.strokeStyle = "rgba(228, 246, 255, 0.85)";
-  ctx.lineCap = "round";
-  const spikes = 4 + Math.floor(Math.random() * 4);
-  for (let i = 0; i < spikes; i++) {
-    const a = Math.random() * TAU;
-    const len = radius * rand(0.35, 0.95);
-    ctx.lineWidth = rand(0.6, 1.5);
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    let px = x;
-    let py = y;
-    let angle = a;
-    const segs = 3;
-    for (let s = 0; s < segs; s++) {
-      angle += rand(-0.35, 0.35);
-      px += Math.cos(angle) * (len / segs);
-      py += Math.sin(angle) * (len / segs);
-      ctx.lineTo(px, py);
-      // Barbs: a frost needle branches, which is what separates it from a crack.
-      if (Math.random() < 0.6) {
-        const ba = angle + (Math.random() < 0.5 ? 1 : -1) * rand(0.7, 1.2);
-        const bl = (len / segs) * rand(0.3, 0.7);
-        ctx.moveTo(px, py);
-        ctx.lineTo(px + Math.cos(ba) * bl, py + Math.sin(ba) * bl);
-        ctx.moveTo(px, py);
-      }
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
-  ctx.globalAlpha = 1;
-}
-
-/**
  * The burnt channel a lightning bolt leaves. Bright white core cooling through
  * violet to a charred edge — the page has been *ionized*, not just hit.
  */
@@ -271,6 +264,59 @@ export function drawBurnChannel(ctx: CanvasRenderingContext2D, points: number[])
   ctx.strokeStyle = "rgba(238, 232, 255, 0.75)";
   ctx.lineWidth = 2;
   ctx.stroke(path);
+  ctx.restore();
+}
+
+/**
+ * A shallow elastic or metallic depression. Unlike `drawCrack`, this keeps the
+ * surface continuous: rubber compresses and sheet metal buckles before either
+ * material tears.
+ */
+export function drawDent(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.translate(x, y);
+  ctx.scale(1, 0.64);
+  const shade = ctx.createRadialGradient(0, 0, radius * 0.08, 0, 0, radius);
+  shade.addColorStop(0, "rgba(4, 7, 10, 0.34)");
+  shade.addColorStop(0.58, "rgba(12, 15, 18, 0.16)");
+  shade.addColorStop(0.78, "rgba(255, 255, 255, 0.1)");
+  shade.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = shade;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(5, 7, 9, 0.3)";
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.72, Math.PI * 0.12, Math.PI * 0.88);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** A continuous abrasion where a cutting edge skids across a surface it cannot sever. */
+export function drawSurfaceScore(
+  ctx: CanvasRenderingContext2D,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+) {
+  ctx.save();
+  ctx.globalCompositeOperation = "source-atop";
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(18, 20, 22, 0.58)";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1 + 1.25);
+  ctx.lineTo(x2, y2 + 1.25);
+  ctx.stroke();
   ctx.restore();
 }
 

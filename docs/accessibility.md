@@ -29,7 +29,7 @@ The toolbar has always been keyboard-operable, but the canvas is a pointer surfa
 recently a keyboard-only visitor could select the hammer and then do nothing with it. Aiming mode
 closes that gap.
 
-Press `A`, or the 🎯 button, with a tool in hand:
+Press `A`, or the crosshair button, with a tool in hand:
 
 - a high-contrast reticle appears in the middle of the viewport;
 - arrow keys move it, and the page scrolls to keep it visible;

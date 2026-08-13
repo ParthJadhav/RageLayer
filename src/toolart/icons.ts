@@ -6,6 +6,7 @@
  */
 
 import { registerToolIconBounds, toolIconBounds } from "../icon-bounds";
+import { REST_AIM_X, REST_AIM_Y } from "../math";
 import type { ToolArtFn, ToolArtState } from "../types";
 import {
   broomArt,
@@ -16,9 +17,13 @@ import {
   paintballArt,
   waterHoseArt,
 } from "./base";
-import { blackHoleArt, bugsArt, demolitionArt, freezeArt, lightningArt, rocketArt } from "./heavy";
+import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./heavy";
 
-/** The rest pose every icon is baked from: mid-idle, nothing pressed. */
+/**
+ * The rest pose every icon is baked from: mid-idle, nothing pressed. Since the
+ * drawn cursor holds this same aim at all times, the icon is the tool exactly
+ * as it appears on the page.
+ */
 const ICON_STATE: ToolArtState = {
   time: 0.35,
   held: false,
@@ -26,8 +31,8 @@ const ICON_STATE: ToolArtState = {
   sinceUp: Infinity,
   vx: 0,
   vy: 0,
-  aimX: -0.55,
-  aimY: -0.835,
+  aimX: REST_AIM_X,
+  aimY: REST_AIM_Y,
 };
 
 /**
@@ -44,10 +49,9 @@ for (const [art, bounds] of [
   [chainsawArt, [59, 58, 157, 126]],
   [paintballArt, [59, 51, 119, 122]],
   [broomArt, [43, 0, 150, 80]],
-  [demolitionArt, [42, 0, 89, 74]],
+  [demolitionArt, [61, 24, 160, 91]],
   [rocketArt, [52, 51, 155, 120]],
   [lightningArt, [63, 63, 139, 147]],
-  [freezeArt, [56, 56, 125, 122]],
   [blackHoleArt, [44, 44, 127, 123]],
   [bugsArt, [60, 53, 114, 112]],
 ] as const) {

@@ -1,14 +1,13 @@
 # API reference
 
-Eleven entry points:
+Twelve entry points:
 
 - `ragelayer` — the framework-agnostic engine, tools, and every building block
 - `ragelayer/engine` — engine + public contracts, without built-in tool models
-- `ragelayer/tools` — seven everyday tools
-- `ragelayer/tools/heavy` — six cinematic/physics-heavy tools
-- `ragelayer/tools/advanced` — six interaction-focused tools
+- `ragelayer/tools` — seven everyday tools: Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, Broom
+- `ragelayer/tools/heavy` — five heavy tools: Demolition, Rocket Launcher, Lightning, Black Hole, Bugs
+- `ragelayer/tools/advanced` — four advanced tools: Gravity Gun, Laser Cutter, Acid Sprayer, Sticky Bombs
 - `ragelayer/lazy` — asynchronous base/heavy/advanced/complete tool loaders
-- `ragelayer/loadouts` — named and custom loadout helpers
 - `ragelayer/sdk` — typed custom-tool factories and utilities
 - `ragelayer/react` — toolbar component and headless hook
 - `ragelayer/vue` — lifecycle-safe Vue composable
@@ -58,8 +57,8 @@ Creates the overlay and starts capturing the page. Must run in a browser.
 | `pauseWhenHidden` | `boolean` | `true` | Suspend simulation, animation, and looped audio in background tabs |
 | `quality` | `"auto" \| "high" \| "balanced" \| "low"` | `"auto"` | Adaptive quality tier (see [performance](./performance.md)) |
 | `performance` | `boolean \| PerformanceOptions` | `true` | Telemetry + adaptive quality |
-| `maxParticles` | `number` | `1400` | Particle budget |
-| `maxFlames` | `number` | `32` | Simultaneous fire budget |
+| `maxParticles` | `number` | `1400` | Particle budget (effective minimum 64) |
+| `maxFlames` | `number` | `32` | Simultaneous fire budget (effective minimum 4) |
 | `physics` | `boolean` | `true` | Rigid-body debris |
 | `gravity` | `number` | `1750` | px/s² for debris and particles |
 | `postFX` | `boolean` | `true` | WebGL bloom / heat haze / chromatic aberration |
@@ -72,14 +71,13 @@ Creates the overlay and starts capturing the page. Must run in a browser.
 | `liveRefreshMs` | `number` | `1000` | Live-mode re-capture cadence (0 = on demand) |
 | `contentRoot` | `HTMLElement` | `document.body` | What gets captured |
 | `captureFilter` | `(node: Node) => boolean` | `defaultCaptureFilter` | Which nodes make it into the snapshot. Called for every cloned node (elements *and* text); return `true` for non-elements unless you mean to drop text |
-| `materials` | `Iterable<MaterialDefinition>` | built-ins | Register custom material definitions before region scanning |
 | `combos` | `boolean \| ComboTrackerOptions` | `true` | Cross-tool spatial interaction detection |
 | `history` | `boolean \| HistoryOptions` | `false` | Bounded persistent-state undo/redo |
 
 ### Engine lifecycle & state
 
 ```ts
-engine.registerTool(tool);      // add a Tool (see below)
+engine.registerTool(tool);      // add a Tool; the same id safely replaces it
 engine.registerTools(toolset);  // bulk registration for split/lazy toolsets
 engine.unregisterTool(id);      // safely release + remove one tool
 engine.setTool("hammer");       // select by id; null = click-through overlay
@@ -89,8 +87,8 @@ engine.setSound(true);
 engine.pause();                 // preserve state without spending frame time
 engine.paused;                  // includes automatic hidden-tab suspension
 engine.resume();
-engine.clear();                 // repair everything (page + damage + entities)
-engine.undo() / engine.redo();  // when history is enabled
+engine.clear();                 // cancel any held gesture, then repair everything
+engine.undo() / engine.redo();  // cancel any held gesture; history must be enabled
 engine.checkpoint("label");     // explicit pre-script checkpoint
 engine.historyState;            // bounded stack state
 engine.collapse();              // bring the visible page down element by element
@@ -124,9 +122,11 @@ const stamp: Tool = {
     engine.damageCtx.fillText("🐾", e.x, e.y);
     engine.shake(3);
   },
-  // Optional: onMove, onUp, tick(engine, dt), cursor, art (see below),
-  // reset() — clear any module-level state (in-flight projectiles, strike
-  // sites). Called on registerTool, engine.clear() and engine.dispose().
+  // Optional: onMove, onUp, tick(engine, dt, held, pointer), cursor, art (see below),
+  // reset(engine) — clear retained state for that layer. Called on
+  // registration, removal, clear, history restoration and disposal.
+  // Timed work that must outlive selection can pair hasPendingWork(engine)
+  // with backgroundTick(engine, dt); settled tools then let rAF sleep.
 };
 ```
 
@@ -142,7 +142,6 @@ Handlers receive the engine as `DestroyerEngineApi` — the full toolkit:
 | `width` / `height` | Overlay size in CSS px |
 | `onPage(x, y)` / `pageOpacityAt(x, y)` | Does the page still exist there? Consult before doing surface work — the void swallows everything |
 | `markSurface(x, y, r)` | Tell the surface shader a region changed outside the cursor |
-| `materialAt(x, y)` / `materials` | Resolve or register physical material behavior |
 | `signalInteraction(kind, x, y)` / `onCombo(cb)` | Participate in cross-tool combos |
 
 ### Effects
@@ -152,13 +151,14 @@ Handlers receive the engine as `DestroyerEngineApi` — the full toolkit:
 
 ### Physical destruction
 
+All physical destruction uses the engine's fixed wood-like surface response. The public operations
+behave consistently across page markup and engine configurations.
+
 ```ts
 engine.fracture(x, y, 60, { power: 240 });  // shatter a disc into rigid debris
 engine.explode(x, y, 96, { power: 700 });   // …plus blast, fireball, fires
 engine.demolish(x, y);                      // knock the real element under the cursor loose
 engine.collapse();                          // bring the whole visible page down
-engine.freeze(x, y, r, strength);           // frost field (resists fire, shatters icy)
-engine.frostAt(x, y);
 engine.setSingularity(s) / engine.singularity;
 engine.pullDebris(x, y, r, strength, dt);   // safe gravity-tool primitive
 engine.launchDebris(x, y, r, dx, dy, speed);
@@ -171,14 +171,15 @@ tools typed against `DestroyerEngineApi` should use the bounded debris primitive
 
 `eraseDamage(x, y, r)` (the broom's verb) · `washSurface(x, y, r, strength)` (the hose's verb —
 cleans stains, never rebuilds structure) · `flushBugs(x, y, r)` · `clear()` ·
-`pageElements` · `toolAim` (smoothed pointing direction — keeps directional effects lined up
-with the drawn tool art).
+`pageElements` · `toolAim` (the fixed direction the drawn art points — keeps directional
+effects lined up with the tool instead of swinging around under the cursor).
 
 ### Drawn tool art
 
 Give a tool `art: (ctx, state) => void` and it renders in place of the CSS cursor — the canvas
 origin is the pointer hotspot, `state` carries the clock, held flag, time since press/release,
-and smoothed velocity/aim (`ToolArtState`). `toolIconDataUrl(art, size)` bakes the same art
+smoothed velocity, and the fixed aim direction (`ToolArtState`). The art holds one orientation —
+it flexes and recoils, but never rotates to follow the pointer. `toolIconDataUrl(art, size)` bakes the same art
 into a toolbar icon. Tools without `art` fall back to their `cursor` / `emojiCursor(emoji)`.
 Built-ins use exact measured silhouette bounds; custom models use an alpha-scan fallback. See the
 [model guide](./models.md).
@@ -191,7 +192,7 @@ All exported for reuse without the engine:
   (SAT, contact clipping, friction, sleeping) with nothing destroyer-specific in it.
 - **Fracture** — `voronoiCells`, `gridCells`, `convexHull`, `bakeChunk`, `makeChunk`,
   `shardBudget`: impact-biased Voronoi shattering and chunk-sprite baking.
-- **Decals** — `drawCrack`, `drawBulletHole`, `drawScorch`, `drawFrost`, `drawGash`,
+- **Decals** — `drawCrack`, `drawBulletHole`, `drawScorch`, `drawGash`,
   `drawSplat`, `drawPaintStreak`, `drawBurnChannel`, `PAINT_COLORS`, `randomPaint`.
 - **Capture** — `defaultCaptureFilter`, `measureCapture`, `resolvePageBackdrop`,
   `RAGELAYER_IGNORE_ATTR`, `DEV_TOOL_ELEMENT_PREFIXES`, `supportsLiveCapture`, `supportsPaintEvents`.

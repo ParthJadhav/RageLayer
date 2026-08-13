@@ -7,7 +7,8 @@ import type { ContentCheckpoint, ContentLayer } from "./content";
 import { atopAsOver } from "./ctx-proxy";
 import { drawPaintStreak } from "./decals";
 import { elementAt, elementsInBand, type PageElement } from "./elements";
-import { type FieldSnapshot, ScalarField } from "./fields";
+import { type ResolvedEngineOptions, resolveEngineOptions } from "./engine-options";
+import type { FieldSnapshot } from "./fields";
 import { FlameField } from "./flames";
 import {
   type ChunkSource,
@@ -25,8 +26,7 @@ import {
   FxPainter,
 } from "./fx-render";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
-import { type MaterialDefinition, MaterialSystem } from "./materials";
-import { TAU } from "./math";
+import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
 import { Overlay } from "./overlay";
 import { ParticleSystem, type ParticleWorld } from "./particles";
 import {
@@ -59,31 +59,14 @@ import type {
   Tool,
   Vec2,
 } from "./types";
+import { WOOD } from "./wood";
 
 /** Engines currently alive in this document — refcount for the sprite cache. */
 let liveEngines = 0;
 
 const MAX_CAPTURE_HEIGHT = 12000;
-/** Soft transient effects default to CSS-pixel resolution; hosts can explicitly supersample. */
-const DEFAULT_FX_DPR = 1;
 /** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
 const HEAT_SCALE = 8;
-/**
- * Frost is tracked on a coarse document-wide grid rather than per pixel: the
- * only questions asked of it are "does fire take here" and "does this shatter
- * like glass", and both are regional.
- */
-const FROST_CELL = 32;
-/**
- * Wood-fuel grid resolution, CSS px per cell.
- *
- * Fire treats the page as material with finite fuel rather than an infinite
- * wick: each cell holds a store that burning consumes, flames starve where it
- * runs out, and spread only takes hold where fuel remains. Coarse cells are
- * enough — the questions asked are "can fire live here" and "how hungry is
- * it", both regional, same reasoning as the frost grid.
- */
-const FUEL_CELL = 26;
 /**
  * Radius (CSS px) around the cursor re-shaded every frame a tool is held down.
  *
@@ -99,7 +82,6 @@ const TOOL_DECAL_REACH = 96;
 interface EngineHistoryEntry extends DestructionHistoryEntry {
   content: ContentCheckpoint | null;
   damage: HTMLCanvasElement | null;
-  frost: FieldSnapshot | null;
   fuel: FieldSnapshot | null;
   destruction: number;
   takenElements: boolean[];
@@ -126,7 +108,6 @@ interface EngineHistoryEntry extends DestructionHistoryEntry {
  *   transform maps them into view.
  */
 export class DestroyerEngine implements DestroyerEngineApi {
-  readonly materials = new MaterialSystem();
   private comboTracker: ComboTracker | null;
   private comboListeners = new Set<(event: ComboEvent) => void>();
   private errorListeners = new Set<(error: EngineError) => void>();
@@ -200,10 +181,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private artUpAt = -Infinity;
   private artVX = 0;
   private artVY = 0;
-  private artAimX = -0.55;
-  private artAimY = -0.835;
+  private readonly artAimX = REST_AIM_X;
+  private readonly artAimY = REST_AIM_Y;
   private artPrev: Vec2 = { x: -1000, y: -1000 };
   private raf = 0;
+  /** True after the loop deliberately stopped, so its next wake starts from a fresh clock. */
+  private frameClockSleeping = true;
   private lastTime = 0;
   private lastRenderedAt = 0;
   private monitor: PerformanceMonitor;
@@ -258,27 +241,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private heatCtx: CanvasRenderingContext2D | null = null;
   /** Whether the heat field has anything in it (skips an upload when cold). */
   private heatLevel = 0;
-  /** Cell-centre page test, hoisted so freezing allocates no closure per call. */
-  private readonly onPageCell = (x: number, y: number) => this.onPage(x, y);
-  /** Coarse frost grid over the document; lazily allocated on first freeze. */
-  private readonly frost = new ScalarField({
-    cell: FROST_CELL,
-    max: 1,
-    initial: 0,
-    outside: "zero",
-  });
   private _singularity: Singularity | null = null;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
   /** Countdown to the next page element the singularity rips loose. */
   private singularityFeed = 0;
-  /** Wood fuel per grid cell, 0..255. Built lazily at the first flame. */
-  private readonly fuel = new ScalarField({
-    cell: FUEL_CELL,
-    max: 255,
-    initial: 255,
-    outside: "edge",
-  });
   /** Crawling bugs eating the page. */
   private readonly bugs = new BugSwarm();
   /** Fractional accumulator for infalling-matter strands. */
@@ -286,29 +253,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   /** Elements still queued to fall during a `collapse()`. */
   private collapseQueue: PageElement[] = [];
   private collapseTimer = 0;
-  private opts: Required<
-    Pick<
-      DestroyerOptions,
-      | "zIndex"
-      | "maxFlames"
-      | "maxParticles"
-      | "captureContent"
-      | "captureMode"
-      | "liveRefreshMs"
-      | "physics"
-      | "postFX"
-      | "effectsPixelRatio"
-      | "harvestElements"
-      | "textMask"
-      | "toolStyle"
-      | "pauseWhenHidden"
-    >
-  > & { toolScale: number };
+  private opts: ResolvedEngineOptions;
 
   constructor(options: DestroyerOptions = {}) {
-    if (options.materials) {
-      for (const material of options.materials) this.materials.register(material);
-    }
     this.comboTracker =
       options.combos === false
         ? null
@@ -329,29 +276,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.qualityTier,
       this.qualityMode === "auto",
     );
-    this.opts = {
-      zIndex: options.zIndex ?? 2147483000,
-      // 32, down from 48: fire cost scales with the flame count (each flame is
-      // ~9 blits a frame plus its own smoke budget), and a 32-flame blaze
-      // already fills a viewport. The last 16 bought lag, not spectacle.
-      maxFlames: options.maxFlames ?? 32,
-      // Raised alongside the effects overhaul: jets, dust and rolling smoke all
-      // want population, and the render path measures at a fraction of budget.
-      maxParticles: options.maxParticles ?? 1400,
-      captureContent: options.captureContent ?? true,
-      captureMode: options.captureMode ?? "auto",
-      liveRefreshMs: options.liveRefreshMs ?? 1000,
-      physics: options.physics ?? true,
-      postFX: options.postFX ?? true,
-      effectsPixelRatio: Math.min(2, Math.max(0.5, options.effectsPixelRatio ?? DEFAULT_FX_DPR)),
-      harvestElements: options.harvestElements ?? true,
-      textMask: options.textMask ?? true,
-      toolStyle: options.toolStyle ?? "3d",
-      toolScale: Math.min(2, Math.max(0.5, options.toolScale ?? 1)),
-      pauseWhenHidden: options.pauseWhenHidden ?? true,
-    };
+    this.opts = resolveEngineOptions(options);
     this.physics = new PhysicsWorld({
-      gravity: options.gravity,
+      gravity: this.opts.gravity,
       iterations: this.qualityProfile.physicsIterations,
     });
     this.applyEntityLimits();
@@ -363,7 +290,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (options.onError) this.errorListeners.add(options.onError);
     this.sound.enabled = options.soundEnabled ?? false;
     const contentRoot = options.contentRoot ?? document.body;
-    this.materials.scan(contentRoot);
     this.pausedByVisibility = this.opts.pauseWhenHidden && document.visibilityState === "hidden";
 
     this.overlay = new Overlay({
@@ -377,7 +303,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // putting them on the engine would widen its public API.
     const captureHost: CaptureHost = {
       overlay: this.overlay,
-      materials: this.materials,
       docSize: () => this.docSize(),
       refreshBand: () => this.refreshBand(),
       onElements: (elements) => {
@@ -506,6 +431,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   undo(): boolean {
     if (!this.history?.state.canUndo) return false;
+    // History is an administrative action, not a pointer release. In
+    // particular, undoing while a black hole is held must not detonate it, and
+    // the held tool must not resume against the restored page next frame.
+    this.cancelPointer();
     const target = this.history.undo(this.createHistoryEntry("redo"));
     if (!target) return false;
     this.restoreHistoryEntry(target);
@@ -516,6 +445,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   redo(): boolean {
     if (!this.history?.state.canRedo) return false;
+    this.cancelPointer();
     const target = this.history.redo(this.createHistoryEntry("undo"));
     if (!target) return false;
     this.restoreHistoryEntry(target);
@@ -549,10 +479,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
    */
   onPage(x: number, y: number, threshold = 0.3): boolean {
     return this.pageOpacityAt(x, y) >= threshold;
-  }
-
-  materialAt(x: number, y: number): MaterialDefinition {
-    return this.materials.at(x, y);
   }
 
   signalInteraction(kind: InteractionKind, x: number, y: number): ComboEvent[] {
@@ -661,10 +587,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   registerTool(tool: Tool) {
-    // Tools are module-level singletons: shed whatever a previous engine (or a
-    // previous mount of this one) left in them before this engine ticks them.
-    tool.reset?.();
+    const previous = this.tools.get(tool.id);
+    const replacingActive = previous === this.activeTool;
+
+    // Replacing an id is an atomic hot swap. Leaving the old object selected
+    // while the registry points at the new one makes `tool`, `getTools()` and
+    // `unregisterTool()` disagree, and a held old tool can keep ticking after
+    // its replacement has apparently landed.
+    if (replacingActive && this.pointerDown) this.endPointer();
+    if (previous && previous !== tool) previous.reset?.(this);
+
+    // Give shared tools a chance to initialize this engine's isolated state.
+    tool.reset?.(this);
     this.tools.set(tool.id, tool);
+
+    if (replacingActive && previous !== tool) {
+      this.activeTool = tool;
+      this.syncToolPresentation();
+      this.emit("toolchange");
+      this.requestFrame();
+    }
   }
 
   /** Register a toolset in one operation; useful with the split and lazy entry points. */
@@ -678,7 +620,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const tool = this.tools.get(id);
     if (!tool) return false;
     if (this.activeTool === tool) this.setTool(null);
-    tool.reset?.();
+    tool.reset?.(this);
     return this.tools.delete(id);
   }
 
@@ -695,6 +637,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (next === this.activeTool) return;
     if (this.pointerDown) this.endPointer();
     this.activeTool = next;
+    this.syncToolPresentation();
+    this.emit("toolchange");
+    this.requestFrame();
+  }
+
+  /** Keep hit testing and cursor presentation derived from the selected tool. */
+  private syncToolPresentation() {
+    const next = this.activeTool;
     this.overlay.container.style.pointerEvents = next ? "auto" : "none";
     // A tool with drawn art becomes its own cursor; the CSS one would be a
     // second, emoji-sized tool floating over the real one. In `"emoji"` tool
@@ -710,8 +660,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // a safe time to warm the quality-preserving post-FX path without charging
     // the opening or capture path for it.
     if (next && this.opts.postFX && this.qualityProfile.postFX) this.setPostFXEnabled(true);
-    this.emit("toolchange");
-    this.requestFrame();
   }
 
   private createHistoryEntry(label?: string): EngineHistoryEntry {
@@ -723,7 +671,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       damage.height = this.overlay.damageCanvas.height;
       damage.getContext("2d")?.drawImage(this.overlay.damageCanvas, 0, 0);
     }
-    const frost = this.frost.snapshot();
     const fuel = this.fire.snapshotFuel();
     const pixelCost =
       (content?.pixelCost ?? 0) +
@@ -735,7 +682,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       pixelCost,
       content,
       damage,
-      frost,
       fuel,
       destruction: this.destruction,
       takenElements: this.pageElements.map((element) => element.taken),
@@ -759,9 +705,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     );
   }
 
-  /** The frost and fuel grids' share of a checkpoint, in notional RGBA pixels. */
+  /** The fuel grid's share of a checkpoint, in notional RGBA pixels. */
   private fieldPixelCost(): number {
-    return Math.ceil((this.frost.byteLength + this.fire.fuelBytes) / 4);
+    return Math.ceil(this.fire.fuelBytes / 4);
   }
 
   private restoreHistoryEntry(entry: EngineHistoryEntry) {
@@ -784,7 +730,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       } else if (this.overlay.damageReady) {
         this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
       }
-      this.frost.restore(entry.frost);
       this.fire.restoreFuel(entry.fuel);
       this.destruction = entry.destruction;
       for (let i = 0; i < this.pageElements.length; i++) {
@@ -797,7 +742,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this._singularity = null;
       this.collapseQueue.length = 0;
       this.comboTracker?.clear();
-      for (const tool of this.tools.values()) tool.reset?.();
+      for (const tool of this.tools.values()) tool.reset?.(this);
       this.requestFrame();
     } finally {
       this.restoringHistory = false;
@@ -805,6 +750,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   clear() {
+    // Cancel before the checkpoint so undo restores exactly the pre-clear
+    // page, without synthesizing an onUp action such as a singularity collapse.
+    this.cancelPointer();
     if (!this.restoringHistory) this.checkpoint("clear");
     if (this.overlay.damageReady)
       this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
@@ -813,7 +761,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.particles.clear();
     this.destruction = 0;
     this.physics.clear();
-    this.frost.release();
     // Repaired page, fresh wood: the fuel comes back with the pixels.
     this.fire.refuel();
     this.bugs.clear();
@@ -822,7 +769,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.comboTracker?.clear();
     // Rockets in flight, queued restrikes, hammer sites: a repaired page owes
     // nothing to the destruction that was still in progress.
-    for (const tool of this.tools.values()) tool.reset?.();
+    for (const tool of this.tools.values()) tool.reset?.(this);
     // Elements go back on the board — the page they described is whole again.
     for (const el of this.pageElements) el.taken = false;
     this.emit("clear");
@@ -985,15 +932,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.comboTracker = null;
     this.comboListeners.clear();
     this.errorListeners.clear();
-    this.materials.clearRegions();
-    // Module-level tool state (in-flight rockets, restrikes, strike sites)
-    // must not survive into whatever engine registers these tools next.
-    for (const tool of this.tools.values()) tool.reset?.();
+    // Pending tool state must not survive disposal.
+    for (const tool of this.tools.values()) tool.reset?.(this);
     this.tools.clear();
     this.activeTool = null;
     this.pointerDown = false;
     this.activePointerId = null;
-    this.frost.release();
     this.fire.dispose();
     this._singularity = null;
 
@@ -1047,10 +991,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   /**
-   * Rinse stains off the page: paint, soot, smears and rime wash away, but
-   * structural damage stays. Holes are beyond washing — `eraseDamage` (the
-   * broom) repairs; water only cleans. Also rinses the frost field, so a
-   * washed patch is genuinely no longer frozen.
+   * Rinse stains off the page: paint, soot and smears wash away, but structural
+   * damage stays. Holes are beyond washing — `eraseDamage` (the broom)
+   * repairs; water only cleans.
    */
   washSurface(x: number, y: number, radius: number, strength = 1) {
     this.contentLayer?.wash(x, y, radius, strength);
@@ -1061,7 +1004,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "source-over";
     }
-    this.meltFrost(x, y, radius, strength);
     this.markSurface(x, y, radius);
     this.signalInteraction("water", x, y);
   }
@@ -1144,11 +1086,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   /**
-   * The smoothed direction the drawn tool is aiming (unit vector). Tools that
-   * fire something directional — a tracer, a rocket, a jet — read this so
-   * their effects line up with the way the tool is visibly pointing, instead
-   * of picking a direction at random. Stepped every frame regardless of tool
-   * style; steady while the pointer hovers.
+   * The direction the drawn tool is aiming (unit vector). Tools that fire
+   * something directional — a tracer, a rocket, a jet — read this so their
+   * effects line up with the way the tool is visibly pointing, instead of
+   * picking a direction at random.
+   *
+   * Constant: the art holds one pose rather than swinging to follow the
+   * pointer, so this never turns either (see `REST_AIM_X`).
    */
   get toolAim(): Vec2 {
     return { x: this.artAimX, y: this.artAimY };
@@ -1179,7 +1123,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
    * a tool needs no special handling to be reachable this way.
    *
    * `holdMs` drives tools that do their work in `tick` while held — a
-   * flamethrower or a freeze ray needs to be on for a moment to do anything.
+   * flamethrower or chainsaw needs to be on for a moment to do anything.
    * The hold is simulated against the engine's own frame loop rather than
    * being wall-clock, so it behaves the same on a slow machine.
    *
@@ -1236,13 +1180,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (this.bugs.count > 0) this.squashBugs(x, y, radius);
     const src = this.chunkSource;
     if (!src) return 0;
-    const material = this.materialAt(x, y);
-    const icy = options.icy ?? (material.id === "ice" || this.frostAt(x, y) > 0.3);
-    // Ice shatters finer and lighter than paper does.
-    const count =
-      options.count ?? shardBudget(radius, icy ? 2.2 : Math.max(0.55, 1.4 / material.toughness));
+    const count = options.count ?? shardBudget(radius, Math.max(0.55, 1.4 / WOOD.toughness));
     const cells = voronoiCells(x, y, radius, count);
-    const power = (options.power ?? 240) / Math.sqrt(material.density);
+    const power = (options.power ?? 240) / Math.sqrt(WOOD.density);
     const carve = new Path2D();
     const carvedCells: number[][] = [];
     let made = 0;
@@ -1258,20 +1198,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
         src,
         cell,
         {
-          density: (icy ? 0.0011 : 0.0018) * material.density,
-          restitution: icy ? 0.36 : Math.max(0.14, material.restitution),
-          friction: icy ? 0.26 : 0.62,
+          density: 0.0018 * WOOD.density,
+          restitution: Math.max(0.14, WOOD.restitution),
+          friction: 0.62,
           ttl: options.ttl ?? 10 + Math.random() * 8,
         },
-        icy
-          ? // Ice is thin and translucent — no wooden underside on the shards.
-            {
-              tint: "rgba(150, 214, 255, 0.3)",
-              edge: "rgba(232, 248, 255, 0.85)",
-              edgeWidth: 1.1,
-              flat: true,
-            }
-          : { edge: "rgba(12, 9, 7, 0.45)" },
+        { edge: "rgba(12, 9, 7, 0.45)" },
       );
       if (!body) continue;
       // Shards leave along the line from the impact through their own centre,
@@ -1302,45 +1234,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       },
       carvedCells,
     );
-    this.contentLayer?.char(x, y, radius * 1.2, icy ? 0.08 : 0.3);
-    if (icy) {
-      this.meltFrost(x, y, radius);
-      this.sound.crack();
-      for (let i = 0; i < 14; i++) {
-        const a = Math.random() * TAU;
-        const sp = 120 + Math.random() * 320;
-        this.spawnParticle({
-          kind: "ice",
-          x,
-          y,
-          vx: Math.cos(a) * sp,
-          vy: Math.sin(a) * sp - 90,
-          life: 0,
-          maxLife: 0.6 + Math.random() * 0.7,
-          size: 2 + Math.random() * 4,
-          angle: Math.random() * TAU,
-          spin: (Math.random() - 0.5) * 22,
-        });
-      }
-      // Crystalline glint: breaking glass catches the light for an instant.
-      // A handful of twinkles over the shatter site — brief, weightless, and
-      // gone before the shards land — is the difference between ice breaking
-      // and pale paper breaking.
-      for (let i = 0; i < 8; i++) {
-        this.spawnParticle({
-          kind: "sparkle",
-          x: x + (Math.random() - 0.5) * radius * 1.7,
-          y: y + (Math.random() - 0.5) * radius * 1.3,
-          vx: (Math.random() - 0.5) * 50,
-          vy: -16 - Math.random() * 44,
-          life: 0,
-          maxLife: 0.45 + Math.random() * 0.45,
-          size: 5 + Math.random() * 7,
-          gravity: 0,
-          phase: Math.random() * TAU,
-        });
-      }
-    }
+    this.contentLayer?.char(x, y, radius * 1.2, 0.3);
     return made;
   }
 
@@ -1537,7 +1431,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   demolish(x: number, y: number): boolean {
-    // A wrecking blow delivered through an existing hole cannot couple to a
+    // A demolition blow delivered through an existing hole cannot couple to a
     // card merely because the card's old DOM rectangle still contains it.
     if (!this.onPage(x, y)) return false;
     // Deliberately forgiving: a direct hit always wins, but a near miss on a
@@ -1662,28 +1556,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.sound.boom();
   }
 
-  // ── Frost ─────────────────────────────────────────────────────────────────
-
-  freeze(x: number, y: number, radius: number, amount: number) {
-    this.frost.ensure(this.overlay.width, this.overlay.height);
-    // Rime belongs on the page, not floating in a hole.
-    this.frost.paintDisc(x, y, radius, amount, this.onPageCell);
-    this.signalInteraction("freeze", x, y);
-  }
-
-  frostAt(x: number, y: number): number {
-    return this.frost.at(x, y);
-  }
-
-  /**
-   * Melt frost — the other half of fire-vs-ice. Ignition does it to clear its
-   * own ground, burning flames do it to the rime around them, shattering ice
-   * consumes it, and the flamethrower's jet does it deliberately.
-   */
-  meltFrost(x: number, y: number, radius: number, amount = 1) {
-    this.frost.paintDisc(x, y, radius, -amount);
-  }
-
   // ── Heat field (drives the post-processing shimmer) ───────────────────────
 
   heat(x: number, y: number, radius: number, amount: number) {
@@ -1733,19 +1605,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
         burst("steam", 12);
         this.sound.hiss();
         break;
-      case "flash-freeze":
-        this.freeze(x, y, 58, 0.65);
-        burst("ice", 14, "#dff7ff");
-        this.sound.freeze();
-        break;
       case "conductive-surge":
         burst("spark", 18, "#bdeaff");
         this.squashBugs(x, y, 62);
         this.sound.zap();
-        break;
-      case "thermal-shock":
-        this.fracture(x, y, 42, { power: 260, icy: true });
-        burst("ice", 10, "#e8fbff");
         break;
       case "volatile-corrosion":
         this.explode(x, y, 42, { power: 390, incendiary: false });
@@ -1754,12 +1617,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       case "orbital-bomb":
         this.physics.blast(x, y, 180, 760);
         this.shake(12);
-        break;
-      case "reality-overload":
-        burst("spark", 24, "#d68cff");
-        this.shake(15);
-        this.contentLayer?.char(x, y, 70, 0.35);
-        this.markSurface(x, y, 80);
         break;
     }
     this.spawnParticle({
@@ -1792,6 +1649,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   private silenceLoops() {
     this.sound.loop("fire", 0);
+    this.silenceToolLoops();
+  }
+
+  /** Loops driven by a held tool, distinct from persistent ambient fire. */
+  private silenceToolLoops() {
     this.sound.loop("water", 0);
     this.sound.loop("saw", 0);
     this.sound.loop("flamethrower", 0);
@@ -1889,11 +1751,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private resize() {
     const { width, height } = this.docSize();
     const overlay = this.overlay;
-    const fxChanged = overlay.resize(width, height, this.opts.effectsPixelRatio);
-    if (fxChanged) {
-      // The frost grid is indexed off the document size; a reflow invalidates it.
-      this.frost.release();
-    }
+    overlay.resize(width, height, this.opts.effectsPixelRatio);
     this.postfx?.resize(
       overlay.fxCanvas.width,
       overlay.fxCanvas.height,
@@ -2009,6 +1867,22 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.artUpAt = this.lastTime / 1000;
     const ev = e ? this.toolEvent(e) : { ...this.pointer, dx: 0, dy: 0, buttons: 0 };
     this.activeTool?.onUp?.(this, ev);
+    this.silenceToolLoops();
+    this.releaseActivePointerCapture();
+    this.requestFrame();
+  }
+
+  /** Stop a gesture without invoking the tool's destructive release action. */
+  private cancelPointer() {
+    if (!this.pointerDown) return;
+    this.pointerDown = false;
+    this.artUpAt = this.lastTime / 1000;
+    this.silenceToolLoops();
+    this.releaseActivePointerCapture();
+    this.requestFrame();
+  }
+
+  private releaseActivePointerCapture() {
     if (this.activePointerId !== null) {
       try {
         this.overlay.container.releasePointerCapture?.(this.activePointerId);
@@ -2017,7 +1891,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       }
     }
     this.activePointerId = null;
-    this.requestFrame();
   }
 
   private onPointerLeave = () => {
@@ -2034,6 +1907,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private frame = (now: number) => {
     if (this.disposed || this.paused) return;
     this.raf = 0;
+    this.frameClockSleeping = false;
     this.monitor.observeRaf(now);
     const minFrameInterval = this.qualityProfile.minFrameIntervalMs;
     if (minFrameInterval > 0 && now - this.lastRenderedAt < minFrameInterval) {
@@ -2067,7 +1941,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // the air is hot *now*, and anything that accumulated would smear.
     this.resetHeat();
     const updateStartedAt = performance.now();
-    this.activeTool?.tick?.(this, dt, this.pointerDown, this.pointer);
+    const toolWorkPending = this.stepTools(dt);
     this.stepToolArt(dt);
     this.stepCollapse(dt);
     this.fire.step(this, dt, this.lastTime);
@@ -2119,15 +1993,28 @@ export class DestroyerEngine implements DestroyerEngineApi {
     });
     if (recommendation && this.qualityMode === "auto") this.applyQuality(recommendation);
 
-    if (this.hasActiveWork()) this.requestFrame();
+    if (this.hasActiveWork(toolWorkPending)) this.requestFrame();
+    else this.frameClockSleeping = true;
   };
 
   private requestFrame() {
     if (this.disposed || this.paused || this.raf) return;
+    // No simulation time passes while the event-driven loop is asleep. Without
+    // rebasing here, the first pointer press after a quiet period receives the
+    // 50ms catch-up clamp and telemetry reports the intentional sleep as jank.
+    if (this.frameClockSleeping) {
+      this.lastTime = performance.now();
+      this.frameClockSleeping = false;
+    }
     this.raf = requestAnimationFrame(this.frame);
   }
 
-  private hasActiveWork() {
+  private hasActiveWork(toolWorkPending = this.toolsHavePendingWork()) {
+    const active = this.activeTool;
+    // Tools published before `hasPendingWork` existed were documented as
+    // receiving continuous selected ticks. Preserve that contract; built-ins
+    // opt into event-driven sleeping by defining the predicate explicitly.
+    const legacySelectedTick = !!active?.tick && active.hasPendingWork === undefined;
     return (
       this.particles.count > 0 ||
       this.fire.count > 0 ||
@@ -2135,9 +2022,35 @@ export class DestroyerEngine implements DestroyerEngineApi {
       this.bugs.count > 0 ||
       this.collapseQueue.length > 0 ||
       !!this._singularity ||
-      !!this.activeTool ||
+      this.pointerDown ||
+      legacySelectedTick ||
+      toolWorkPending ||
       this.overlay.isShaking
     );
+  }
+
+  /** Advance the selected interaction plus autonomous work owned by other tools. */
+  private stepTools(dt: number) {
+    const active = this.activeTool;
+    active?.tick?.(this, dt, this.pointerDown, this.pointer);
+    let pending = false;
+    for (const tool of this.tools.values()) {
+      const hasPendingWork = tool.hasPendingWork?.(this) ?? false;
+      pending ||= hasPendingWork;
+      if (tool !== active && tool.backgroundTick && hasPendingWork) tool.backgroundTick(this, dt);
+    }
+    // An inactive background tick may have completed its final item. Keeping
+    // this pre-tick result schedules at most one drain frame, which is cheaper
+    // than re-running every custom predicate in the same frame and guarantees
+    // the effect it just emitted reaches presentation.
+    return pending;
+  }
+
+  private toolsHavePendingWork() {
+    for (const tool of this.tools.values()) {
+      if (tool.hasPendingWork?.(this)) return true;
+    }
+    return false;
   }
 
   private hasPostFXDemand() {
@@ -2149,11 +2062,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
     );
   }
 
-  /**
-   * Smooth the pointer's motion for the drawn tool. Raw per-event deltas are
-   * far too jittery to pose from — a broom's bristles would buzz — so the art
-   * gets a low-passed velocity and, from it, a slow-turning aim direction.
-   */
   private resetHeat() {
     if (!this.postfxEnabled) {
       this.heatLevel = 0;
@@ -2171,6 +2079,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
+  /**
+   * Smooth the pointer's motion for the drawn tool. Raw per-event deltas are
+   * far too jittery to pose from — a broom's bristles would buzz — so the art
+   * gets a low-passed velocity to lean and flex against.
+   *
+   * Velocity only: the tool's aim is fixed (`REST_AIM_X`), so motion bends
+   * details without ever turning the tool itself.
+   */
   private stepToolArt(dt: number) {
     const p = this.pointer;
     if (p.x <= -999) {
@@ -2182,16 +2098,6 @@ export class DestroyerEngine implements DestroyerEngineApi {
       const k = Math.min(1, dt * 14);
       this.artVX += ((p.x - this.artPrev.x) / dt - this.artVX) * k;
       this.artVY += ((p.y - this.artPrev.y) / dt - this.artVY) * k;
-      const m = Math.hypot(this.artVX, this.artVY);
-      // Only decisive motion re-aims; hovering keeps the last direction.
-      if (m > 60) {
-        const ka = Math.min(1, dt * (4 + m * 0.004));
-        this.artAimX += (this.artVX / m - this.artAimX) * ka;
-        this.artAimY += (this.artVY / m - this.artAimY) * ka;
-        const am = Math.hypot(this.artAimX, this.artAimY) || 1;
-        this.artAimX /= am;
-        this.artAimY /= am;
-      }
     }
     this.artPrev.x = p.x;
     this.artPrev.y = p.y;
@@ -2240,36 +2146,33 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.physics.setBounds(this.overlay.width, floorY);
     this.physics.step(dt);
 
-    // Dust where debris landed hard. Wood chunks slamming into the floor (or
-    // each other) knock a breath of pale paper dust loose — the cheap half of
-    // an impact that sells the heavy half. The solver already found and capped
-    // these contacts; only the strongest few per frame become particles, and
-    // the count degrades with the quality profile like every other effect.
     const impacts = this.physics.impacts;
-    if (impacts.length > 0 && this.lastTime > this.nextImpactDust) {
-      this.nextImpactDust = this.lastTime + 55;
-      const events = Math.min(impacts.length, 6);
-      const puffs = Math.max(1, Math.round(2 * this.qualityProfile.particleScale));
-      for (let i = 0; i < events; i += 3) {
-        const ix = impacts[i];
-        const iy = impacts[i + 1];
-        // Impact speed scales the puff: a clatter breathes, a slam erupts.
-        const force = Math.min(1, impacts[i + 2] / 900);
-        for (let d = 0; d < puffs; d++) {
-          this.spawnParticle({
-            kind: "dust",
-            x: ix + (Math.random() - 0.5) * 14,
-            y: iy - Math.random() * 6,
-            vx: (Math.random() - 0.5) * (50 + 90 * force),
-            vy: -14 - Math.random() * 55 * force,
-            life: 0,
-            maxLife: 0.5 + Math.random() * (0.5 + force * 0.6),
-            size: 4 + Math.random() * (5 + 8 * force),
-            gravity: 16,
-            drag: 2.4,
-          });
-        }
+    if (
+      impacts.length > 0 &&
+      this.lastTime > this.nextImpactDust &&
+      Math.random() <= this.qualityProfile.particleScale
+    ) {
+      this.nextImpactDust = this.lastTime + 90;
+      // One restrained puff at the strongest contact is enough to sell the
+      // weight. Drawing every collision in a settling pile makes dust look
+      // like a second explosion and scales cost with contact-pair count.
+      let strongest = 0;
+      for (let i = 3; i < Math.min(impacts.length, 18); i += 3) {
+        if (impacts[i + 2] > impacts[strongest + 2]) strongest = i;
       }
+      const force = Math.min(1, impacts[strongest + 2] / 900);
+      this.spawnParticle({
+        kind: "dust",
+        x: impacts[strongest] + (Math.random() - 0.5) * 10,
+        y: impacts[strongest + 1] - Math.random() * 4,
+        vx: (Math.random() - 0.5) * (36 + 54 * force),
+        vy: -10 - Math.random() * 38 * force,
+        life: 0,
+        maxLife: 0.4 + Math.random() * (0.25 + force * 0.25),
+        size: 3 + Math.random() * (3 + 4 * force),
+        gravity: 12,
+        drag: 2.8,
+      });
     }
   }
 
@@ -2414,8 +2317,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
     const view = this.overlay.positionFx(this.scrollX, this.scrollY, presented);
 
-    // A tool with drawn art keeps the canvas live whenever the pointer is on
-    // the page — the tool itself is being rendered, even with nothing else on.
+    // Pointer events request their own frame, so a visible but motionless tool
+    // can stay as the last retained canvas image without keeping rAF alive.
+    // Held gestures and live effects still animate through `hasActiveWork`.
     const artVisible =
       this.opts.toolStyle === "3d" && !!this.activeTool?.art && this.pointer.x > -999;
     const idle =
@@ -2430,13 +2334,13 @@ export class DestroyerEngine implements DestroyerEngineApi {
       // Nothing to draw: clear once after the last active frame, then leave the
       // canvas (and the compositor) completely alone while idle.
       if (this.fxPainted) {
-        ctx.clearRect(view.left, view.top, this.overlay.fxWidth, this.overlay.fxHeight);
+        this.clearFxCanvas(ctx);
         if (this.postfxActive) this.postfx?.clear();
         this.fxPainted = false;
       }
       return;
     }
-    ctx.clearRect(view.left, view.top, this.overlay.fxWidth, this.overlay.fxHeight);
+    this.clearFxCanvas(ctx);
     this.fxPainted = true;
 
     // Bugs crawl *on* the page, under every particle and piece of debris.
@@ -2506,6 +2410,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (this.aimCursor) drawAimCursor(ctx, this.aimCursor, time);
 
     this.postFXFrameMs = this.present(time);
+  }
+
+  /** Clear every backing-store pixel regardless of the document-space transform. */
+  private clearFxCanvas(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.restore();
   }
 
   /**

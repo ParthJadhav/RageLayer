@@ -201,10 +201,22 @@ Both paths are live. `LiveContentSource.canRepaint` selects between them, and an
 `paint()` — a stale paint record after a reflow, a subtree Chrome stopped painting — clears the
 flag and drops back to the re-clone path rather than losing the page.
 
-**Not verified against a real browser.** Chrome 148 in the Browser pane has neither
-`drawElementImage` nor `requestPaint`, so everything in this subsection is written from the IDL and
-from canvas-ui's usage, not measured the way §1 was. Test it with
-`--enable-blink-features=CanvasDrawElement` before trusting it.
+**What a repaint cannot show: DOM mutations (verified on Chrome 149).** The mounted clone is a
+copy; only its CSS animations run. A counter ticking in page DOM — or anything inserted after the
+capture — never reaches the mirror through `onpaint`, and since the repaint path was preferred
+unconditionally, it never reached it at all: measured with an injected `setInterval` clock, the
+mirror stayed on its initial clone forever. Two fixes, both measured working:
+
+- `LiveContentSource` keeps a `MutationObserver` on the capture root (armed just before each
+  clone, so a mutation racing the capture still lands). One mutation inside the captured subtree —
+  changes inside filtered-out elements such as the destroyer's own toolbar don't count — flips the
+  mirror to stale, `canRepaint` goes false, and the next refresh re-clones. A page that never
+  mutates keeps the ~0.5 ms repaint path; a page that ticks pays the ~6 ms re-clone about once a
+  second, which is the design's original "live, re-clone" row.
+- The refresh loop presents the recomposed band itself (`layer.present()` after `refreshBase`).
+  The engine's frame loop parks while nothing animates, so without this the refreshed pixels
+  reached the 2D texture source but the WebGL surface on screen kept the old frame until the next
+  tool use.
 
 ### 3.2 What a refresh still costs
 

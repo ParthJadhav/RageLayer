@@ -32,6 +32,6 @@ resolution modes.
 
 ## Reading releases
 
-Every user-visible pull request carries a Changeset. The generated [changelog](https://github.com/ParthJadhav/ragelayer/blob/main/CHANGELOG.md)
+Every user-visible pull request carries a Changeset. The generated [changelog](https://github.com/ParthJadhav/RageLayer/blob/main/CHANGELOG.md)
 and GitHub Release describe migration requirements. npm packages are published from tagged commits
 with provenance, and their registry tarball is attached to the matching GitHub Release.

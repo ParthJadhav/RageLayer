@@ -44,6 +44,28 @@ describe("button list", () => {
     }
   });
 
+  test("translated toolbar label is part of shared view state", () => {
+    const { model } = makeToolbar({ strings: { toolbarLabel: "Outils de destruction" } });
+
+    expect(model.state.toolbarLabel).toBe("Outils de destruction");
+  });
+
+  test("emoji mode does not bake drawn-art icons", () => {
+    const { model } = makeToolbar({ toolStyle: "emoji" });
+    const toolButtons = model.state.buttons.filter((button) => button.kind === "tool");
+
+    expect(toolButtons.every((button) => button.icon === null)).toBe(true);
+    expect(toolButtons.every((button) => button.toolIcon)).toBe(true);
+  });
+
+  test("the focused control exposes a visible instruction", () => {
+    const { model } = makeToolbar();
+
+    expect(model.state.hint).toContain(baseTools[0].name);
+    model.setFocusIndex(1);
+    expect(model.state.hint).toContain(baseTools[1].name);
+  });
+
   test("undo and redo appear only when history is enabled", () => {
     const withHistory = makeToolbar({}, { history: true }).model.state.buttons;
     const without = makeToolbar({}, { history: false }).model.state.buttons;

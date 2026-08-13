@@ -10,7 +10,7 @@ The package publishes exclusively through npm trusted publishing. npm is configu
 | Field | Value |
 | --- | --- |
 | Provider | GitHub Actions |
-| Repository | `ParthJadhav/ragelayer` |
+| Repository | `ParthJadhav/RageLayer` |
 | Workflow | `release.yml` |
 | Permission | Publish |
 

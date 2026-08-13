@@ -2,7 +2,7 @@
 
 RageLayer's tools are shaded Canvas vector models rather than downloaded glTF, OBJ, or
 bitmap assets. They stay sharp at every device pixel ratio, inherit the engine's animation clock,
-and add no network requests. Materials use layered gradients, highlights, contours, cast shadows,
+and add no network requests. Models use layered gradients, highlights, contours, cast shadows,
 and moving mechanical parts to create depth while keeping each pointer hotspot exact.
 
 ## Model size
@@ -22,8 +22,12 @@ tool less precise. The engine canvas already renders at its quality-budgeted dev
 
 Every built-in model carries a measured rest-pose silhouette. Icon baking uses those exact bounds,
 including narrow claws, bristles, tubes, and antennae, instead of guessing a common box. This also
-avoids a synchronous `getImageData()` readback for each of the 19 built-ins. Custom art keeps the
+avoids a synchronous `getImageData()` readback for each of the 16 built-ins. Custom art keeps the
 alpha-scan fallback, so it receives an accurate crop without additional metadata.
+
+The gun uses a full pistol silhouette with an open trigger guard, working slide, and cadence-matched
+recoil. The water tool is a compact pistol-grip pressure nozzle whose connection stops at the grip,
+keeping the held model clear of nearby content.
 
 `toolIconDataUrl(art, size)` produces DPR-aware PNG data URLs and caches identical built-in requests.
 Sizes are normalized to 8–256 CSS pixels to avoid accidental oversized allocations.
@@ -41,7 +45,8 @@ engine.registerTools(baseTools);
 engine.setTool("hammer");
 ```
 
-Load cinematic tools only when a visitor asks for them:
+Load the five heavy tools—Demolition, Rocket Launcher, Lightning, Black Hole, and Bugs—only when a
+visitor asks for them:
 
 ```ts
 import { loadHeavyTools } from "ragelayer/lazy";
@@ -50,7 +55,8 @@ engine.registerTools(await loadHeavyTools());
 engine.setTool("blackhole");
 ```
 
-The six interaction-focused models live in their own graph:
+The four advanced models—Gravity Gun, Laser Cutter, Acid Sprayer, and Sticky Bombs—live in their own
+graph:
 
 ```ts
 import { loadAdvancedTools } from "ragelayer/lazy";

@@ -1,14 +1,11 @@
 import { defaultTools } from "./default-tools";
 import { DestroyerEngine } from "./engine";
-import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "./loadouts";
 import type { DestroyerOptions, Tool } from "./types";
 
 /** Options shared by the vanilla helper and all framework adapters. */
 export interface MountRageLayerOptions extends DestroyerOptions {
   /** Tools to register. Defaults to the complete built-in toolset. */
   tools?: readonly Tool[];
-  /** Named or custom tool preset. Explicit `tools` take precedence. */
-  loadout?: BuiltInLoadoutId | ToolLoadout;
   /** Tool selected after mounting. Defaults to `"hammer"`; use `null` for click-through. */
   initialTool?: string | null;
 }
@@ -24,10 +21,9 @@ export function mountRageLayer(options: MountRageLayerOptions = {}) {
     throw new Error("mountRageLayer() must be called in a browser");
   }
 
-  const { tools: explicitTools, loadout, initialTool, ...engineOptions } = options;
-  const tools = explicitTools ?? (loadout ? resolveToolLoadout(loadout) : defaultTools);
-  const selectedInitialTool =
-    initialTool === undefined ? (loadout ? (tools[0]?.id ?? null) : "hammer") : initialTool;
+  const { tools: explicitTools, initialTool, ...engineOptions } = options;
+  const tools = explicitTools ?? defaultTools;
+  const selectedInitialTool = initialTool === undefined ? "hammer" : initialTool;
   const engine = new DestroyerEngine(engineOptions);
   for (const tool of tools) engine.registerTool(tool);
 

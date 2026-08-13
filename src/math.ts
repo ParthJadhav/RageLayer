@@ -9,6 +9,19 @@
 /** A full turn in radians. Canvas arcs are written in terms of it everywhere. */
 export const TAU = Math.PI * 2;
 
+/**
+ * The one direction every drawn tool points: up and to the left, the way a
+ * held tool reads in a screenshot. It is fixed rather than steered by pointer
+ * motion — a nozzle that spins to chase the mouse turns the cursor into a
+ * weathervane, and the tool's silhouette changes shape mid-stroke. Holding it
+ * still also makes the drawn cursor match the baked toolbar icon exactly.
+ *
+ * A unit vector; directional effects (tracers, rockets, spray) read the same
+ * one through `engine.toolAim`, so what fires stays collinear with the bore.
+ */
+export const REST_AIM_X = -0.55;
+export const REST_AIM_Y = -0.835;
+
 /** Uniform random in `[min, max)`. */
 export function rand(min: number, max: number): number {
   return min + Math.random() * (max - min);

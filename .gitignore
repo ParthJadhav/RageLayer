@@ -10,3 +10,4 @@ docs/public/screenshots/
 .claude/settings.local.json
 benchmark-results*.json
 coverage/
+artifacts/

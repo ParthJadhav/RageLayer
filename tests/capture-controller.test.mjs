@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CaptureController } from "../src/capture-controller.ts";
 import { ContentLayer } from "../src/content.ts";
-import { MaterialSystem } from "../src/materials.ts";
 import { Overlay } from "../src/overlay.ts";
 import { makeCanvas, setViewport } from "./support/dom.mjs";
 
@@ -36,7 +35,6 @@ function makeController(settings = {}) {
   const events = { statuses: [], errors: [], elements: [], landed: 0, settled: [] };
   const host = {
     overlay,
-    materials: new MaterialSystem(),
     docSize: () => ({ width: WIDTH, height: HEIGHT }),
     refreshBand: () => ({ y0: 0, y1: HEIGHT }),
     onElements: (elements) => events.elements.push(elements),

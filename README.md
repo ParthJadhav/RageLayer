@@ -1,17 +1,17 @@
 # RageLayer
 
 [![npm version](https://img.shields.io/npm/v/ragelayer?color=dc5a1f)](https://www.npmjs.com/package/ragelayer)
-[![CI](https://github.com/ParthJadhav/ragelayer/actions/workflows/ci.yml/badge.svg)](https://github.com/ParthJadhav/ragelayer/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/ragelayer/api)
+[![CI](https://github.com/ParthJadhav/RageLayer/actions/workflows/ci.yml/badge.svg)](https://github.com/ParthJadhav/RageLayer/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/RageLayer/api)
 [![MIT license](https://img.shields.io/badge/license-MIT-171310)](./LICENSE)
 
-Turn any web page into a destructible canvas. Smash, cut, corrode, freeze, explode, glitch, undo,
-and combine effects across material-aware page regions—then sweep everything back into place.
+Turn any web page into a destructible canvas. Smash, cut, corrode, burn, explode, undo, and
+combine effects across the page—then sweep everything back into place.
 
-[**Try the live demo**](https://parthjadhav.github.io/ragelayer/demo/) ·
-[Documentation](https://parthjadhav.github.io/ragelayer/) ·
-[Tool gallery](https://parthjadhav.github.io/ragelayer/tools) ·
-[API reference](https://parthjadhav.github.io/ragelayer/api)
+[**Try the live demo**](https://parthjadhav.github.io/RageLayer/demo/) ·
+[Documentation](https://parthjadhav.github.io/RageLayer/) ·
+[Tool gallery](https://parthjadhav.github.io/RageLayer/tools) ·
+[API reference](https://parthjadhav.github.io/RageLayer/api)
 
 ![A page after a RageLayer session](./docs/screenshots/aftermath.png)
 
@@ -21,11 +21,10 @@ and combine effects across material-aware page regions—then sweep everything b
   through content and fire burns text and images away.
 - **Pieces become physical objects.** Voronoi shards and measured DOM elements tumble, collide,
   and pile up through a built-in rigid-body solver.
-- **Nineteen procedural tools.** The original thirteen plus Gravity Gun, Laser Cutter, Acid
-  Sprayer, Wrecking Ball, Sticky Bombs, and Glitch Gun—with no model assets or network requests,
-  exact icon silhouettes, and configurable scale.
-- **Systems that make tools interact.** Seven spatial combos, seven built-in materials, bounded
-  undo/redo history, named loadouts, and a typed stateful custom-tool SDK.
+- **Sixteen procedural tools.** Seven everyday, five heavy, and four advanced tools—with no model
+  assets or network requests, exact icon silhouettes, and configurable scale.
+- **Systems that make tools interact.** Four spatial combos, one consistent wood-like physical
+  response, bounded undo/redo history, and a typed stateful custom-tool SDK.
 - **A real toolbar on every stack.** A complete React component, a complete Vue component, and a
   `<rage-layer>` custom element for everything else — all three rendering one shared,
   framework-neutral toolbar model that you can also use to build your own.
@@ -33,7 +32,7 @@ and combine effects across material-aware page regions—then sweep everything b
   and Enter fires, so the tools themselves — not just the toolbar — are reachable from the
   keyboard. Every string, including tool names, can be translated.
 - **Typed and extensible.** Custom tools are plain TypeScript objects with access to the same
-  rendering, physics, fire, frost, and page-damage APIs as the built-ins.
+  rendering, physics, fire, and page-damage APIs as the built-ins.
 - **Designed to degrade well.** WebGL effects, page capture, audio, and physics fail or disable
   independently; adaptive quality keeps entity counts and rendering cost bounded, honors data
   saver, and suspends work in background tabs.
@@ -214,14 +213,13 @@ For isolated state, rate-limited effects, and exact custom icon bounds, use `def
 | --- | --- |
 | `ragelayer` | Engine, lifecycle helpers, built-in tools, types, and low-level primitives |
 | `ragelayer/engine` | Engine and public contracts without built-in tool models |
-| `ragelayer/tools` | Seven everyday tools (`baseTools`) |
-| `ragelayer/tools/heavy` | Six cinematic and physics-heavy tools |
-| `ragelayer/tools/advanced` | Gravity, laser, acid, wrecking ball, sticky bombs, and glitch tools |
+| `ragelayer/tools` | Seven everyday tools: Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, and Broom |
+| `ragelayer/tools/heavy` | Five heavy tools: Demolition, Rocket Launcher, Lightning, Black Hole, and Bugs |
+| `ragelayer/tools/advanced` | Four advanced tools: Gravity Gun, Laser Cutter, Acid Sprayer, and Sticky Bombs |
 | `ragelayer/lazy` | On-demand loaders for base, heavy, or complete toolsets |
-| `ragelayer/loadouts` | Immutable named presets and custom loadout helpers |
 | `ragelayer/sdk` | Typed custom-tool factories, rate limiter, and icon metadata |
 | `ragelayer/react` | `RageLayer`, `useRageLayer` |
-| `ragelayer/vue` | `useRageLayer` |
+| `ragelayer/vue` | `RageLayer`, `useRageLayer` |
 | `ragelayer/svelte` | `rageLayer`, `createRageLayer` |
 | `ragelayer/element` | `<rage-layer>`, the toolbar for every other stack |
 | `ragelayer/toolbar` | `ToolbarModel`, `DEFAULT_STRINGS` — build your own toolbar |
@@ -262,7 +260,7 @@ damage. See [capture and framework integration notes](./docs/integrations.md).
 - [Tool gallery](./docs/tools.md)
 - [Toolbars, translation and keyboard use](./docs/toolbar.md)
 - [Procedural 3D models and loading](./docs/models.md)
-- [Materials, combos, history, loadouts, and SDK](./docs/advanced.md)
+- [Combos, history, toolsets, and SDK](./docs/advanced.md)
 - [Architecture](./docs/architecture.md)
 - [Performance and benchmarks](./docs/performance.md)
 - [Compatibility](./docs/compatibility.md)
@@ -279,6 +277,8 @@ damage. See [capture and framework integration notes](./docs/integrations.md).
 bun install
 bun run check         # types, lint, unit tests + coverage floors, build, package validation
 bun run test:browser  # runtime suite in headless Chrome (real WebGL, real capture)
+bun run test:tools:visual # 16 isolated tool scenarios + PNG/JSON evidence
+bun run benchmark:low-end # fixed workloads with 6× CPU throttling
 bun run docs:dev      # local documentation site
 bun run docs:build    # production docs + live demo
 ```
@@ -286,6 +286,8 @@ bun run docs:build    # production docs + live demo
 `test:browser` needs a Chrome binary; point `RAGELAYER_CHROME_PATH` at one if it is not on the default
 path. It is the only place page capture, the WebGL2 surface shader and the post-processing chain
 actually execute, so run it before changing any of them.
+Visual evidence is written to `artifacts/tool-gallery/`; profiler flags and a controlled comparison
+workflow are documented in [Performance and benchmarks](./docs/performance.md).
 
 Changes are released with Changesets. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a
 pull request.

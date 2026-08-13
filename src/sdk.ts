@@ -14,7 +14,13 @@ export interface CustomToolDefinition<State> {
   onDown?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
   onMove?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
   onUp?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
+  /** Advance the selected tool. `held` is true only during an active gesture. */
   tick?(state: State, engine: DestroyerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
+  /** Advance retained work after this tool is no longer selected. Pair with `hasPendingWork`. */
+  backgroundTick?(state: State, engine: DestroyerEngineApi, dt: number): void;
+  /** Cheap, side-effect-free predicate that keeps frames alive only while retained work exists. */
+  hasPendingWork?(state: State, engine: DestroyerEngineApi): boolean;
+  /** Finalize the old state before the factory replaces it with a fresh `createState()` result. */
   reset?(state: State): void;
 }
 
@@ -45,6 +51,12 @@ export function defineTool<State>(definition: CustomToolDefinition<State>): () =
         : undefined,
       tick: definition.tick
         ? (engine, dt, held, pointer) => definition.tick?.(state, engine, dt, held, pointer)
+        : undefined,
+      backgroundTick: definition.backgroundTick
+        ? (engine, dt) => definition.backgroundTick?.(state, engine, dt)
+        : undefined,
+      hasPendingWork: definition.hasPendingWork
+        ? (engine) => definition.hasPendingWork?.(state, engine) ?? false
         : undefined,
       reset() {
         definition.reset?.(state);

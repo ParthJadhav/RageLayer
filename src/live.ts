@@ -220,6 +220,30 @@ function prune(el: Element, filter: (node: HTMLElement) => boolean) {
   }
 }
 
+/**
+ * Would this mutation change what the mirror shows?
+ *
+ * The mounted clone is a copy of the page at capture time, so any DOM change
+ * inside the captured subtree makes it stale. The exception is a change inside
+ * an element `filter` rejects — the destroyer's own toolbar, dev overlays —
+ * which `prune` keeps out of the mirror anyway. `characterData` mutations
+ * target text nodes, so the walk starts from the owning element.
+ */
+export function mutationTouchesCapture(
+  root: HTMLElement,
+  filter: (node: HTMLElement) => boolean,
+  record: MutationRecord,
+): boolean {
+  let node: Node | null =
+    record.target.nodeType === 1 ? record.target : record.target.parentElement;
+  while (node && node !== root) {
+    // Mirror `prune`: only HTMLElements are ever filtered out.
+    if (node instanceof HTMLElement && !filter(node)) return false;
+    node = node.parentElement;
+  }
+  return node === root;
+}
+
 export interface LiveCaptureOptions {
   /** Where the root's border box sits in the layer, in CSS px. */
   source: { x: number; y: number; width: number; height: number };
@@ -246,6 +270,16 @@ export class LiveContentSource {
   private last: { dx: number; dy: number; backdrop?: PageBackdrop } | null = null;
   /** True once `onpaint` is wired up on the host canvas. */
   private painting = false;
+  /**
+   * Watches the real page for changes the mounted clone cannot show. A repaint
+   * only redraws the clone, so without this a counter ticking in page DOM — or
+   * anything inserted after the capture — would never reach the mirror.
+   */
+  private observer: MutationObserver | null = null;
+  /** True once the page has changed in a way only a re-clone can pick up. */
+  private stale = false;
+  /** What the observer is currently judging mutations against. */
+  private watched: { root: HTMLElement; filter: (node: HTMLElement) => boolean } | null = null;
 
   /**
    * Can this source redraw without re-cloning the page?
@@ -254,9 +288,13 @@ export class LiveContentSource {
    * already-mounted mirror is the remaining draw call. It also makes the mirror
    * genuinely live rather than a still: its animations run, phase-locked to the
    * page's, so each repaint shows them further along.
+   *
+   * What a repaint can *not* show is a DOM mutation — the clone is a copy, and
+   * only CSS animations run on it. Once the mutation observer has seen the page
+   * change, this reports false and the next refresh re-clones.
    */
   get canRepaint(): boolean {
-    return this.painting && this.mounted !== null && this.last !== null;
+    return this.painting && !this.stale && this.mounted !== null && this.last !== null;
   }
 
   /**
@@ -288,6 +326,10 @@ export class LiveContentSource {
     // where a nav sits is not worth losing page content, so live mode keeps the
     // known caveat that viewport-anchored chrome captures at its document
     // position. See HTML-IN-CANVAS.md.
+    // Arm the staleness watch before cloning: a mutation that lands while the
+    // capture is awaiting its layout frames is not in the clone, and has to
+    // mark it stale rather than slip through unseen.
+    this.watchForMutations(root, options.filter);
     const clone = root.cloneNode(true) as HTMLElement;
     // A mirror that will stay mounted keeps its animations running and merely
     // syncs their clocks (below, once the cascade has built them); a mirror
@@ -434,6 +476,37 @@ export class LiveContentSource {
     this.painting = true;
   }
 
+  /**
+   * Start (or restart) watching `root` for mutations the mounted clone cannot
+   * reflect. One relevant mutation flips `stale` and stops the watch — there is
+   * nothing more to learn until the next capture re-clones and re-arms it. The
+   * mirror's own DOM lives under the host canvas on `<html>`, outside `root`,
+   * so painting the clone never trips its own watch.
+   */
+  private watchForMutations(root: HTMLElement, filter: (node: HTMLElement) => boolean) {
+    if (typeof MutationObserver === "undefined") return;
+    this.watched = { root, filter };
+    this.observer ??= new MutationObserver((records) => {
+      const watched = this.watched;
+      if (this.stale || !watched) return;
+      for (const record of records) {
+        if (mutationTouchesCapture(watched.root, watched.filter, record)) {
+          this.stale = true;
+          this.observer?.disconnect();
+          return;
+        }
+      }
+    });
+    this.observer.disconnect();
+    this.stale = false;
+    this.observer.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+  }
+
   private ensureHost(width: number, height: number, dpr: number): HTMLCanvasElement {
     let host = this.host;
     if (!host) {
@@ -479,6 +552,9 @@ export class LiveContentSource {
       this.host.height = 0;
       this.host.remove();
     }
+    this.observer?.disconnect();
+    this.observer = null;
+    this.watched = null;
     this.painting = false;
     this.host = null;
     this.ctx = null;

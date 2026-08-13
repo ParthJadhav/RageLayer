@@ -166,6 +166,126 @@ describe("tool registration", () => {
 
     expect(resets).toBe(1);
   });
+
+  test("replacing an active tool id releases the old tool and selects the replacement", () => {
+    let oldUps = 0;
+    let oldResets = 0;
+    let newDowns = 0;
+    let newResets = 0;
+    let changes = 0;
+    const first = {
+      id: "same",
+      name: "First",
+      icon: "1",
+      hint: "old",
+      cursor: "grab",
+      onUp: () => oldUps++,
+      reset: () => oldResets++,
+    };
+    const replacement = {
+      id: "same",
+      name: "Replacement",
+      icon: "2",
+      hint: "new",
+      cursor: "cell",
+      onDown: () => newDowns++,
+      reset: () => newResets++,
+    };
+    const engine = makeEngine();
+    engine.registerTool(first);
+    engine.setTool("same");
+    engine.on("toolchange", () => changes++);
+    engine.container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+
+    engine.registerTool(replacement);
+
+    expect(oldUps).toBe(1);
+    expect(oldResets).toBe(2);
+    expect(newResets).toBe(1);
+    expect(changes).toBe(1);
+    expect(engine.tool).toBe(replacement);
+    expect(engine.getTools()).toEqual([replacement]);
+    expect(engine.container.style.cursor).toBe("cell");
+
+    engine.container.dispatchEvent(pointerEvent("pointerdown", 20, 20));
+    expect(newDowns).toBe(1);
+    expect(engine.unregisterTool("same")).toBe(true);
+    expect(engine.tool).toBeNull();
+  });
+
+  test("an explicitly quiescent selected tool lets the frame scheduler sleep", () => {
+    const tool = {
+      id: "quiet",
+      name: "Quiet",
+      icon: "q",
+      hint: "h",
+      tick: () => {},
+      hasPendingWork: () => false,
+    };
+    const engine = makeEngine({ toolStyle: "emoji" });
+    engine.registerTool(tool);
+    engine.setTool(tool.id);
+
+    expect(engine.hasActiveWork()).toBe(false);
+  });
+
+  test("waking an idle scheduler does not integrate or report the sleeping interval", () => {
+    const deltas = [];
+    const tool = {
+      id: "quiet",
+      name: "Quiet",
+      icon: "q",
+      hint: "h",
+      tick: (_engine, dt) => deltas.push(dt),
+      hasPendingWork: () => false,
+    };
+    const engine = makeEngine({ toolStyle: "emoji" });
+    engine.registerTool(tool);
+    engine.setTool(tool.id);
+
+    cancelAnimationFrame(engine.raf);
+    engine.raf = 0;
+    engine.frame(performance.now() + 10);
+    expect(engine.frameClockSleeping).toBe(true);
+
+    // Model a long quiet period without making the test wait in wall time.
+    engine.lastTime -= 10_000;
+    engine.requestFrame();
+    const wakeClock = engine.lastTime;
+    engine.monitor.sampleStartedAt -= 1_000;
+    engine.frame(wakeClock + 8);
+
+    expect(deltas.at(-1)).toBeCloseTo(0.008, 4);
+    expect(engine.performanceSnapshot.frame.max).toBeLessThan(20);
+  });
+
+  test("autonomous work advances after its tool is no longer selected", () => {
+    let remaining = 2;
+    let backgroundTicks = 0;
+    const timed = {
+      id: "timed",
+      name: "Timed",
+      icon: "t",
+      hint: "h",
+      tick: () => {},
+      hasPendingWork: () => remaining > 0,
+      backgroundTick: () => {
+        backgroundTicks++;
+        remaining--;
+      },
+    };
+    const other = { id: "other", name: "Other", icon: "o", hint: "h" };
+    const engine = makeEngine({ toolStyle: "emoji" });
+    engine.registerTools([timed, other]);
+    engine.setTool(timed.id);
+    engine.setTool(other.id);
+
+    engine.frame(performance.now() + 20);
+    engine.frame(performance.now() + 40);
+
+    expect(backgroundTicks).toBe(2);
+    expect(engine.hasActiveWork()).toBe(false);
+  });
 });
 
 describe("pointer dispatch", () => {
@@ -247,6 +367,62 @@ describe("pointer dispatch", () => {
     engine.setTool("second");
 
     expect(ups).toBe(1);
+  });
+
+  test("ending a gesture immediately silences tool-only audio loops", () => {
+    const stopped = [];
+    const tool = { id: "probe", name: "Probe", icon: "p", hint: "h" };
+    const engine = armed(makeEngine(), tool);
+    engine.sound.loop = (name, target) => {
+      if (target === 0) stopped.push(name);
+    };
+
+    engine.container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+    window.dispatchEvent(pointerEvent("pointerup", 10, 10));
+
+    expect(stopped).toEqual(["water", "saw", "flamethrower", "void"]);
+  });
+
+  test("clear cancels a held tool without firing its release action", () => {
+    let ups = 0;
+    const heldStates = [];
+    const tool = {
+      id: "probe",
+      name: "Probe",
+      icon: "p",
+      hint: "h",
+      onUp: () => ups++,
+      tick: (_engine, _dt, held) => heldStates.push(held),
+    };
+    const engine = armed(makeEngine(), tool);
+
+    engine.container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+    engine.clear();
+    engine.frame(performance.now() + 20);
+
+    expect(ups).toBe(0);
+    expect(heldStates.at(-1)).toBe(false);
+  });
+
+  test("undo cancels a held tool instead of resuming on restored pixels", () => {
+    let ups = 0;
+    const heldStates = [];
+    const tool = {
+      id: "probe",
+      name: "Probe",
+      icon: "p",
+      hint: "h",
+      onUp: () => ups++,
+      tick: (_engine, _dt, held) => heldStates.push(held),
+    };
+    const engine = armed(makeEngine({ history: true }), tool);
+
+    engine.container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+    expect(engine.undo()).toBe(true);
+    engine.frame(performance.now() + 20);
+
+    expect(ups).toBe(0);
+    expect(heldStates.at(-1)).toBe(false);
   });
 });
 

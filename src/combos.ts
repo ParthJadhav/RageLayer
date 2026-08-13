@@ -2,22 +2,13 @@ export type InteractionKind =
   | "impact"
   | "fire"
   | "water"
-  | "freeze"
   | "electricity"
   | "acid"
   | "laser"
   | "gravity"
-  | "explosion"
-  | "glitch";
+  | "explosion";
 
-export type ComboId =
-  | "steam-shock"
-  | "flash-freeze"
-  | "conductive-surge"
-  | "thermal-shock"
-  | "volatile-corrosion"
-  | "orbital-bomb"
-  | "reality-overload";
+export type ComboId = "steam-shock" | "conductive-surge" | "volatile-corrosion" | "orbital-bomb";
 
 export interface ComboEvent {
   id: ComboId;
@@ -43,12 +34,9 @@ interface ComboDefinition {
 
 export const COMBO_DEFINITIONS: readonly ComboDefinition[] = [
   { id: "steam-shock", a: "fire", b: "water" },
-  { id: "flash-freeze", a: "water", b: "freeze" },
   { id: "conductive-surge", a: "water", b: "electricity" },
-  { id: "thermal-shock", a: "freeze", b: "laser" },
   { id: "volatile-corrosion", a: "acid", b: "fire" },
   { id: "orbital-bomb", a: "gravity", b: "explosion" },
-  { id: "reality-overload", a: "glitch", b: "electricity" },
 ];
 
 export interface ComboTrackerOptions {

@@ -14,7 +14,12 @@ export class SoundEngine implements SoundApi {
   private noiseBuffer: AudioBuffer | null = null;
   private loops = new Map<
     string,
-    { source: AudioBufferSourceNode; gain: GainNode; filter: BiquadFilterNode }
+    {
+      source: AudioBufferSourceNode;
+      gain: GainNode;
+      filter: BiquadFilterNode;
+      stopTimer: number | null;
+    }
   >();
 
   private ensure(): AudioContext | null {
@@ -248,12 +253,6 @@ export class SoundEngine implements SoundApi {
     osc.stop(t + 0.16);
   }
 
-  /** Ice: a rising glassy shimmer that ends in a splinter. */
-  freeze() {
-    this.burst({ duration: 0.4, gain: 0.16, filterFrom: 1800, filterTo: 9000, type: "highpass" });
-    this.ping(3200 + Math.random() * 1800, 0.16, 0.06, "sine");
-  }
-
   whoosh() {
     this.burst({ duration: 0.45, gain: 0.42, filterFrom: 300, filterTo: 2600, type: "bandpass" });
   }
@@ -268,11 +267,33 @@ export class SoundEngine implements SoundApi {
     // the AudioContext there would happen outside any user gesture (autoplay
     // policies block it and Chrome warns); only touch audio once a loop is
     // actually starting or already running.
-    if (target <= 0 && !this.loops.has(name)) return;
+    let entry = this.loops.get(name);
+    if (target <= 0) {
+      if (!entry || !this.ctx) return;
+      entry.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+      if (entry.stopTimer === null) {
+        const fading = entry;
+        // Four time constants leaves the ramp effectively silent. Stop and
+        // disconnect after it, otherwise every tool ever tried leaves a muted
+        // AudioBufferSource processing until the whole engine is disposed.
+        fading.stopTimer = window.setTimeout(() => {
+          if (this.loops.get(name) !== fading) return;
+          try {
+            fading.source.stop();
+          } catch {
+            // It may already have stopped during context shutdown.
+          }
+          fading.source.disconnect();
+          fading.filter.disconnect();
+          fading.gain.disconnect();
+          this.loops.delete(name);
+        }, 320);
+      }
+      return;
+    }
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
-    let entry = this.loops.get(name);
-    if (!entry && target > 0) {
+    if (!entry) {
       const source = ctx.createBufferSource();
       source.buffer = this.noiseBuffer;
       source.loop = true;
@@ -305,25 +326,31 @@ export class SoundEngine implements SoundApi {
       }
       source.connect(filter).connect(gain).connect(this.master);
       source.start();
-      entry = { source, gain, filter };
+      entry = { source, gain, filter, stopTimer: null };
       this.loops.set(name, entry);
     }
-    if (entry) {
-      entry.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
-      if (name === "fire" && target > 0) {
-        // Random crackle: jitter the filter to keep the loop organic.
-        entry.filter.frequency.setTargetAtTime(350 + Math.random() * 500, ctx.currentTime, 0.05);
-      }
+    if (entry.stopTimer !== null) {
+      window.clearTimeout(entry.stopTimer);
+      entry.stopTimer = null;
+    }
+    entry.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
+    if (name === "fire") {
+      // Random crackle: jitter the filter to keep the loop organic.
+      entry.filter.frequency.setTargetAtTime(350 + Math.random() * 500, ctx.currentTime, 0.05);
     }
   }
 
   dispose() {
-    for (const { source } of this.loops.values()) {
+    for (const { source, filter, gain, stopTimer } of this.loops.values()) {
+      if (stopTimer !== null) window.clearTimeout(stopTimer);
       try {
         source.stop();
       } catch {
         // Already stopped.
       }
+      source.disconnect();
+      filter.disconnect();
+      gain.disconnect();
     }
     this.loops.clear();
     void this.ctx?.close();

@@ -3,8 +3,7 @@
  *
  * Where the base toolset damages *pixels*, these tools use the engine's
  * physical layer: they fracture the page into rigid bodies, knock real DOM
- * elements loose as objects, bend matter into a singularity, or freeze a region
- * so it shatters like glass instead of tearing like paper.
+ * elements loose as objects or bend matter into a singularity.
  *
  * Each one is still just a `Tool` — an object with pointer handlers and a tick.
  * Everything expensive lives behind `engine.fracture` / `explode` / `demolish`,
@@ -12,17 +11,12 @@
  */
 
 import { emojiCursor } from "./cursors";
-import { drawBurnChannel, drawFrost } from "./decals";
+import { drawBurnChannel } from "./decals";
 import { emit, rand, TAU } from "./math";
-import {
-  blackHoleArt,
-  bugsArt,
-  demolitionArt,
-  freezeArt,
-  lightningArt,
-  rocketArt,
-} from "./toolart";
+import { createEngineState } from "./tool-kit";
+import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart";
 import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
+import { WOOD } from "./wood";
 
 // ── Black hole ──────────────────────────────────────────────────────────────
 
@@ -32,18 +26,19 @@ import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
  * disc — so the tool's whole job is to spin one up, steer it, and detonate it
  * when you let go.
  */
-export const blackHole: Tool & { rumble: number } = {
+const blackHoleStates = createEngineState(() => ({ rumble: 0 }));
+
+export const blackHole: Tool = {
   id: "blackhole",
   name: "Black hole",
   icon: "🕳️",
-  hint: "hold to open a singularity",
+  hint: "hold to open — release to collapse",
   cursor: emojiCursor("🕳️"),
   art: blackHoleArt,
-  rumble: 0,
-  reset() {
-    blackHole.rumble = 0;
-  },
+  reset: (engine) => blackHoleStates.reset(engine),
+  hasPendingWork: () => false,
   onDown(engine, e) {
+    blackHoleStates.get(engine).rumble = 0;
     engine.setSingularity({ x: e.x, y: e.y, radius: 24, power: 900, charge: 0 });
     engine.sound.hiss();
   },
@@ -51,6 +46,7 @@ export const blackHole: Tool & { rumble: number } = {
     collapseSingularity(engine);
   },
   tick(engine, dt, held, pointer) {
+    const state = blackHoleStates.get(engine);
     const s = engine.singularity;
     if (!s) return;
     if (!held || pointer.x <= -100) {
@@ -65,9 +61,9 @@ export const blackHole: Tool & { rumble: number } = {
     s.y = pointer.y;
     // A low constant tremor rather than a per-frame hit: it should feel like
     // something straining, without farming the combo meter.
-    blackHole.rumble += dt;
-    if (blackHole.rumble > 0.14) {
-      blackHole.rumble = 0;
+    state.rumble += dt;
+    if (state.rumble > 0.14) {
+      state.rumble = 0;
       engine.shake(1.6 + s.radius * 0.03);
     }
   },
@@ -101,8 +97,8 @@ interface Rocket {
 /** Motor smoke and embers per second while a rocket is under power. */
 const ROCKET_SMOKE_PER_SECOND = 90;
 
-/** In flight. Module-scoped so rockets keep travelling between pointer events. */
-const rockets: Rocket[] = [];
+/** In-flight rockets retained independently for every mounted engine. */
+const rocketStates = createEngineState<Rocket[]>(() => []);
 
 /**
  * Fire a rocket at the cursor. It leaves the shoulder tube along the way the
@@ -115,15 +111,13 @@ export const rocketLauncher: Tool = {
   id: "rocket",
   name: "Rocket launcher",
   icon: "🚀",
-  hint: "click to launch",
+  hint: "click to launch — detonates on return",
   cursor: emojiCursor("🚀"),
   art: rocketArt,
-  reset() {
-    // Anything still flying belonged to the engine that launched it — a new
-    // engine must not detonate stale rockets at coordinates it never saw.
-    rockets.length = 0;
-  },
+  reset: (engine) => rocketStates.reset(engine),
+  hasPendingWork: (engine) => (rocketStates.peek(engine)?.length ?? 0) > 0,
   onDown(engine, e) {
+    const rockets = rocketStates.get(engine);
     if (rockets.length > 5) return;
     // Out of the tube, along its axis. The rocket departs the cursor fast —
     // which is why it must not be allowed to detonate until it has actually
@@ -171,6 +165,7 @@ export const rocketLauncher: Tool = {
     engine.shake(4, -aim.x, -aim.y);
   },
   tick(engine, dt) {
+    const rockets = rocketStates.get(engine);
     for (let i = rockets.length - 1; i >= 0; i--) {
       const r = rockets[i];
       r.life += dt;
@@ -260,6 +255,9 @@ export const rocketLauncher: Tool = {
       }
     }
   },
+  backgroundTick(engine, dt) {
+    rocketLauncher.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+  },
 };
 
 // ── Lightning ───────────────────────────────────────────────────────────────
@@ -311,13 +309,15 @@ function drawBolt(engine: DestroyerEngineApi, pts: number[], thickness: number, 
  * most of the difference between "a lightning strike" and "a bright picture of
  * one". Module state, stepped in the tool's tick like the rockets are.
  */
-const restrikes: {
+interface Restrike {
   pts: number[];
   delay: number;
   impactX: number;
   impactY: number;
   grounded: boolean;
-}[] = [];
+}
+
+const lightningStates = createEngineState<Restrike[]>(() => []);
 
 /**
  * Call down a lightning strike. The bolt is a jagged path with branches and
@@ -330,13 +330,13 @@ export const lightning: Tool = {
   id: "lightning",
   name: "Lightning",
   icon: "⚡",
-  hint: "click to strike",
+  hint: "click to call down a strike",
   cursor: emojiCursor("⚡"),
   art: lightningArt,
-  reset() {
-    restrikes.length = 0;
-  },
+  reset: (engine) => lightningStates.reset(engine),
+  hasPendingWork: (engine) => (lightningStates.peek(engine)?.length ?? 0) > 0,
   onDown(engine, e) {
+    const restrikes = lightningStates.get(engine);
     // A bolt aimed at a hole never grounds: it passes through the empty space
     // where the page used to be and is gone. The strike itself still happens —
     // the bolt and its branches are in the air in front of the page — but
@@ -390,7 +390,6 @@ export const lightning: Tool = {
     }
 
     if (grounded) {
-      const material = engine.materialAt(e.x, e.y);
       // Burn the channel into the page itself, and cut through the last stretch
       // of it so the strike leaves a real wound and not just a scorch.
       drawBurnChannel(engine.surfaceCtx, main);
@@ -407,7 +406,7 @@ export const lightning: Tool = {
 
       // Ground crawlers: short arcs that skitter outward from the strike point
       // along the surface, the way a strike grounds itself in every direction.
-      for (let c = 0; c < 6 + Math.round(material.conductivity * 4); c++) {
+      for (let c = 0; c < 6 + Math.round(WOOD.conductivity * 4); c++) {
         const a = rand(0, TAU);
         const len = rand(40, 130);
         const crawler = boltPath(
@@ -435,8 +434,7 @@ export const lightning: Tool = {
       size: 640,
     });
     if (grounded) {
-      const material = engine.materialAt(e.x, e.y);
-      const conduction = 1 + material.conductivity * 0.4;
+      const conduction = 1 + WOOD.conductivity * 0.4;
       engine.explode(e.x, e.y, 64 * Math.sqrt(conduction), {
         power: 460 * conduction,
         // The channel below owns ignition. Letting the generic explosion also
@@ -461,6 +459,7 @@ export const lightning: Tool = {
     );
   },
   tick(engine, dt) {
+    const restrikes = lightningStates.get(engine);
     for (let i = restrikes.length - 1; i >= 0; i--) {
       const r = restrikes[i];
       r.delay -= dt;
@@ -485,94 +484,14 @@ export const lightning: Tool = {
       engine.shake(6, 0, 0.5);
     }
   },
-};
-
-// ── Freeze ray ──────────────────────────────────────────────────────────────
-
-let lastFreezeSound = 0;
-
-/**
- * Frost the page. Frozen regions refuse to catch fire and, crucially, shatter
- * differently: hit ice with the hammer or a rocket and it comes apart into far
- * more, far lighter, blue-white shards that skitter when they land.
- */
-/** Rime stamps per second — bursts, not a continuous paint (see the tick). */
-const RIME_STAMPS_PER_SECOND = 22;
-
-export const freezeRay: Tool & { crystalDebt: number } = {
-  id: "freeze",
-  name: "Freeze ray",
-  icon: "❄️",
-  hint: "hold to freeze — ice won't burn, and shatters",
-  cursor: emojiCursor("❄️"),
-  art: freezeArt,
-  crystalDebt: 0,
-  reset() {
-    freezeRay.crystalDebt = 0;
-    lastFreezeSound = 0;
-  },
-  tick(engine, dt, held, pointer) {
-    engine.sound.loop("water", held ? 0.16 : 0);
-    if (!held || pointer.x <= -100) {
-      freezeRay.crystalDebt = 0;
-      return;
-    }
-    const radius = 62;
-    engine.freeze(pointer.x, pointer.y, radius, dt * 2.4);
-    // Ice puts fires out, and the steam comes off the flames, not the nozzle.
-    engine.dowseFlames(pointer.x, pointer.y, radius, dt * 3);
-
-    // Rime is stamped in bursts rather than every frame: continuous painting
-    // saturates to a flat white sheet and loses the crystalline structure.
-    freezeRay.crystalDebt = emit(freezeRay.crystalDebt, dt, RIME_STAMPS_PER_SECOND, () => {
-      const a = Math.random() * TAU;
-      const d = Math.random() * radius * 0.9;
-      const fx = pointer.x + Math.cos(a) * d;
-      const fy = pointer.y + Math.sin(a) * d;
-      // Cold aimed into a hole freezes nothing: rime needs a surface to creep
-      // across. Stamps that land in the void simply never happen.
-      if (!engine.onPage(fx, fy)) return;
-      drawFrost(engine.surfaceCtx, fx, fy, rand(14, 34), 0.5);
-      // Rime spreads across the whole cone, which is wider than the pointer net.
-      engine.markSurface(pointer.x, pointer.y, radius + 34);
-      engine.spawnParticle({
-        kind: "ice",
-        x: fx,
-        y: fy,
-        vx: rand(-70, 70),
-        vy: rand(-120, -20),
-        life: 0,
-        maxLife: rand(0.4, 0.9),
-        size: rand(1.5, 3.5),
-        angle: Math.random() * TAU,
-        spin: rand(-14, 14),
-        gravity: 220,
-      });
-      engine.spawnParticle({
-        kind: "steam",
-        x: pointer.x + rand(-20, 20),
-        y: pointer.y + rand(-20, 20),
-        vx: rand(-40, 40),
-        vy: rand(10, 60),
-        life: 0,
-        maxLife: rand(0.4, 0.9),
-        size: rand(6, 14),
-        gravity: 30,
-        drag: 2.2,
-      });
-    });
-
-    const now = performance.now();
-    if (now - lastFreezeSound > 420) {
-      lastFreezeSound = now;
-      engine.sound.freeze();
-    }
+  backgroundTick(engine, dt) {
+    lightning.tick?.(engine, dt, false, { x: -1000, y: -1000 });
   },
 };
 
 // ── Demolition ──────────────────────────────────────────────────────────────
 
-let lastDemolish: Vec2 | null = null;
+const demolitionStates = createEngineState<{ last: Vec2 | null }>(() => ({ last: null }));
 
 /**
  * Knock real page elements loose.
@@ -589,15 +508,13 @@ export const demolition: Tool = {
   hint: "click elements to knock them loose",
   cursor: emojiCursor("🏗️"),
   art: demolitionArt,
-  reset() {
-    lastDemolish = null;
-  },
+  reset: (engine) => demolitionStates.reset(engine),
   onDown(engine, e) {
-    lastDemolish = { x: e.x, y: e.y };
+    demolitionStates.get(engine).last = { x: e.x, y: e.y };
     if (!engine.demolish(e.x, e.y)) {
       // Nothing structural here — take a bite out of the surface instead, so
       // the tool never feels dead. Unless there is no surface: in the void the
-      // fracture yields nothing, and wrecking empty space makes no sound.
+      // fracture yields nothing, and striking empty space makes no sound.
       if (engine.fracture(e.x, e.y, 46, { power: 210 }) > 0) {
         engine.shake(7, 0, 1);
         engine.sound.crack();
@@ -605,15 +522,16 @@ export const demolition: Tool = {
     }
   },
   onMove(engine, e) {
-    if (!e.buttons || !lastDemolish) return;
+    const state = demolitionStates.get(engine);
+    if (!e.buttons || !state.last) return;
     // Dragging tears out a swathe, but only every 40 px so a fast sweep doesn't
     // try to demolish the entire page in one frame.
-    if (Math.hypot(e.x - lastDemolish.x, e.y - lastDemolish.y) < 40) return;
-    lastDemolish = { x: e.x, y: e.y };
+    if (Math.hypot(e.x - state.last.x, e.y - state.last.y) < 40) return;
+    state.last = { x: e.x, y: e.y };
     if (!engine.demolish(e.x, e.y)) engine.fracture(e.x, e.y, 34, { power: 170 });
   },
-  onUp() {
-    lastDemolish = null;
+  onUp(engine) {
+    demolitionStates.get(engine).last = null;
   },
 };
 
@@ -626,9 +544,9 @@ export const demolition: Tool = {
  */
 export const bugs: Tool = {
   id: "bugs",
-  name: "Bug",
+  name: "Bugs",
   icon: "🐛",
-  hint: "click to release a bug — squash or shoot it",
+  hint: "click to release a bug — shoot, squash, or sweep it",
   cursor: emojiCursor("🐛"),
   art: bugsArt,
   onDown(engine, e) {
@@ -639,11 +557,4 @@ export const bugs: Tool = {
   },
 };
 
-export const heavyTools: Tool[] = [
-  demolition,
-  rocketLauncher,
-  lightning,
-  freezeRay,
-  blackHole,
-  bugs,
-];
+export const heavyTools: Tool[] = [demolition, rocketLauncher, lightning, blackHole, bugs];

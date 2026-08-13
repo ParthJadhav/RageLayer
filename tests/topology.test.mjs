@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { findDetachedPolygons, polygonArea2, surfaceRuns } from "../src/topology.ts";
+import {
+  findDetachedPolygons,
+  includeTopologySegment,
+  polygonArea2,
+  surfaceRuns,
+} from "../src/topology.ts";
 
 function distanceToSegment(x, y, [ax, ay, bx, by]) {
   const dx = bx - ax;
@@ -22,6 +27,24 @@ function detached(cuts, bounds, pristineVoid = () => false) {
     bounds,
   );
 }
+
+describe("topology scan bounds", () => {
+  test("starts with the unordered endpoints of the first segment", () => {
+    expect(includeTopologySegment(null, 9, 4, 2, 12)).toEqual({
+      x0: 2,
+      y0: 4,
+      x1: 9,
+      y1: 12,
+    });
+  });
+
+  test("expands one retained region across later segments", () => {
+    const bounds = { x0: 10, y0: 20, x1: 30, y1: 40 };
+
+    expect(includeTopologySegment(bounds, 22, 8, 46, 35)).toBe(bounds);
+    expect(bounds).toEqual({ x0: 10, y0: 8, x1: 46, y1: 40 });
+  });
+});
 
 describe("material topology", () => {
   test("an open cut releases nothing", () => {

@@ -16,7 +16,6 @@ const options = {
   captureContent: false,
   quality: "balanced",
   effectsPixelRatio: 1.25,
-  loadout: "precision",
 } satisfies MountRageLayerOptions;
 
 const controller = createRageLayer(options);

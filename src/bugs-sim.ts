@@ -2,9 +2,9 @@
  * BugSwarm — the infestation.
  *
  * Bugs live at engine level, like flames, so a swarm keeps gnawing while the
- * user switches tools to fight it. And fight back they can: fire burns a bug
- * that wanders into it, frost freezes one solid, water washes them off, and
- * every blast, fracture or black hole takes whatever was underneath.
+ * user switches tools to fight it. And fight back they can: fire burns a bug,
+ * water washes it off, and every blast, fracture or black hole takes whatever
+ * was underneath.
  *
  * The swarm owns its population, its stepping and its drawing, and reaches the
  * rest of the engine through the narrow `BugHost` slice below — every member of
@@ -43,7 +43,6 @@ export interface BugHost {
   readonly sound: SoundApi;
   onPage(x: number, y: number, threshold?: number): boolean;
   pageOpacityAt(x: number, y: number): number;
-  frostAt(x: number, y: number): number;
   spawnParticle(p: Particle): void;
   markSurface(x: number, y: number, radius: number): void;
 }
@@ -210,29 +209,6 @@ export class BugSwarm {
           break;
         }
       }
-      // Cold kills the other way: frost stiffens a bug — it slows, stops
-      // chewing (frozen page is too hard to gnaw) — and heavy rime freezes it
-      // solid where it stands. It comes apart as ice, not as a smear.
-      const chill = host.frostAt(b.x, b.y);
-      if (chill > 0.7) {
-        for (let s = 0; s < 6; s++) {
-          host.spawnParticle({
-            kind: "ice",
-            x: b.x,
-            y: b.y,
-            vx: (Math.random() - 0.5) * 120,
-            vy: -30 - Math.random() * 90,
-            life: 0,
-            maxLife: 0.5 + Math.random() * 0.5,
-            size: 1.2 + Math.random() * 2.2,
-            angle: Math.random() * TAU,
-            spin: (Math.random() - 0.5) * 20,
-            gravity: 260,
-          });
-        }
-        this.bugs.splice(i, 1);
-        continue;
-      }
       if (burned) {
         host.content?.char(b.x, b.y, b.size * 2.5, 0.3);
         host.markSurface(b.x, b.y, b.size * 4);
@@ -273,10 +249,8 @@ export class BugSwarm {
         b.a += (Math.random() - 0.5) * 2.4;
       }
       b.a += (Math.random() - 0.5) * 3.4 * dt;
-      // A chilled bug moves like one: stiff, slow, and easier to catch.
-      const mobility = 1 - chill * 0.85;
-      b.x += Math.cos(b.a) * b.speed * mobility * dt;
-      b.y += Math.sin(b.a) * b.speed * mobility * dt;
+      b.x += Math.cos(b.a) * b.speed * dt;
+      b.y += Math.sin(b.a) * b.speed * dt;
       // Turn back at the page edge instead of wandering into the void.
       if (b.x < 4 || b.x > host.width - 4 || b.y < 4 || b.y > host.height - 4) {
         b.a += Math.PI;
@@ -289,7 +263,7 @@ export class BugSwarm {
       // solid page, because it eats the site and the void has nothing to eat.
       b.chew -= dt;
       const content = host.content;
-      if (b.chew <= 0 && chill < 0.3 && content?.ready) {
+      if (b.chew <= 0 && content?.ready) {
         b.chew = 0.09 + Math.random() * 0.16;
         if (host.pageOpacityAt(b.x, b.y) < 0.5) {
           b.a += Math.PI + (Math.random() - 0.5);

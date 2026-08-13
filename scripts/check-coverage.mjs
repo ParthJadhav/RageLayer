@@ -31,7 +31,6 @@ const BROWSER_ONLY = new Map([
   ["src/gl.ts", "WebGL program/texture creation"],
   ["src/postfx.ts", "WebGL post-processing chain"],
   ["src/surface.ts", "WebGL2 surface shader"],
-  ["src/live.ts", "Chrome's experimental HTML-in-canvas capture"],
   ["src/share.ts", "clipboard and download side effects"],
 ]);
 

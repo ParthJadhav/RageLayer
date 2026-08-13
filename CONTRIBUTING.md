@@ -1,7 +1,7 @@
 # Contributing
 
 Thanks for helping improve RageLayer. For usage questions, start in
-[GitHub Discussions](https://github.com/ParthJadhav/ragelayer/discussions); use an issue for
+[GitHub Discussions](https://github.com/ParthJadhav/RageLayer/discussions); use an issue for
 a reproducible defect or a scoped feature proposal. Participation is covered by the
 [code of conduct](./CODE_OF_CONDUCT.md).
 
@@ -54,10 +54,18 @@ the default location.
 
 ```sh
 bun run check              # everything CI checks
+bun run test:browser       # if behavior depends on capture, WebGL, or real layout
+bun run test:tools:visual  # if a tool's gesture, effect, or art changed
 bun run benchmark          # if you touched the runtime hot paths
+bun run profile:effects:low-end # if you touched rendering or particle emission
 bun run memory:check       # if you touched lifecycle/dispose paths
 bun run screenshots        # if you changed anything visual — docs screenshots regenerate
 ```
+
+For performance comparisons, fix the quality tier, DPR, CPU throttle, duration, viewport, and
+Chrome build. Run each side at least three times; do not keep an optimization whose result is within
+run-to-run noise. See the [performance guide](./docs/performance.md#isolate-one-effect) for profiler
+flags and artifact locations.
 
 Please keep framework adapters thin. A behavior that can live in `src/mount.ts` or the engine should
 not be reimplemented independently in React, Vue, and Svelte. New public APIs need types, docs, and

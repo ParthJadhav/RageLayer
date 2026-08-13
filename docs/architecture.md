@@ -1,8 +1,8 @@
 # Architecture
 
 How the package turns a live page into a destructible object. Deeper dives:
-the [repository README](https://github.com/ParthJadhav/ragelayer#readme) covers the public
-overview, and [HTML-IN-CANVAS.md](https://github.com/ParthJadhav/ragelayer/blob/main/HTML-IN-CANVAS.md)
+the [repository README](https://github.com/ParthJadhav/RageLayer#readme) covers the public
+overview, and [HTML-IN-CANVAS.md](https://github.com/ParthJadhav/RageLayer/blob/main/HTML-IN-CANVAS.md)
 is the research log behind live capture mode.
 
 ## The layer model
@@ -22,12 +22,17 @@ On activation the live DOM is rasterized (via `html-to-image`'s foreignObject te
 real DOM is hidden with `visibility: hidden` (layout and scrolling survive), and the raster
 becomes the page. A pristine copy is kept so the broom and `clear()` genuinely restore content.
 
+The physics layer treats every surviving page pixel as the same wood-like surface. A single internal
+response supplies toughness, density, flammability, conductivity, corrosion resistance, and rebound;
+DOM regions and engine options do not replace it.
+
 ## Module map
 
 ```
 src/
-├── engine.ts        DestroyerEngine — DOM, rAF loop, input, particles, flames,
-│                    bugs, frost/fuel grids, singularity, collapse, shake, quality
+├── engine.ts        DestroyerEngine orchestration — DOM, rAF, input, destruction,
+│                    subsystems, history, telemetry, quality and public methods
+├── engine-options.ts Runtime defaults, validation and normalized engine options
 ├── types.ts         The full public type surface (DestroyerOptions, Tool, …)
 ├── content.ts       ContentLayer — the destructible page: punch/burn/cut/char/restore,
 │                    pristine base, live-mode wound/decal recomposition, OpacityMap
@@ -41,23 +46,25 @@ src/
 ├── physics.ts       PhysicsWorld/Body — sequential-impulse rigid bodies, sleeping,
 │                    sweep-and-prune broadphase, blast/attract
 ├── fracture.ts      Voronoi/grid shattering + chunk sprite baking
-├── topology.ts      Material connectivity: detached-region detection, stroke↔material
-│                    clipping (the only unit-tested module — tests/topology.test.mjs)
+├── particles.ts     Bounded particle storage and simulation
+├── flames.ts        Wood fuel, contact heat, bounded fire spread and smoke emission
+├── topology.ts      Surface connectivity: detached-region detection, stroke↔surface
+│                    clipping and shared scan-bound accumulation
 ├── elements.ts      Pre-capture DOM measurement for demolition/collapse
 ├── textmask.ts      Text-line mask so refraction backs off over glyphs
-├── decals.ts        Procedural persistent marks (cracks, holes, scorch, frost, splats…)
+├── decals.ts        Procedural persistent marks (cracks, holes, scorch, gashes, splats…)
 ├── sprites.ts       Lazily-baked gradient sprites for the hot particle paths
 ├── tools.ts         Hammer, gun, flamethrower, hose, chainsaw, paintball, broom
-├── heavy-tools.ts   Demolition, rocket, lightning, freeze ray, black hole, bugs
-├── advanced-tools.ts Gravity gun, laser, acid, wrecking ball, bombs, glitch
-├── materials.ts     Registry + nested DOM-region material lookup
+├── heavy-tools.ts   Demolition, rocket, lightning, black hole, bugs
+├── advanced-tools.ts Gravity gun, laser cutter, acid sprayer, sticky bombs
+├── tool-kit.ts      Shared particle emissions and engine-keyed tool state
+├── wood.ts          Fixed physical response for the destructible page surface
 ├── combos.ts        Bounded spatial interaction tracker and combo definitions
 ├── history.ts       Pixel-budgeted undo/redo stack with deterministic disposal
-├── loadouts.ts      Frozen named tool presets and custom loadout validation
 ├── sdk.ts           Typed stateful custom-tool factories and rate scheduling
 ├── default-tools.ts Official ordering that combines all built-in toolsets
 ├── lazy.ts          On-demand base/heavy/advanced/complete tool loaders
-├── toolart.ts       Hand-drawn pseudo-3D tool renderings + toolbar icon baking
+├── toolart/         Hand-drawn pseudo-3D tool renderings + toolbar icon baking
 ├── advanced-toolart.ts Split procedural models for advanced tools
 ├── cursors.ts       emojiCursor()
 ├── audio.ts         SoundEngine — fully procedural WebAudio
@@ -65,6 +72,25 @@ src/
 ├── share.ts         Blob download / clipboard helpers
 └── react/           RageLayer component + toolbar
 ```
+
+## Tool instance state
+
+Built-in tools are immutable module-level objects so they can be shared across entry points and
+engines. Their mutable work is not shared: cooldowns, gesture paths, spawn debt, strike history,
+queued projectiles and delayed effects live in `WeakMap` stores keyed by `DestroyerEngineApi`.
+Registering, clearing, unregistering or disposing a tool resets only the calling engine's entry.
+This lets two mounted destroyer layers use the same exported tool at the same time without one
+layer advancing, clearing or redirecting the other's work, and lets garbage collection reclaim a
+disposed engine without a global registry.
+
+Custom stateful tools should use `defineTool()` from `ragelayer/sdk`, which creates independent
+state by construction. A direct `Tool` implementation that retains work should apply the same
+engine-keyed rule and clear its entry from `reset(engine)`.
+
+Tools with autonomous work expose `hasPendingWork` and `backgroundTick`: rockets, lightning
+restrikes, acid creep, and bomb fuses continue after selection changes, while settled built-ins let
+the requestAnimationFrame loop sleep when the pointer and effects are idle. A visible 3D tool stays
+as a retained canvas image while the pointer is still; the next pointer event redraws it on demand.
 
 ## The frame loop
 
@@ -75,7 +101,8 @@ one giant physics step.
 
 ```
 frame:
-  update   tool.tick → collapse → flames → bugs → singularity → particles → physics
+  update   selected tick + pending background tools → collapse → flames → bugs
+           → singularity → particles → physics
   surface  dirty-rect texSubImage2D upload + scissored shader pass
   render   particles (4 blend buckets) → flames → mask-to-page-alpha → debris
            → singularity → additive pass → tool art → present → post-FX

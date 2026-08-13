@@ -7,7 +7,6 @@ export default defineConfig({
     "tools/index": "src/tools-entry.ts",
     "tools/heavy": "src/heavy-tools-entry.ts",
     "tools/advanced": "src/advanced-tools-entry.ts",
-    "loadouts/index": "src/loadouts-entry.ts",
     "sdk/index": "src/sdk.ts",
     "lazy/index": "src/lazy.ts",
     "react/index": "src/react/index.ts",

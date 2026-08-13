@@ -82,4 +82,4 @@ Use `"auto"` unless you are explicitly testing that experiment.
 
 Include the package, framework, browser, and operating-system versions; `captureStatus`; console
 warnings; and a minimal public reproduction. Never attach a capture containing credentials or private
-page data. See the [support guide](https://github.com/ParthJadhav/ragelayer/blob/main/SUPPORT.md).
+page data. See the [support guide](https://github.com/ParthJadhav/RageLayer/blob/main/SUPPORT.md).

@@ -30,7 +30,7 @@ import { type OpacityBounds, OpacityMap } from "./opacity-map";
 import { blit, sprites } from "./sprites";
 import { type SurfaceParams, SurfaceRenderer } from "./surface";
 import { findDetachedPolygons, polygonMaterialArea, type TopologyBounds } from "./topology";
-import type { ContentPatch } from "./types";
+import type { ContentPatch, CutOptions } from "./types";
 
 export type { ContentPatch };
 
@@ -643,40 +643,56 @@ export class ContentLayer {
     this.char(x, y, r * 2.2, 0.28);
   }
 
-  /** Slice through content along a segment (chainsaw). */
-  cut(x1: number, y1: number, x2: number, y2: number) {
+  /** Slice through content along a segment, with either a torn or precise edge. */
+  cut(x1: number, y1: number, x2: number, y2: number, options: CutOptions = {}) {
     if (!this.ready) return;
-    const lineWidth = rand(4, 7);
+    const clean = options.edge === "clean";
+    const lineWidth = Math.max(1, options.width ?? (clean ? 3 : rand(4, 7)));
     const kerf = new Path2D();
     kerf.moveTo(x1, y1);
     kerf.lineTo(x2, y2);
-    // Torn nicks along the cut, batched into a single path.
+    // A saw tears irregular nicks out beside its blade. A laser gets no
+    // randomness at all: one constant-width path is its entire physical edge.
     const len = Math.hypot(x2 - x1, y2 - y1);
-    const steps = Math.max(2, Math.floor(len / 6));
     const nicks = new Path2D();
-    for (let i = 0; i < steps; i++) {
-      const t = i / steps;
-      const nx = x1 + (x2 - x1) * t + rand(-3, 3);
-      const ny = y1 + (y2 - y1) * t + rand(-3, 3);
-      const nr = rand(1, 4);
-      nicks.moveTo(nx + nr, ny);
-      nicks.arc(nx, ny, nr, 0, TAU);
+    if (!clean) {
+      const steps = Math.max(2, Math.floor(len / 6));
+      for (let i = 0; i < steps; i++) {
+        const t = i / steps;
+        const nx = x1 + (x2 - x1) * t + rand(-3, 3);
+        const ny = y1 + (y2 - y1) * t + rand(-3, 3);
+        const nr = rand(1, 4);
+        nicks.moveTo(nx + nr, ny);
+        nicks.arc(nx, ny, nr, 0, TAU);
+      }
     }
 
-    const stroke = (ctx: CanvasRenderingContext2D) => {
+    const stroke = (ctx: CanvasRenderingContext2D, width = lineWidth) => {
       ctx.save();
       ctx.lineCap = "round";
-      ctx.lineWidth = lineWidth;
+      ctx.lineJoin = "round";
+      ctx.lineWidth = width;
       ctx.stroke(kerf);
       ctx.restore();
     };
     const ctx = this.ctx;
+    if (clean) {
+      // A narrow, even heat-affected rim. Drawing it before removing the core
+      // leaves two crisp lips instead of the laser's old sequence of scorch
+      // blobs, whose random overlap made a straight drag look ragged.
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.strokeStyle = "rgba(64, 12, 5, 0.72)";
+      stroke(ctx, lineWidth + 5);
+      ctx.strokeStyle = "rgba(232, 70, 20, 0.62)";
+      stroke(ctx, lineWidth + 2);
+    }
     ctx.globalCompositeOperation = "destination-out";
     stroke(ctx);
-    ctx.fill(nicks);
+    if (!clean) ctx.fill(nicks);
     ctx.globalCompositeOperation = "source-over";
-    // Kerf half-width plus the widest nick and its jitter.
-    const reach = lineWidth / 2 + 7;
+    // Torn cuts include the widest nick plus jitter; a precise kerf needs only
+    // enough room for its narrow heat rim.
+    const reach = clean ? lineWidth / 2 + 3 : lineWidth / 2 + 7;
     this.opacity.removeCut(kerf, nicks, lineWidth, {
       x0: Math.min(x1, x2) - reach,
       y0: Math.min(y1, y2) - reach,
@@ -689,7 +705,14 @@ export class ContentLayer {
       wctx.fillStyle = "#000";
       wctx.strokeStyle = "#000";
       stroke(wctx);
-      wctx.fill(nicks);
+      if (!clean) wctx.fill(nicks);
+      if (clean) {
+        const dctx = this.decalsCtx!;
+        dctx.strokeStyle = "rgba(64, 12, 5, 0.72)";
+        stroke(dctx, lineWidth + 5);
+        dctx.strokeStyle = "rgba(232, 70, 20, 0.62)";
+        stroke(dctx, lineWidth + 2);
+      }
     }
 
     this.touch(
@@ -699,9 +722,11 @@ export class ContentLayer {
       Math.max(y1, y2) + reach,
     );
 
-    const mx = (x1 + x2) / 2;
-    const my = (y1 + y2) / 2;
-    this.char(mx, my, Math.max(10, len * 0.7), 0.3);
+    if (!clean) {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      this.char(mx, my, Math.max(10, len * 0.7), 0.3);
+    }
   }
 
   /** Grab a source-rect handle into the pristine snapshot (for flying shards). */

@@ -127,98 +127,154 @@ export const gunArt: ToolArtFn = (ctx, s) => {
   if (!Number.isFinite(s.sinceDown)) kick = 0;
   const bob = Math.sin(s.time * 1.9) * 0.9;
 
-  castShadow(ctx, 34, 40, 40, 13, 0.16);
+  castShadow(ctx, 35, 39, 43, 14, 0.17);
 
   ctx.save();
   ctx.rotate(0.5 - kick * 0.13);
   ctx.translate(kick * 5, bob * 0.2);
 
-  // Frame + trigger guard under the slide.
-  ctx.fillStyle = grad(ctx, 0, 0, 0, 16, DARKMETAL);
+  // Polymer frame: a defined dust cover and a slight beavertail give the
+  // silhouette real pistol proportions instead of a rectangle on a stick.
+  ctx.fillStyle = grad(ctx, 0, 2, 0, 18, DARKMETAL);
   ctx.beginPath();
-  ctx.roundRect(6, 2, 46, 12, 3);
+  ctx.moveTo(5, 3);
+  ctx.lineTo(55, 3);
+  ctx.lineTo(59, 7);
+  ctx.lineTo(55, 14);
+  ctx.lineTo(39, 14);
+  ctx.lineTo(34, 11);
+  ctx.lineTo(5, 11);
+  ctx.closePath();
   ctx.fill();
   outline(ctx);
+
+  // Accessory rail cuts beneath the dust cover.
+  ctx.strokeStyle = "rgba(180,188,198,0.42)";
+  ctx.lineWidth = 1.1;
+  for (let x = 12; x <= 24; x += 4) {
+    ctx.beginPath();
+    ctx.moveTo(x, 9);
+    ctx.lineTo(x + 2, 11);
+    ctx.stroke();
+  }
+
   // Trigger guard: an open loop; trigger inside.
   ctx.strokeStyle = "#26282e";
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(24, 13);
-  ctx.quadraticCurveTo(24, 26, 37, 25);
-  ctx.lineTo(40, 14);
+  ctx.moveTo(23, 12);
+  ctx.quadraticCurveTo(22, 26, 37, 25);
+  ctx.lineTo(41, 14);
   ctx.stroke();
-  ctx.strokeStyle = "#8b9099";
+  ctx.strokeStyle = "#a5abb3";
   ctx.lineWidth = 2.2;
   ctx.beginPath();
-  ctx.moveTo(32, 14);
-  ctx.quadraticCurveTo(30, 20, 33, 22);
+  ctx.moveTo(32, 13);
+  ctx.quadraticCurveTo(29, 19, 33, 22);
   ctx.stroke();
 
-  // Grip: raked back, stippled, tucked up into the frame.
+  // Raked grip with a palm swell, stipple field, and magazine floor plate.
   ctx.save();
-  ctx.translate(40, 6);
-  ctx.rotate(0.42);
-  ctx.fillStyle = grad(ctx, 0, 0, 14, 0, [
-    [0, "#3a2c20"],
-    [0.3, "#6b4c33"],
-    [0.6, "#4a3424"],
-    [1, "#241a11"],
+  ctx.translate(41, 8);
+  ctx.rotate(0.36);
+  ctx.fillStyle = grad(ctx, 0, 0, 16, 0, [
+    [0, "#17191d"],
+    [0.38, "#42464d"],
+    [0.72, "#292c31"],
+    [1, "#101115"],
   ]);
   ctx.beginPath();
-  ctx.roundRect(0, 0, 15, 34, 4);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(15, 0);
+  ctx.lineTo(17, 30);
+  ctx.quadraticCurveTo(10, 37, 1, 33);
+  ctx.closePath();
   ctx.fill();
   outline(ctx);
-  ctx.fillStyle = "rgba(20,14,9,0.6)";
+  ctx.fillStyle = "rgba(5,6,8,0.6)";
   for (let r = 0; r < 5; r++)
     for (let c = 0; c < 3; c++) {
       ctx.beginPath();
-      ctx.arc(4 + c * 4, 7 + r * 5.4, 0.9, 0, TAU);
+      ctx.arc(4 + c * 4.2, 7 + r * 5.2, 0.85, 0, TAU);
       ctx.fill();
     }
+  ctx.fillStyle = "#17191d";
+  ctx.beginPath();
+  ctx.roundRect(-1, 32, 19, 5, 2);
+  ctx.fill();
+  outline(ctx, 0.45);
   ctx.restore();
 
-  // Slide: runs back with the kick, harder than the frame.
+  // Barrel stays tied to the hotspot while the slide reciprocates around it.
+  // That muzzle relationship is the visual promise that shots originate here.
+  ctx.fillStyle = grad(ctx, 0, -5, 0, 5, IRON);
+  ctx.beginPath();
+  ctx.roundRect(-1, -5, 48, 10, 3);
+  ctx.fill();
+
+  // Slide: longer and lower than the frame, with beveled nose and rear mass.
   const slideBack = kick * 7;
   ctx.save();
   ctx.translate(slideBack, 0);
-  ctx.fillStyle = grad(ctx, 0, -10, 0, 4, STEEL);
+  ctx.fillStyle = grad(ctx, 0, -11, 0, 7, STEEL);
   ctx.beginPath();
-  ctx.roundRect(0, -10, 56, 13, 3);
+  ctx.moveTo(-4, -7);
+  ctx.quadraticCurveTo(-4, -10, 0, -11);
+  ctx.lineTo(60, -11);
+  ctx.quadraticCurveTo(64, -10, 64, -6);
+  ctx.lineTo(64, 5);
+  ctx.lineTo(1, 6);
+  ctx.quadraticCurveTo(-4, 5, -4, 1);
+  ctx.closePath();
   ctx.fill();
   outline(ctx);
+
+  // Top bevel and front/rear serrations make the slide's direction readable.
+  ctx.strokeStyle = "rgba(255,255,255,0.42)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(1, -8.5);
+  ctx.lineTo(59, -8.5);
+  ctx.stroke();
   // Rear serrations.
   ctx.strokeStyle = "rgba(15,16,20,0.7)";
-  ctx.lineWidth = 1.2;
-  for (let i = 0; i < 5; i++) {
+  ctx.lineWidth = 1.35;
+  for (let i = 0; i < 6; i++) {
     ctx.beginPath();
-    ctx.moveTo(42 + i * 2.6, -8);
-    ctx.lineTo(42 + i * 2.6, 1);
+    ctx.moveTo(47 + i * 2.3, -8);
+    ctx.lineTo(46 + i * 2.3, 3);
     ctx.stroke();
   }
   // Ejection port: open while cycling.
   ctx.fillStyle = kick > 0.35 ? "#0a0a0c" : "#31353c";
   ctx.beginPath();
-  ctx.roundRect(26, -8, 12, 6, 1.5);
+  ctx.roundRect(27, -7.5, 15, 7, 1.5);
   ctx.fill();
+  ctx.strokeStyle = "rgba(230,190,95,0.42)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
   // Sights.
   ctx.fillStyle = "#15161a";
-  ctx.fillRect(2, -12.5, 3, 3);
-  ctx.fillRect(50, -13, 4, 3.5);
+  ctx.fillRect(1, -14, 3.5, 3.5);
+  ctx.fillRect(56, -14.5, 5, 4);
+  ctx.fillStyle = "#d7e4cf";
+  ctx.fillRect(2.2, -13.4, 1.2, 1.2);
   ctx.restore();
 
-  // Muzzle: bore sits just past the slide at the origin.
-  ctx.fillStyle = grad(ctx, 0, -8, 0, 2, IRON);
+  // Front face and concentric barrel crown, centred exactly on the hotspot.
+  ctx.fillStyle = grad(ctx, 0, -7, 0, 7, IRON);
   ctx.beginPath();
-  ctx.roundRect(-3 + slideBack * 0.2, -8.5, 6, 10, 2);
+  ctx.ellipse(0, 0, 4.5, 6.2, 0, 0, TAU);
   ctx.fill();
+  outline(ctx, 0.55);
   ctx.beginPath();
-  ctx.arc(-1, -3.5, 2.6, 0, TAU);
+  ctx.arc(0, 0, 2.65, 0, TAU);
   ctx.fillStyle = "#050506";
   ctx.fill();
 
   // Barrel heat while hammering on auto.
   if (s.held && s.sinceDown > 0.4)
-    glow(ctx, 0, -4, 14, "rgba(255,120,40,0.5)", Math.min(0.5, (s.sinceDown - 0.4) * 0.5));
+    glow(ctx, 0, 0, 14, "rgba(255,120,40,0.5)", Math.min(0.5, (s.sinceDown - 0.4) * 0.5));
 
   ctx.restore();
 };
@@ -295,57 +351,39 @@ export const flamethrowerArt: ToolArtFn = (ctx, s) => {
 
 // ── Water hose ───────────────────────────────────────────────────────────────
 
-/** Brass nozzle on a green garden hose that trails off toward the ground. */
+/** Compact pistol-grip pressure nozzle; the water connection ends at the grip. */
 export const waterHoseArt: ToolArtFn = (ctx, s) => {
   const a = Math.atan2(s.aimY, s.aimX);
-  const wob = s.held ? Math.sin(s.time * 23) * 1.6 : Math.sin(s.time * 2.1) * 0.5;
-  const back = Math.cos(a + Math.PI);
-  const backY = Math.sin(a + Math.PI);
-  // Where the nozzle body ends and the rubber starts, in tool space.
-  const hx = back * 40 + wob * 0.2;
-  const hy = backY * 40 + wob * 0.4;
+  const wob = s.held ? Math.sin(s.time * 23) * 1.2 : Math.sin(s.time * 2.1) * 0.35;
 
-  castShadow(ctx, 36, 48, 44, 14, 0.15);
-
-  // Hose first (under the nozzle): a rubber curve sagging toward lower right,
-  // swaying while the water is on.
-  ctx.strokeStyle = "#1d4d2b";
-  ctx.lineWidth = 11;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(hx, hy);
-  ctx.bezierCurveTo(hx + 28 + wob, hy + 34, 66, 66 + wob, 96, 108);
-  ctx.stroke();
-  ctx.strokeStyle = "#3f8f52";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(hx - 1, hy - 2);
-  ctx.bezierCurveTo(hx + 26 + wob, hy + 30, 63, 62 + wob, 93, 104);
-  ctx.stroke();
-  ctx.lineCap = "butt";
+  castShadow(ctx, 28, 35, 34, 12, 0.15);
 
   ctx.save();
   ctx.rotate(a + Math.PI);
   ctx.translate(0, wob * 0.3);
-  // Collar where hose meets brass.
-  rod(ctx, 30, 0, 42, 0, 13, IRON);
-  // Brass body with knurled ring.
-  rod(ctx, 10, 0, 32, 0, 12, BRASS);
+
+  // Main pressure body: short enough to read as handheld, with the outlet
+  // exactly at the pointer hotspot.
+  rod(ctx, 9, 0, 39, 0, 13, BRASS);
+  rod(ctx, 32, 0, 43, 0, 15, IRON, 0.42);
+
+  // Knurled flow collar.
   ctx.strokeStyle = "rgba(60,42,10,0.6)";
   ctx.lineWidth = 1;
   for (let i = 0; i < 5; i++) {
     ctx.beginPath();
-    ctx.moveTo(22 + i * 2, -5.5);
-    ctx.lineTo(24 + i * 2, 5.5);
+    ctx.moveTo(23 + i * 2.2, -5.5);
+    ctx.lineTo(25 + i * 2.2, 5.5);
     ctx.stroke();
   }
-  // Taper to the tip.
+
+  // Tapered outlet and dark bore.
   ctx.fillStyle = grad(ctx, 0, -6, 0, 6, BRASS);
   ctx.beginPath();
-  ctx.moveTo(12, -6);
+  ctx.moveTo(11, -6);
   ctx.lineTo(1, -2.6);
   ctx.lineTo(1, 2.6);
-  ctx.lineTo(12, 6);
+  ctx.lineTo(11, 6);
   ctx.closePath();
   ctx.fill();
   outline(ctx);
@@ -353,6 +391,50 @@ export const waterHoseArt: ToolArtFn = (ctx, s) => {
   ctx.arc(1.5, 0, 1.8, 0, TAU);
   ctx.fillStyle = "#0a1c26";
   ctx.fill();
+
+  // Rubberized pistol grip and squeeze lever. The quick-connect fitting ends
+  // beneath the hand; there is deliberately no long decorative pipe attached.
+  ctx.save();
+  ctx.translate(31, 5);
+  ctx.rotate(0.42);
+  ctx.fillStyle = grad(ctx, 0, 0, 13, 0, [
+    [0, "#173c31"],
+    [0.45, "#32715d"],
+    [1, "#102b23"],
+  ]);
+  ctx.beginPath();
+  ctx.roundRect(0, 0, 13, 27, 4);
+  ctx.fill();
+  outline(ctx);
+  ctx.strokeStyle = "rgba(205,240,225,0.3)";
+  ctx.lineWidth = 1.2;
+  for (let y = 6; y < 24; y += 5) {
+    ctx.beginPath();
+    ctx.moveTo(3, y);
+    ctx.lineTo(10, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = "#20262a";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(20, 6);
+  ctx.quadraticCurveTo(20, 17, 31, 17);
+  ctx.stroke();
+  ctx.strokeStyle = "#d5a939";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(27, 7);
+  ctx.quadraticCurveTo(24, 12, 27, 15);
+  ctx.stroke();
+
+  // Small quick connector — a visual full stop, not a trailing hose.
+  ctx.save();
+  ctx.translate(42, 25);
+  ctx.rotate(Math.PI / 2 + 0.42);
+  rod(ctx, -5, 0, 5, 0, 10, IRON);
+  ctx.restore();
   ctx.restore();
 
   // A wet glint at the tip while spraying.
@@ -449,6 +531,10 @@ export const chainsawArt: ToolArtFn = (ctx, s) => {
 /** Stubby teal marker with a hopper of paint on top and a CO₂ tank behind. */
 export const paintballArt: ToolArtFn = (ctx, s) => {
   let kick = Math.exp(-s.sinceDown * 14) * 0.8;
+  if (s.held && s.sinceDown > 0.12) {
+    const pulse = (s.sinceDown % 0.16) / 0.16;
+    kick = Math.max(kick, (1 - pulse) * 0.72);
+  }
   if (!Number.isFinite(s.sinceDown)) kick = 0;
 
   castShadow(ctx, 34, 42, 40, 13, 0.16);

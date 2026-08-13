@@ -5,7 +5,8 @@ import { setViewport } from "./support/dom.mjs";
 // real host does. `mount.test.mjs` covers the opposite case deliberately.
 const { createRageLayer, mountRageLayer } = await import("../src/mount.ts");
 const { baseTools, hammer } = await import("../src/tools.ts");
-const { createElement, useState } = await import("react");
+const { defaultTools } = await import("../src/default-tools.ts");
+const { createElement } = await import("react");
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 const { useRageLayer } = await import("../src/react/useRageLayer.ts");
@@ -51,10 +52,11 @@ describe("mountRageLayer", () => {
     expect(engine.getTools().map((tool) => tool.id)).toEqual(["hammer"]);
   });
 
-  test("a loadout selects its own first tool", () => {
-    const engine = track(mountRageLayer({ captureContent: false, loadout: "precision" }));
+  test("mounting registers the complete toolset", () => {
+    const engine = track(mountRageLayer({ captureContent: false }));
 
-    expect(engine.tool?.id).toBe(engine.getTools()[0].id);
+    // Every tool ships visible: there is no preset that hides part of the set.
+    expect(engine.getTools().map((tool) => tool.id)).toEqual(defaultTools.map((tool) => tool.id));
   });
 
   test("initialTool: null mounts click-through", () => {

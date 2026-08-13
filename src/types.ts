@@ -1,6 +1,5 @@
 import type { ComboEvent, ComboTrackerOptions, InteractionKind } from "./combos";
 import type { HistoryOptions, HistoryState } from "./history";
-import type { MaterialDefinition, MaterialSystem } from "./materials";
 import type { SurfaceParams } from "./surface";
 
 export type { SurfaceParams };
@@ -36,7 +35,11 @@ export interface ToolArtState {
   /** Smoothed pointer velocity, CSS px/s — bends bristles, swings the ball. */
   vx: number;
   vy: number;
-  /** Smoothed unit aim direction from recent motion; defaults up-and-left. */
+  /**
+   * Unit aim direction, fixed up-and-left. Art that has a bore or a working
+   * edge orients to this so it points somewhere deliberate; it deliberately
+   * does not follow the pointer, so the tool never spins under the cursor.
+   */
   aimX: number;
   aimY: number;
 }
@@ -74,13 +77,27 @@ export interface Tool {
   /** Called every frame while the tool is selected. `held` = pointer down. */
   tick?(engine: DestroyerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
   /**
+   * Continue autonomous work after another tool is selected. Pair with
+   * `hasPendingWork`; the engine calls this only while that predicate is true.
+   * Timed projectiles and fuses belong here, never held-pointer behavior.
+   */
+  backgroundTick?(engine: DestroyerEngineApi, dt: number): void;
+  /**
+   * Whether this tool currently owns autonomous work that needs animation
+   * frames. Defining the predicate also opts the selected tool into idle
+   * sleeping when it returns false and no pointer/effect work remains. Keep it
+   * cheap and side-effect-free; the scheduler may ask outside the frame step.
+   */
+  hasPendingWork?(engine: DestroyerEngineApi): boolean;
+  /**
    * Drop any retained state — in-flight projectiles, strike sites, spawn
    * debts. Tools are module-level singletons shared by every engine, so the
-   * engine calls this on `registerTool`, `clear()` and `dispose()` to keep one
-   * instance's leftovers (a rocket mid-flight, a half-worked hammer site) from
-   * leaking into the next.
+   * engine calls this on registration/replacement, unregister, history restore,
+   * `clear()` and `dispose()`. The engine argument lets tools keep retained
+   * state isolated when multiple layers are mounted at once; stateless tools
+   * may ignore it.
    */
-  reset?(): void;
+  reset?(engine?: DestroyerEngineApi): void;
 }
 
 export type ParticleKind =
@@ -112,8 +129,6 @@ export type ParticleKind =
   | "paint"
   /** Clean twinkle left behind by the broom. */
   | "sparkle"
-  /** Crystalline chip thrown off frozen page — bright, faceted, weightless. */
-  | "ice"
   /** Matter being stretched into a black hole (drawn as a spiralling filament). */
   | "spaghetti";
 
@@ -197,8 +212,6 @@ export interface FractureOptions {
   /** Extra directional shove, e.g. away from a blast. */
   dirX?: number;
   dirY?: number;
-  /** Force the icy look (more, lighter, blue-tinted shards). Defaults to the frost map. */
-  icy?: boolean;
   /** Seconds before shards fade out. */
   ttl?: number;
 }
@@ -327,8 +340,6 @@ export interface DestroyerOptions {
   toolScale?: number;
   /** Suspend animation, simulation, and looped audio while the document is hidden. Default true. */
   pauseWhenHidden?: boolean;
-  /** Additional or overriding material definitions used by `[data-ragelayer-material]` regions. */
-  materials?: Iterable<MaterialDefinition>;
   /** Cross-tool combo detection. Pass false to disable or options to tune its bounds. */
   combos?: boolean | ComboTrackerOptions;
   /** Hard cap on simultaneous flames (fire spread respects this). */
@@ -447,12 +458,20 @@ export interface ContentApi {
   readonly ready: boolean;
   punch(x: number, y: number, r: number): void;
   burn(x: number, y: number, r: number): void;
-  cut(x1: number, y1: number, x2: number, y2: number): void;
+  cut(x1: number, y1: number, x2: number, y2: number, options?: CutOptions): void;
   char(x: number, y: number, r: number, alpha: number): void;
   restore(x: number, y: number, r: number): void;
   restoreAll(): void;
   /** Grab a chunk of the pristine page to fling around as a "shard" particle. */
   patch(x: number, y: number, w: number, h: number): ContentPatch | null;
+}
+
+/** How a linear cut should treat its edge. */
+export interface CutOptions {
+  /** `"torn"` chatters and nicks like a saw; `"clean"` keeps a constant laser kerf. */
+  edge?: "torn" | "clean";
+  /** Kerf width in CSS pixels. The tool-specific default is used when omitted. */
+  width?: number;
 }
 
 export interface DestroyerEngineApi {
@@ -465,9 +484,6 @@ export interface DestroyerEngineApi {
    */
   readonly surfaceCtx: CanvasRenderingContext2D;
   readonly fxCtx: CanvasRenderingContext2D;
-  /** Material registry and the pre-capture map of `[data-ragelayer-material]` regions. */
-  readonly materials: MaterialSystem;
-  materialAt(x: number, y: number): MaterialDefinition;
   /** Record a tool interaction and trigger any matching bounded combo. */
   signalInteraction(kind: InteractionKind, x: number, y: number): ComboEvent[];
   onCombo(callback: (event: ComboEvent) => void): () => void;
@@ -534,9 +550,10 @@ export interface DestroyerEngineApi {
   readonly flames: Flame[];
   readonly sound: SoundApi;
   /**
-   * The smoothed unit direction the drawn tool is aiming. Directional effects
-   * (a tracer, a rocket, a jet) read this so they line up with the way the
-   * tool is visibly pointing. Valid in every tool style; steady while hovering.
+   * The unit direction the drawn tool is aiming. Directional effects (a
+   * tracer, a rocket, a jet) read this so they line up with the way the tool
+   * is visibly pointing. Fixed, because the art holds one pose rather than
+   * turning to follow the pointer. Valid in every tool style.
    */
   readonly toolAim: Vec2;
   spawnParticle(p: Particle): void;
@@ -592,12 +609,6 @@ export interface DestroyerEngineApi {
   demolish(x: number, y: number): boolean;
   /** Bring the whole visible page down, element by element, over ~2 seconds. */
   collapse(): void;
-  /** Frost the page. Frozen regions resist fire and shatter into more, lighter shards. */
-  freeze(x: number, y: number, radius: number, amount: number): void;
-  /** How frozen (0..1) the page is at a point. */
-  frostAt(x: number, y: number): number;
-  /** Melt frost in a circle — what fire does to ice. `amount` defaults to a full thaw. */
-  meltFrost(x: number, y: number, radius: number, amount?: number): void;
   /**
    * Add to the heat field that drives the post-processing shimmer. Flames do
    * this automatically; explosions and jets add their own.
@@ -629,8 +640,6 @@ export interface SoundApi {
   boom(): void;
   /** Lightning: a bright crack over a rolling rumble. */
   zap(): void;
-  /** Ice forming, then splintering. */
-  freeze(): void;
   /** Rocket motor lighting and leaving. */
   whoosh(): void;
   /** Continuous loops keyed by name; engine calls with target gain each frame. */

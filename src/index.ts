@@ -1,19 +1,15 @@
 export {
   acidSprayerArt,
-  glitchGunArt,
   gravityGunArt,
   laserCutterArt,
   stickyBombArt,
-  wreckingBallArt,
 } from "./advanced-toolart";
 export {
   acidSprayer,
   advancedTools,
-  glitchGun,
   gravityGun,
   laserCutter,
   stickyBombs,
-  wreckingBall,
 } from "./advanced-tools";
 export type { CaptureGeometry, PageBackdrop } from "./capture";
 export {
@@ -33,7 +29,6 @@ export {
   drawBulletHole,
   drawBurnChannel,
   drawCrack,
-  drawFrost,
   drawGash,
   drawPaintStreak,
   drawScorch,
@@ -53,7 +48,6 @@ export {
   blackHole,
   bugs,
   demolition,
-  freezeRay,
   heavyTools,
   lightning,
   rocketLauncher,
@@ -64,10 +58,6 @@ export type { ToolIconBounds } from "./icon-bounds";
 export { registerToolIconBounds } from "./icon-bounds";
 export type { LiveCaptureOptions } from "./live";
 export { LiveContentSource, supportsLiveCapture, supportsPaintEvents } from "./live";
-export type { BuiltInLoadoutId, ToolLoadout } from "./loadouts";
-export { BUILT_IN_LOADOUTS, createToolLoadout, resolveToolLoadout } from "./loadouts";
-export type { BuiltInMaterialId, MaterialDefinition, MaterialRegion } from "./materials";
-export { BUILT_IN_MATERIALS, MaterialSystem, RAGELAYER_MATERIAL_ATTR } from "./materials";
 export type {
   MountRageLayerOptions,
   RageLayerController,
@@ -94,7 +84,6 @@ export {
   chainsawArt,
   demolitionArt,
   flamethrowerArt,
-  freezeArt,
   gunArt,
   hammerArt,
   lightningArt,
@@ -110,6 +99,8 @@ export type {
   ToolbarStatusChip,
 } from "./toolbar";
 export { ToolbarModel } from "./toolbar";
+export type { ToolbarIconName } from "./toolbar-icons";
+export { TOOLBAR_ICONS, toolbarIconElement, toolbarIconSvg } from "./toolbar-icons";
 export {
   baseTools,
   broom,
@@ -125,6 +116,7 @@ export type {
   CaptureStatus,
   ContentApi,
   ContentPatch,
+  CutOptions,
   DestroyerEngineApi,
   DestroyerOptions,
   EngineError,

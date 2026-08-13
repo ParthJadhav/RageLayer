@@ -7,14 +7,13 @@ const expected = {
   "dist/engine/index.js": ["DestroyerEngine"],
   "dist/tools/index.js": ["baseTools", "hammer", "broom"],
   "dist/tools/heavy.js": ["heavyTools", "blackHole", "rocketLauncher"],
-  "dist/tools/advanced.js": ["advancedTools", "gravityGun", "glitchGun"],
+  "dist/tools/advanced.js": ["advancedTools", "gravityGun", "laserCutter", "acidSprayer"],
   "dist/lazy/index.js": [
     "loadBaseTools",
     "loadHeavyTools",
     "loadAdvancedTools",
     "loadDefaultTools",
   ],
-  "dist/loadouts/index.js": ["BUILT_IN_LOADOUTS", "resolveToolLoadout"],
   "dist/sdk/index.js": ["defineTool", "createTool", "createRateLimiter"],
   "dist/react/index.js": ["RageLayer", "useRageLayer"],
   "dist/vue/index.js": ["useRageLayer"],
@@ -35,9 +34,52 @@ for (const [file, names] of Object.entries(expected)) {
   }
 }
 
+const removedExports = {
+  "dist/index.js": [
+    "BUILT_IN_MATERIALS",
+    "MaterialSystem",
+    "RAGELAYER_MATERIAL_ATTR",
+    "drawFrost",
+    "freezeRay",
+    "freezeArt",
+    "wreckingBall",
+    "wreckingBallArt",
+    "glitchGun",
+    "glitchGunArt",
+  ],
+  "dist/tools/heavy.js": ["freezeRay"],
+  "dist/tools/advanced.js": ["wreckingBall", "glitchGun"],
+};
+
+for (const [file, names] of Object.entries(removedExports)) {
+  const module = await import(new URL(`../${file}`, import.meta.url).href);
+  for (const name of names) {
+    if (name in module) throw new Error(`${file} still exports removed API ${name}`);
+  }
+}
+
 const reactTypes = await readFile("dist/react/index.d.ts", "utf8");
 if (reactTypes.startsWith('"use client";')) {
   throw new Error("dist/react/index.d.ts must not contain the JavaScript client directive");
+}
+
+const rootTypes = await readFile("dist/index.d.ts", "utf8");
+for (const name of [
+  "MaterialDefinition",
+  "MaterialSystem",
+  "BuiltInMaterialId",
+  "RAGELAYER_MATERIAL_ATTR",
+  "freezeRay",
+  "drawFrost",
+  "wreckingBall",
+  "glitchGun",
+]) {
+  if (new RegExp(`\\b${name}\\b`).test(rootTypes)) {
+    throw new Error(`dist/index.d.ts still declares removed API ${name}`);
+  }
+}
+if (/\bmelt\s*\(/.test(rootTypes) || /["']ice["']/.test(rootTypes)) {
+  throw new Error("dist/index.d.ts still declares freeze-specific melt/ice support");
 }
 
 // Engine-bearing entries include the vendored html-to-image capture chunk
@@ -50,11 +92,10 @@ if (reactTypes.startsWith('"use client";')) {
 const budgets = {
   "dist/index.js": { raw: 404 * 1024, gzip: 111 * 1024 },
   "dist/engine/index.js": { raw: 296 * 1024, gzip: 78 * 1024 },
-  "dist/tools/index.js": { raw: 70 * 1024, gzip: 21 * 1024 },
+  "dist/tools/index.js": { raw: 71 * 1024, gzip: 21 * 1024 },
   "dist/tools/heavy.js": { raw: 47 * 1024, gzip: 15 * 1024 },
-  "dist/tools/advanced.js": { raw: 37 * 1024, gzip: 11 * 1024 },
+  "dist/tools/advanced.js": { raw: 38 * 1024, gzip: 11 * 1024 },
   "dist/lazy/index.js": { raw: 113 * 1024, gzip: 34 * 1024 },
-  "dist/loadouts/index.js": { raw: 114 * 1024, gzip: 34 * 1024 },
   "dist/sdk/index.js": { raw: 4 * 1024, gzip: 2 * 1024 },
   "dist/react/index.js": { raw: 403 * 1024, gzip: 111 * 1024 },
   "dist/vue/index.js": { raw: 408 * 1024, gzip: 112 * 1024 },

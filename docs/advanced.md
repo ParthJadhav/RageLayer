@@ -1,12 +1,12 @@
 # Advanced systems
 
-The advanced layer makes destruction composable: tools react to marked page materials, nearby
-effects form combos, gestures can be undone, toolbars can switch presets, and third-party tools can
-use the same typed lifecycle as built-ins.
+The advanced layer makes destruction composable: nearby effects form combos, gestures can be
+undone, toolbars can switch presets, and third-party tools can use the same typed lifecycle as
+built-ins.
 
 ## Advanced tools
 
-Import all six without pulling them into an engine-only integration:
+Import all four without pulling them into an engine-only integration:
 
 ```ts
 import { advancedTools } from "ragelayer/tools/advanced";
@@ -18,53 +18,18 @@ engine.registerTools(advancedTools);
 | Tool id | Behavior |
 |---|---|
 | `gravity-gun` | Pulls nearby rigid debris while held and launches the nearest chunk on release |
-| `laser-cutter` | Heat-marks immediately, then cuts after material-dependent dwell time |
-| `acid-sprayer` | Corrodes marked materials according to their resistance and leaves reactive residue |
-| `wrecking-ball` | Converts pointer swing velocity into material-aware fractures and impulse |
+| `laser-cutter` | Makes an immediate, constant-width structural cut and drops isolated pieces |
+| `acid-sprayer` | Keeps visual and structural hits aligned, then creeps a short distance around each deposit |
 | `sticky-bombs` | Keeps up to eight attached charges and detonates each after a short fuse |
-| `glitch-gun` | Paints bounded RGB corruption, distortion pulses, and occasional structural faults |
 
 Their models are procedural Canvas paths with measured icon silhouettes. No bitmap, glTF, OBJ, or
 texture request is added.
 
-## Material regions
+## Fixed physical response
 
-Mark any captured element with `data-ragelayer-material`. Nested regions are supported; the deepest match
-wins.
-
-```html
-<article data-ragelayer-material="paper">
-  <img data-ragelayer-material="glass" src="..." alt="..." />
-  <button data-ragelayer-material="metal">Launch</button>
-</article>
-```
-
-Built-ins are `paper`, `glass`, `metal`, `wood`, `stone`, `rubber`, and `ice`. Their toughness,
-density, flammability, conductivity, corrosion resistance, restitution, and effect tint influence
-fire, lightning, acid, laser dwell, fractures, and debris.
-
-Register a domain-specific material before capture:
-
-```ts
-const engine = new DestroyerEngine({
-  materials: [{
-    id: "carbon-fiber",
-    label: "Carbon fiber",
-    toughness: 2.8,
-    density: 1.4,
-    flammability: 0.18,
-    conductivity: 0.25,
-    corrosionResistance: 0.92,
-    restitution: 0.08,
-    color: "#24272b",
-  }],
-});
-
-engine.materialAt(x, y);
-engine.materials.get("carbon-fiber");
-```
-
-Unknown attributes fall back to paper so existing pages behave exactly as before.
+The captured page is treated internally as one continuous wood-like surface. Its toughness,
+density, flammability, conductivity, corrosion resistance, and rebound are fixed so a given gesture
+behaves consistently wherever it lands. Page markup and engine options do not alter that response.
 
 ## Tool interactions and combos
 
@@ -75,12 +40,9 @@ held tool from retriggering the same combo every frame.
 | Combo | Pair | Result |
 |---|---|---|
 | Steam shock | fire + water | douses fire and throws steam |
-| Flash freeze | water + freeze | freezes the wet region and throws ice |
 | Conductive surge | water + electricity | amplified sparks and released bugs |
-| Thermal shock | freeze + laser | fractures brittle frozen material |
 | Volatile corrosion | acid + fire | non-incendiary chemical blast |
 | Orbital bomb | gravity + explosion | stronger debris impulse |
-| Reality overload | glitch + electricity | corruption burst, char, and camera kick |
 
 ```ts
 const engine = new DestroyerEngine({
@@ -112,28 +74,28 @@ engine.on("historychange", updateButtons);
 ```
 
 Each pointer gesture automatically records its pre-action persistent state. Undo restores content
-pixels, live-mode wounds/decals, overlay damage, frost/fuel grids, destruction level, and demolished
+pixels, live-mode wounds/decals, overlay damage, the fire-fuel grid, destruction level, and demolished
 element flags. Transient fire, particles, bugs, singularities, and loose bodies are cleared so a
 restored surface never fights stale simulation state. `clearHistory()` and `dispose()` release every
 retained canvas.
 
-## Tool loadouts
+## Choosing the toolset
 
-Every lifecycle and framework API accepts a `loadout` in place of a `tools` array:
+Every lifecycle and framework API registers all sixteen built-in tools by default, and every
+toolbar shows all sixteen. Pass a `tools` array to narrow that:
 
 ```ts
-import { createToolLoadout } from "ragelayer/loadouts";
 import { hammer, broom } from "ragelayer/tools";
 
-mountRageLayer({ loadout: "precision" });
-
-const gentle = createToolLoadout("gentle", "Gentle", [hammer, broom]);
-mountRageLayer({ loadout: gentle });
+mountRageLayer(); // all sixteen
+mountRageLayer({ tools: [hammer, broom] });
 ```
 
-Built-ins are `all`, `classic`, `precision`, `elemental`, and `chaos`. Presets and their tool arrays
-are frozen; `resolveToolLoadout()` returns a new mutable array. An explicit `tools` array takes
-precedence over `loadout`. If no `initialTool` is supplied for a loadout, its first tool is selected.
+There is no preset mechanism: a preset is an array literal, and hiding half the catalog behind a
+picker cost more discoverability than the shorter row bought. `mountRageLayer()` and
+`createRageLayer()` select `"hammer"` when `initialTool` is omitted — pass `initialTool: null` to
+mount click-through. The ready-made toolbar components begin empty-handed so the host page remains
+clickable until the visitor chooses a tool.
 
 ## Custom tool SDK
 
@@ -149,6 +111,9 @@ export const makeConfettiDrill = defineTool({
   icon: "🎉",
   hint: "hold to drill",
   createState: () => ({ rate: createRateLimiter(30, 5) }),
+  // This tool has no fuse/projectile work after release, so selection alone
+  // never needs to keep the frame loop alive.
+  hasPendingWork: () => false,
   tick(state, engine, dt, held, pointer) {
     if (!held || !engine.onPage(pointer.x, pointer.y)) return;
     for (let i = 0; i < state.rate.take(dt); i++) {
@@ -165,6 +130,9 @@ const engine = new DestroyerEngine();
 engine.registerTool(makeConfettiDrill());
 ```
 
-The SDK preserves inferred state types across `onDown`, `onMove`, `onUp`, `tick`, and `reset`.
-`createRateLimiter()` prevents a stalled frame from releasing an unbounded effect burst. Custom
-procedural models can register measured icon bounds with `registerToolIconBounds()`.
+The SDK preserves inferred state types across `onDown`, `onMove`, `onUp`, `tick`,
+`hasPendingWork`, `backgroundTick`, and `reset`. Pair the two background hooks for a fuse or
+projectile that must continue after another tool is selected; return `false` for held-only tools so
+their selected idle state can sleep. `createRateLimiter()` prevents a stalled frame from releasing
+an unbounded effect burst. Custom procedural models can register measured icon bounds with
+`registerToolIconBounds()`.

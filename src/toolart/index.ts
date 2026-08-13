@@ -22,7 +22,6 @@ export {
   blackHoleArt,
   bugsArt,
   demolitionArt,
-  freezeArt,
   lightningArt,
   rocketArt,
 } from "./heavy";

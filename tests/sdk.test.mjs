@@ -37,4 +37,22 @@ describe("custom tool SDK", () => {
     limiter.reset();
     expect(limiter.take(0)).toBe(0);
   });
+
+  test("typed autonomous work shares the factory's isolated state", () => {
+    const tool = createTool({
+      id: "timer",
+      name: "Timer",
+      icon: "T",
+      hint: "test",
+      createState: () => ({ remaining: 2 }),
+      hasPendingWork: (state) => state.remaining > 0,
+      backgroundTick: (state) => state.remaining--,
+    });
+    const engine = {};
+
+    expect(tool.hasPendingWork(engine)).toBe(true);
+    tool.backgroundTick(engine, 0.1);
+    tool.backgroundTick(engine, 0.1);
+    expect(tool.hasPendingWork(engine)).toBe(false);
+  });
 });

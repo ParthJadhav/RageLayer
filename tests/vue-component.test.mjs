@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { hammer } from "../src/tools.ts";
+import { broom, hammer } from "../src/tools.ts";
 import { setViewport } from "./support/dom.mjs";
 
 // Mounted after the DOM harness for the same reason the custom element is:
@@ -64,6 +64,14 @@ describe("rendering", () => {
     expect(document.querySelector("[data-ragelayer-ignore]")).not.toBeNull();
   });
 
+  test("the focused control has a visible name and usage hint", async () => {
+    await mount({ tools: [hammer], engineOptions: { captureContent: false } });
+
+    const guide = document.querySelector(".rl-guide");
+    expect(guide.textContent).toContain(hammer.name);
+    expect(guide.textContent).toContain(hammer.hint);
+  });
+
   test("every button has an accessible name and exactly one is tabbable", async () => {
     await mount({ tools: [hammer], engineOptions: { captureContent: false } });
 
@@ -107,6 +115,19 @@ describe("interaction", () => {
       .click();
 
     expect(engine.tool?.id).toBe("hammer");
+  });
+
+  test("touching a tool exposes its name and gesture before selection", async () => {
+    await mount({ tools: [hammer, broom], engineOptions: { captureContent: false } });
+    const broomButton = buttons().find(
+      (button) => button.getAttribute("aria-label") === broom.name,
+    );
+
+    broomButton.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await nextTick();
+
+    expect(document.querySelector(".rl-guide").textContent).toContain(broom.name);
+    expect(document.querySelector(".rl-guide").textContent).toContain(broom.hint);
   });
 
   test("closing emits the close event", async () => {

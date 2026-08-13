@@ -3,7 +3,6 @@ export {
   blackHole,
   bugs,
   demolition,
-  freezeRay,
   heavyTools,
   lightning,
   rocketLauncher,

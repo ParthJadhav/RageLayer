@@ -1,49 +1,29 @@
 import { describe, expect, test } from "bun:test";
 import { ScalarField } from "../src/fields.ts";
 
-function frost() {
-  return new ScalarField({ cell: 32, max: 1, initial: 0, outside: "zero" });
-}
-
 function fuel() {
-  return new ScalarField({ cell: 26, max: 255, initial: 255, outside: "edge" });
+  return new ScalarField({ cell: 26, max: 255, initial: 255 });
 }
 
 describe("ScalarField", () => {
   test("stays unallocated until it is used", () => {
-    const field = frost();
+    const field = fuel();
     expect(field.allocated).toBe(false);
     expect(field.byteLength).toBe(0);
-    // Painting an unallocated field is a no-op rather than a crash.
-    field.paintDisc(10, 10, 40, 1);
-    expect(field.at(10, 10)).toBe(0);
-  });
-
-  test("paints a disc that falls off to nothing at the rim", () => {
-    const field = frost();
-    field.ensure(320, 320);
-    field.paintDisc(160, 160, 64, 1);
-    // The containing cell's centre is (176, 176), 22.6px off the disc centre.
-    expect(field.at(160, 160)).toBeCloseTo(1 - Math.hypot(16, 16) / 64, 5);
-    // A cell whose centre sits outside the radius is untouched.
-    expect(field.at(160 + 96, 160)).toBe(0);
+    field.addCross(10, 10, -40, 0);
+    expect(field.at(10, 10)).toBe(255);
   });
 
   test("clamps to the configured range in both directions", () => {
-    const field = frost();
+    const field = fuel();
     field.ensure(320, 320);
-    field.paintDisc(160, 160, 64, 5);
-    expect(field.at(160, 160)).toBe(1);
-    field.paintDisc(160, 160, 64, -5);
+    field.addCross(160, 160, -500, 0);
     expect(field.at(160, 160)).toBe(0);
+    field.addCross(160, 160, 500, 0);
+    expect(field.at(160, 160)).toBe(255);
   });
 
-  test("reads outside the grid per its policy", () => {
-    const rime = frost();
-    rime.ensure(320, 320);
-    rime.paintDisc(10, 10, 64, 1);
-    expect(rime.at(-40, -40)).toBe(0);
-
+  test("off-grid reads clamp to the nearest fuel cell", () => {
     const wood = fuel();
     wood.ensure(320, 320);
     wood.addCross(10, 10, -255, 0);
@@ -74,23 +54,23 @@ describe("ScalarField", () => {
   });
 
   test("re-shapes when the document reflows", () => {
-    const field = frost();
+    const field = fuel();
     field.ensure(320, 320);
-    field.paintDisc(160, 160, 64, 1);
+    field.addCross(160, 160, -100, 0);
     field.ensure(640, 320);
-    expect(field.at(160, 160)).toBe(0);
+    expect(field.at(160, 160)).toBe(255);
   });
 
   test("restores a snapshot only when the grid shape still matches", () => {
-    const field = frost();
+    const field = fuel();
     field.ensure(320, 320);
-    field.paintDisc(160, 160, 64, 1);
+    field.addCross(160, 160, -100, 0);
     const snapshot = field.snapshot();
 
-    field.paintDisc(160, 160, 64, -1);
+    field.addCross(160, 160, -155, 0);
     expect(field.at(160, 160)).toBe(0);
     field.restore(snapshot);
-    expect(field.at(160, 160)).toBeCloseTo(1 - Math.hypot(16, 16) / 64, 5);
+    expect(field.at(160, 160)).toBe(155);
 
     // A checkpoint taken before a reflow describes a different stride; it is
     // dropped rather than reinstated over a grid it no longer describes.
@@ -100,12 +80,12 @@ describe("ScalarField", () => {
   });
 
   test("snapshots are independent copies", () => {
-    const field = frost();
+    const field = fuel();
     field.ensure(320, 320);
-    field.paintDisc(160, 160, 64, 1);
+    field.addCross(160, 160, -100, 0);
     const snapshot = field.snapshot();
-    field.paintDisc(160, 160, 64, -1);
+    field.addCross(160, 160, -155, 0);
     expect(field.at(160, 160)).toBe(0);
-    expect(snapshot?.values[5 * snapshot.cols + 5]).toBeGreaterThan(0);
+    expect(snapshot?.values.some((value) => value < 255)).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import { emojiCursor } from "./cursors";
 import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
 import { emit, TAU } from "./math";
-import { debris, dustPuff, makeAim } from "./tool-kit";
+import { createEngineState, debris, dustPuff } from "./tool-kit";
 import {
   broomArt,
   chainsawArt,
@@ -11,8 +11,9 @@ import {
   paintballArt,
   waterHoseArt,
 } from "./toolart";
-import { surfaceRuns, type TopologyBounds } from "./topology";
+import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
 import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
+import { WOOD } from "./wood.js";
 
 /**
  * A spot the hammer is working on. The page doesn't give way on the first
@@ -28,19 +29,19 @@ interface StrikeSite {
   scale: number;
 }
 
-const sites: StrikeSite[] = [];
 const SITE_MEMORY = 10;
 const SITE_RADIUS = 64;
+const hammerState = createEngineState(() => [] as StrikeSite[]);
 
 export const hammer: Tool = {
   id: "hammer",
   name: "Hammer",
   icon: "🔨",
-  hint: "smash — tough spots take a few blows",
+  hint: "click to smash — tough spots take a few blows",
   cursor: emojiCursor("🔨", { flip: true }),
   art: hammerArt,
-  reset() {
-    sites.length = 0;
+  reset(engine) {
+    hammerState.reset(engine);
   },
   onDown(engine, e) {
     // Swinging into the void: the head meets nothing. No crack, no dust, no
@@ -51,6 +52,7 @@ export const hammer: Tool = {
     }
     // Blows within reach of an earlier strike keep working the same site, so
     // the damage escalates instead of starting over one pixel to the left.
+    const sites = hammerState.get(engine);
     let site: StrikeSite | undefined;
     let nearestDist = SITE_RADIUS;
     for (const s of sites) {
@@ -65,11 +67,7 @@ export const hammer: Tool = {
         x: e.x,
         y: e.y,
         hits: 0,
-        needed: Math.min(
-          6,
-          1 +
-            Math.floor(Math.random() * 4 + Math.max(0, engine.materialAt(e.x, e.y).toughness - 1)),
-        ),
+        needed: Math.min(6, 1 + Math.floor(Math.random() * 4 + Math.max(0, WOOD.toughness - 1))),
         scale: 0.8 + Math.random() * 0.4,
       };
       sites.push(site);
@@ -225,8 +223,7 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
 
   // Dress the rim first, then punch clean through the real page content —
   // order matters: punching last keeps the hole genuinely transparent.
-  const material = engine.materialAt(sx, sy);
-  const penetrates = material.toughness < 2;
+  const penetrates = WOOD.toughness < 2;
   drawBulletHole(engine.surfaceCtx, sx, sy, penetrates ? 0.9 + Math.random() * 0.4 : 0.65);
   if (penetrates) engine.content?.punch(sx, sy, 5);
   else drawCrack(engine.surfaceCtx, sx, sy, 0.45);
@@ -341,52 +338,50 @@ function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) 
 const BARREL_SMOKE_PER_SECOND = 14;
 /** Holding the trigger past this long switches to full-auto. */
 const AUTO_AFTER = 0.22;
+const gunState = createEngineState(() => ({ cooldown: 0, heldFor: 0, smokeDebt: 0 }));
 
 /**
  * The gun. One tool, both firearms: a click fires a single aimed round, and
  * holding the trigger past a beat opens up into full-auto with spray and
  * barrel smoke — no separate machine gun to switch to.
  */
-export const gun: Tool & { cooldown: number; heldFor: number; smokeDebt: number } = {
+export const gun: Tool = {
   id: "gun",
   name: "Gun",
   icon: "🔫",
   hint: "click to shoot — hold for full-auto",
   cursor: emojiCursor("🔫", { flip: true }),
   art: gunArt,
-  cooldown: 0,
-  heldFor: 0,
-  smokeDebt: 0,
-  reset() {
-    gun.cooldown = 0;
-    gun.heldFor = 0;
-    gun.smokeDebt = 0;
+  reset(engine) {
+    gunState.reset(engine);
   },
+  hasPendingWork: () => false,
   onDown(engine, e) {
-    gun.heldFor = 0;
+    const state = gunState.get(engine);
+    state.heldFor = 0;
     // The first round is aimed, not sprayed.
     fireShot(engine, e.x, e.y);
-    gun.cooldown = 0.14;
+    state.cooldown = 0.14;
   },
   tick(engine, dt, held, pointer) {
-    const self = gun;
-    self.cooldown -= dt;
+    const state = gunState.get(engine);
+    state.cooldown -= dt;
     if (!held || pointer.x <= -100) {
-      self.heldFor = 0;
-      self.smokeDebt = 0;
+      state.heldFor = 0;
+      state.smokeDebt = 0;
       return;
     }
-    self.heldFor += dt;
-    if (self.heldFor < AUTO_AFTER) return;
-    if (self.cooldown <= 0) {
-      self.cooldown = 0.085;
+    state.heldFor += dt;
+    if (state.heldFor < AUTO_AFTER) return;
+    if (state.cooldown <= 0) {
+      state.cooldown = 0.085;
       fireShot(engine, pointer.x, pointer.y, 26);
       // Sustained rattle on top of the per-shot kick: automatic fire should
       // never let the page settle.
       engine.shake(9);
     }
     // Powder smoke pouring off a barrel that is not getting a chance to cool.
-    self.smokeDebt = emit(self.smokeDebt, dt, BARREL_SMOKE_PER_SECOND, () => {
+    state.smokeDebt = emit(state.smokeDebt, dt, BARREL_SMOKE_PER_SECOND, () => {
       engine.spawnParticle({
         kind: "smoke",
         x: pointer.x + (Math.random() - 0.5) * 30,
@@ -404,45 +399,44 @@ export const gun: Tool & { cooldown: number; heldFor: number; smokeDebt: number 
   },
 };
 
-const aim = makeAim(0.34, -0.94);
-const waterAim = makeAim(0, -1);
-
 /** Nozzle embers per second (was 3 per *frame*, i.e. double on a 120Hz screen). */
 const JET_EMBERS_PER_SECOND = 90;
 /** Fuel blobs per second — the body of the jet cone. */
 const JET_BLOBS_PER_SECOND = 150;
-
-/** Flamethrower: hold to pour fire onto the page. Fire spreads on its own. */
-export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDebt: number } = {
-  id: "flamethrower",
-  name: "Flamethrower",
-  icon: "🔥",
-  hint: "hold to burn — melts ice",
-  cursor: emojiCursor("🔥"),
-  art: flamethrowerArt,
+const flamethrowerState = createEngineState(() => ({
   cooldown: 0,
   emberDebt: 0,
   blobDebt: 0,
-  reset() {
-    flamethrower.cooldown = 0;
-    flamethrower.emberDebt = 0;
-    flamethrower.blobDebt = 0;
-    aim.hardReset();
+}));
+
+/** Flamethrower: hold to pour fire onto the page. Fire spreads on its own. */
+export const flamethrower: Tool = {
+  id: "flamethrower",
+  name: "Flamethrower",
+  icon: "🔥",
+  hint: "hold to burn — fire creeps across wood",
+  cursor: emojiCursor("🔥"),
+  art: flamethrowerArt,
+  reset(engine) {
+    flamethrowerState.reset(engine);
   },
+  hasPendingWork: () => false,
   tick(engine, dt, held, pointer) {
-    const self = flamethrower;
-    self.cooldown -= dt;
+    const state = flamethrowerState.get(engine);
+    state.cooldown -= dt;
     engine.sound.loop("flamethrower", held ? 0.35 : 0);
     if (!held || pointer.x <= -100) {
-      self.emberDebt = 0;
-      self.blobDebt = 0;
-      aim.reset();
+      state.emberDebt = 0;
+      state.blobDebt = 0;
       return;
     }
-    aim.update(pointer, dt);
+    // Fire leaves the bore the tool is drawn pointing down, and that direction
+    // never moves — the jet is as steady as the nozzle above it.
+    const aim = engine.toolAim;
+    const base = Math.atan2(aim.y, aim.x);
 
-    if (self.cooldown <= 0) {
-      self.cooldown = 0.1;
+    if (state.cooldown <= 0) {
+      state.cooldown = 0.1;
       // Always light directly under the nozzle, then throw a second seed further
       // down the cone so the fire creeps outward in the direction you are aiming.
       engine.spawnFlame(
@@ -454,33 +448,10 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
       engine.spawnFlame(pointer.x + aim.x * reach, pointer.y + aim.y * reach, 0.32);
     }
 
-    // The jet is heat before it is fire: it strips rime off the page even
-    // where nothing has caught yet, boiling it away as steam — so a frozen
-    // patch is thawed first and burns second, instead of the ice mutely
-    // eating flame seeds forever.
-    const meltX = pointer.x + aim.x * 22;
-    const meltY = pointer.y + aim.y * 22;
-    if (engine.frostAt(meltX, meltY) > 0.03 || engine.frostAt(pointer.x, pointer.y) > 0.03) {
-      engine.meltFrost(pointer.x + aim.x * 12, pointer.y + aim.y * 12, 72, dt * 2.6);
-      if (Math.random() < dt * 26) {
-        engine.spawnParticle({
-          kind: "steam",
-          x: meltX + (Math.random() - 0.5) * 44,
-          y: meltY + (Math.random() - 0.5) * 30,
-          vx: (Math.random() - 0.5) * 50,
-          vy: -70 - Math.random() * 60,
-          life: 0,
-          maxLife: 0.7 + Math.random() * 0.6,
-          size: 9 + Math.random() * 10,
-          drag: 1.6,
-        });
-      }
-    }
-
     // The jet itself: fuel launched hard along the aim, dragged down and lifted
     // by its own heat, so the spray fans into a cone that curls up at the tip.
-    self.blobDebt = emit(self.blobDebt, dt, JET_BLOBS_PER_SECOND, () => {
-      const a = Math.atan2(aim.y, aim.x) + (Math.random() - 0.5) * 0.62;
+    state.blobDebt = emit(state.blobDebt, dt, JET_BLOBS_PER_SECOND, () => {
+      const a = base + (Math.random() - 0.5) * 0.62;
       const speed = 300 + Math.random() * 380;
       engine.spawnParticle({
         kind: "jet",
@@ -497,8 +468,8 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
     });
 
     // Jet sparks streaming from the nozzle for feedback.
-    self.emberDebt = emit(self.emberDebt, dt, JET_EMBERS_PER_SECOND, () => {
-      const a = Math.atan2(aim.y, aim.x) + (Math.random() - 0.5) * 1;
+    state.emberDebt = emit(state.emberDebt, dt, JET_EMBERS_PER_SECOND, () => {
+      const a = base + (Math.random() - 0.5) * 1;
       engine.spawnParticle({
         kind: "ember",
         x: pointer.x + (Math.random() - 0.5) * 14,
@@ -522,47 +493,49 @@ export const flamethrower: Tool & { cooldown: number; emberDebt: number; blobDeb
  * high-refresh displays and bought density that fewer, fatter droplets give
  * for a third of the work.
  */
-const DROPS_PER_SECOND = 130;
+const DROPS_PER_SECOND = 120;
 /** Stream segments and nozzle mist per second. */
-const STREAM_PER_SECOND = 90;
-const MIST_PER_SECOND = 44;
+const STREAM_PER_SECOND = 96;
+const MIST_PER_SECOND = 36;
+const waterState = createEngineState(() => ({
+  spawnDebt: 0,
+  streamDebt: 0,
+  mistDebt: 0,
+}));
 
 /** Water hose: hold to spray. Droplets douse flames; interaction lives in the engine. */
-export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt: number } = {
+export const waterHose: Tool = {
   id: "water",
   name: "Water hose",
   icon: "💦",
   hint: "hold to spray — puts out fires, washes stains off",
   cursor: emojiCursor("💦"),
   art: waterHoseArt,
-  spawnDebt: 0,
-  streamDebt: 0,
-  mistDebt: 0,
-  reset() {
-    waterHose.spawnDebt = waterHose.streamDebt = waterHose.mistDebt = 0;
-    waterAim.hardReset();
+  reset(engine) {
+    waterState.reset(engine);
   },
+  hasPendingWork: () => false,
   tick(engine, dt, held, pointer) {
-    const self = waterHose;
+    const state = waterState.get(engine);
     engine.sound.loop("water", held ? 0.3 : 0);
     if (!held || pointer.x < -100) {
-      self.spawnDebt = self.streamDebt = self.mistDebt = 0;
-      waterAim.reset();
+      state.spawnDebt = state.streamDebt = state.mistDebt = 0;
       return;
     }
-    waterAim.update(pointer, dt);
-    const base = Math.atan2(waterAim.y, waterAim.x);
+    // The stream leaves the drawn outlet, which points one fixed way.
+    const aim = engine.toolAim;
+    const base = Math.atan2(aim.y, aim.x);
 
     // The solid part of the jet, before it breaks up into droplets. Segments
     // are placed *along the ballistic arc* a pressurized stream actually
     // follows — position and angle both come from projectile math — so the
     // hose reads as one curved rope of water leaving the nozzle, not a
     // straight laser of disconnected dashes.
-    const jetSpeed = 430;
-    const jetGravity = 780;
-    self.streamDebt = emit(self.streamDebt, dt, STREAM_PER_SECOND, () => {
-      const t = Math.random() * 0.28;
-      const a = base + (Math.random() - 0.5) * 0.14;
+    const jetSpeed = 500;
+    const jetGravity = 720;
+    state.streamDebt = emit(state.streamDebt, dt, STREAM_PER_SECOND, () => {
+      const t = 0.015 + Math.random() * 0.235;
+      const a = base + (Math.random() - 0.5) * 0.055;
       const vx = Math.cos(a) * jetSpeed;
       const vy0 = Math.sin(a) * jetSpeed;
       const vy = vy0 + jetGravity * t;
@@ -574,59 +547,67 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
         vy: 0,
         life: 0,
         maxLife: 0.1 + Math.random() * 0.07,
-        // The stream thins and frays the further from the nozzle it gets.
-        size: (11 + Math.random() * 8) * (1 - t * 1.6),
+        // A compact pressure nozzle produces one readable core. It narrows
+        // gradually, then hands off to the simulated droplets near the end.
+        size: (12 + Math.random() * 5) * (1 - t * 1.45),
         angle: Math.atan2(vy, vx),
-        len: 34 + Math.random() * 30,
+        len: 38 + Math.random() * 18,
       });
     });
 
     // Mist blowing back off the nozzle.
-    self.mistDebt = emit(self.mistDebt, dt, MIST_PER_SECOND, () => {
-      const a = base + (Math.random() - 0.5) * 2.4;
+    state.mistDebt = emit(state.mistDebt, dt, MIST_PER_SECOND, () => {
+      const a = base + Math.PI + (Math.random() - 0.5) * 1.7;
       engine.spawnParticle({
         kind: "steam",
-        x: pointer.x + (Math.random() - 0.5) * 12,
-        y: pointer.y + (Math.random() - 0.5) * 12,
-        vx: Math.cos(a) * (20 + Math.random() * 70),
-        vy: Math.sin(a) * (20 + Math.random() * 70),
+        x: pointer.x - aim.x * 3 + (Math.random() - 0.5) * 7,
+        y: pointer.y - aim.y * 3 + (Math.random() - 0.5) * 7,
+        vx: Math.cos(a) * (16 + Math.random() * 42),
+        vy: Math.sin(a) * (16 + Math.random() * 42) - 8,
         life: 0,
-        maxLife: 0.28 + Math.random() * 0.3,
-        size: 4 + Math.random() * 7,
-        drag: 2.6,
+        maxLife: 0.22 + Math.random() * 0.24,
+        size: 3 + Math.random() * 5,
+        drag: 3,
       });
     });
 
     // The cone is tight at the nozzle — pressure holds a hose stream together —
     // and only fans out where the arc's droplets naturally spread.
-    self.spawnDebt = emit(self.spawnDebt, dt, DROPS_PER_SECOND, () => {
-      const a = base + (Math.random() - 0.5) * 0.4;
-      const speed = 330 + Math.random() * 280;
+    state.spawnDebt = emit(state.spawnDebt, dt, DROPS_PER_SECOND, () => {
+      const a = base + (Math.random() - 0.5) * 0.2;
+      const speed = 430 + Math.random() * 150;
       engine.spawnParticle({
         kind: "water",
-        x: pointer.x + (Math.random() - 0.5) * 10,
-        y: pointer.y + (Math.random() - 0.5) * 10,
+        x: pointer.x + aim.x * 5 + (Math.random() - 0.5) * 5,
+        y: pointer.y + aim.y * 5 + (Math.random() - 0.5) * 5,
         vx: Math.cos(a) * speed,
         vy: Math.sin(a) * speed,
         life: 0,
-        maxLife: 0.45 + Math.random() * 0.4,
-        size: 3 + Math.random() * 2.6,
-        gravity: 780,
-        drag: 1.1,
+        maxLife: 0.42 + Math.random() * 0.3,
+        size: 3.2 + Math.random() * 2.2,
+        gravity: jetGravity,
+        drag: 0.85,
       });
     });
-    // Direct dowse under the nozzle so aiming at a flame feels responsive. The
-    // reach is generous because the droplets now leave the nozzle fast enough to
-    // arc clear over a fire sitting right under the cursor.
-    engine.dowseFlames(pointer.x, pointer.y, 64, dt * 2.2);
 
-    // Water cleans what it soaks: paint, soot, smears and rime rinse off the
+    // Collision droplets provide the physical splash, while these overlapping
+    // centre-line samples make the visible pressure core authoritative for
+    // extinguishing. A narrow set of samples is more accurate than one broad
+    // disc and remains frame-rate independent because every dose scales by dt.
+    for (let i = 0; i < 4; i++) {
+      const t = i * 0.075;
+      const x = pointer.x + Math.cos(base) * jetSpeed * t;
+      const y = pointer.y + Math.sin(base) * jetSpeed * t + 0.5 * jetGravity * t * t;
+      engine.dowseFlames(x, y, 22 + i * 3, dt * 1.25);
+      engine.washSurface(x, y, 22 + i * 4, dt * 1.35);
+    }
+
+    // Water cleans what it soaks: paint, soot, and smears rinse off the
     // surviving page under the spray. Gradually — a pass dulls a stain, a
     // held soak lifts it — and never structurally: holes stay holes, because
     // water washes, only the broom repairs. Bugs caught in the jet aren't
     // killed so much as carried: they tumble away downstream, no smear.
-    engine.washSurface(pointer.x + waterAim.x * 24, pointer.y + waterAim.y * 24, 56, dt * 2.4);
-    engine.flushBugs(pointer.x, pointer.y, 56);
+    engine.flushBugs(pointer.x + aim.x * 40, pointer.y + aim.y * 40, 48);
   },
 };
 
@@ -634,22 +615,6 @@ export const waterHose: Tool & { spawnDebt: number; streamDebt: number; mistDebt
 const STRIP_INTERVAL = 64;
 /** Connectivity analysis is regional and only needs to run after real travel. */
 const TOPOLOGY_INTERVAL = 24;
-
-function includeCut(bounds: TopologyBounds | null, x1: number, y1: number, x2: number, y2: number) {
-  if (!bounds) {
-    return {
-      x0: Math.min(x1, x2),
-      y0: Math.min(y1, y2),
-      x1: Math.max(x1, x2),
-      y1: Math.max(y1, y2),
-    };
-  }
-  bounds.x0 = Math.min(bounds.x0, x1, x2);
-  bounds.y0 = Math.min(bounds.y0, y1, y2);
-  bounds.x1 = Math.max(bounds.x1, x1, x2);
-  bounds.y1 = Math.max(bounds.y1, y1, y2);
-  return bounds;
-}
 
 function releaseSawIslands(
   engine: DestroyerEngineApi,
@@ -661,40 +626,44 @@ function releaseSawIslands(
   return engine.dislodge(bounds.x0, bounds.y0, bounds.x1, bounds.y1);
 }
 
-/** Chainsaw: drag to tear gashes along the path. */
-export const chainsaw: Tool & {
+interface ChainsawState {
   lastCut: Vec2 | null;
   stripDebt: number;
   scanDebt: number;
   cutBounds: TopologyBounds | null;
-} = {
+}
+
+const chainsawState = createEngineState<ChainsawState>(() => ({
+  lastCut: null,
+  stripDebt: 0,
+  scanDebt: 0,
+  cutBounds: null,
+}));
+
+/** Chainsaw: drag to tear gashes along the path. */
+export const chainsaw: Tool = {
   id: "chainsaw",
   name: "Chainsaw",
   icon: "🪚",
   hint: "drag to cut — any isolated shape drops",
   cursor: emojiCursor("🪚"),
   art: chainsawArt,
-  lastCut: null,
-  stripDebt: 0,
-  scanDebt: 0,
-  cutBounds: null,
-  reset() {
-    chainsaw.lastCut = null;
-    chainsaw.stripDebt = 0;
-    chainsaw.scanDebt = 0;
-    chainsaw.cutBounds = null;
+  reset(engine) {
+    chainsawState.reset(engine);
   },
-  onDown(_engine, e) {
-    this.lastCut = { x: e.x, y: e.y };
-    this.stripDebt = 0;
-    this.scanDebt = 0;
-    this.cutBounds = null;
+  hasPendingWork: () => false,
+  onDown(engine, e) {
+    const state = chainsawState.get(engine);
+    state.lastCut = { x: e.x, y: e.y };
+    state.stripDebt = 0;
+    state.scanDebt = 0;
+    state.cutBounds = null;
   },
   onMove(engine: DestroyerEngineApi, e: ToolPointerEvent) {
-    const self = chainsaw;
-    if (!e.buttons || !self.lastCut) return;
-    const dx = e.x - self.lastCut.x;
-    const dy = e.y - self.lastCut.y;
+    const state = chainsawState.get(engine);
+    if (!e.buttons || !state.lastCut) return;
+    const dx = e.x - state.lastCut.x;
+    const dy = e.y - state.lastCut.y;
     const dist = Math.hypot(dx, dy);
     if (dist < 6) return;
     const nx = -dy / dist;
@@ -705,18 +674,20 @@ export const chainsaw: Tool & {
     const ex = e.x + nx * (Math.random() - 0.5) * jitter;
     const ey = e.y + ny * (Math.random() - 0.5) * jitter;
 
-    // Clip the blade stroke against current material. Crossing a hole produces
+    // Clip the blade stroke against the surviving surface. Crossing a hole produces
     // two independent rim cuts; empty space never receives a gash or sawdust.
-    const runs = surfaceRuns(self.lastCut.x, self.lastCut.y, ex, ey, (x, y) => engine.onPage(x, y));
+    const runs = surfaceRuns(state.lastCut.x, state.lastCut.y, ex, ey, (x, y) =>
+      engine.onPage(x, y),
+    );
     let cutLength = 0;
     for (const run of runs) {
-      drawGash(engine.surfaceCtx, run.x1, run.y1, run.x2, run.y2);
-      engine.content?.cut(run.x1, run.y1, run.x2, run.y2);
-      self.cutBounds = includeCut(self.cutBounds, run.x1, run.y1, run.x2, run.y2);
-      cutLength += run.length;
-
       const mx = (run.x1 + run.x2) * 0.5;
       const my = (run.y1 + run.y2) * 0.5;
+      drawGash(engine.surfaceCtx, run.x1, run.y1, run.x2, run.y2);
+      engine.content?.cut(run.x1, run.y1, run.x2, run.y2);
+      state.cutBounds = includeTopologySegment(state.cutBounds, run.x1, run.y1, run.x2, run.y2);
+      cutLength += run.length;
+
       const chips = Math.min(12, Math.max(3, Math.ceil(run.length * 0.55)));
       // Sawdust sprays back along the blade; page-coloured confetti comes off
       // with it, so debris exists only in proportion to material actually cut.
@@ -752,9 +723,9 @@ export const chainsaw: Tool & {
       // Every so often a real chip comes away. Sample just beside the kerf (the
       // centreline is now void), then remove the chip from the page before it
       // appears in flight so material is conserved.
-      self.stripDebt += run.length;
-      if (self.stripDebt >= STRIP_INTERVAL) {
-        self.stripDebt %= STRIP_INTERVAL;
+      state.stripDebt += run.length;
+      if (state.stripDebt >= STRIP_INTERVAL) {
+        state.stripDebt %= STRIP_INTERVAL;
         const size = 14 + Math.random() * 22;
         const side = Math.random() < 0.5 ? -1 : 1;
         const chipX = mx + nx * side * 7;
@@ -787,16 +758,16 @@ export const chainsaw: Tool & {
       }
     }
 
-    self.lastCut.x = ex;
-    self.lastCut.y = ey;
+    state.lastCut.x = ex;
+    state.lastCut.y = ey;
     if (cutLength <= 0) return;
 
     // Kickback and connectivity both scale with actual contact, never cursor
     // travel through a hole. Connectivity—not pointer proximity—decides release.
     engine.shake(5, nx, ny);
-    self.scanDebt += cutLength;
-    if (self.scanDebt >= TOPOLOGY_INTERVAL) {
-      const released = releaseSawIslands(engine, self);
+    state.scanDebt += cutLength;
+    if (state.scanDebt >= TOPOLOGY_INTERVAL) {
+      const released = releaseSawIslands(engine, state);
       if (released > 0) {
         dustPuff(engine, ex, ey, 8 + released * 2, 18, 1);
         engine.shake(9 + released * 2);
@@ -804,94 +775,119 @@ export const chainsaw: Tool & {
     }
   },
   onUp(engine) {
-    const released = releaseSawIslands(engine, this);
-    if (released > 0 && this.lastCut) {
-      dustPuff(engine, this.lastCut.x, this.lastCut.y, 8 + released * 2, 18, 1);
+    const state = chainsawState.get(engine);
+    const released = releaseSawIslands(engine, state);
+    if (released > 0 && state.lastCut) {
+      dustPuff(engine, state.lastCut.x, state.lastCut.y, 8 + released * 2, 18, 1);
       engine.shake(9 + released * 2);
     }
-    this.lastCut = null;
-    this.cutBounds = null;
-    this.scanDebt = 0;
+    state.lastCut = null;
+    state.cutBounds = null;
+    state.scanDebt = 0;
   },
   tick(engine, _dt, held) {
     engine.sound.loop("saw", held ? 0.28 : 0);
   },
 };
 
+const PAINTBALL_INTERVAL = 0.16;
+const paintballState = createEngineState(() => ({ cooldown: 0 }));
+
+function firePaintball(engine: DestroyerEngineApi, x: number, y: number) {
+  // A paintball needs a surface. Fired into a hole it flies straight through
+  // and is gone — no splat, no drips, nothing to hear it hit.
+  if (!engine.onPage(x, y)) {
+    engine.sound.whoosh();
+    return;
+  }
+  const [base, dark, light] = drawSplat(engine.surfaceCtx, x, y, randomPaint());
+  engine.markSurface(x, y, 120);
+
+  // Thick paint continues to creep after each automatic impact.
+  const drips = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < drips; i++) {
+    engine.spawnParticle({
+      kind: "paint",
+      x: x + (Math.random() - 0.5) * 26,
+      y: y + (Math.random() - 0.5) * 12,
+      vx: 0,
+      vy: 10 + Math.random() * 26,
+      life: 0,
+      maxLife: 1.4 + Math.random() * 2.2,
+      size: 2.4 + Math.random() * 2.6,
+      gravity: 70,
+      drag: 1.3,
+      len: 0,
+      color: base,
+      color2: light,
+    });
+  }
+  debris(engine, x, y, 10, Math.random() < 0.5 ? base : dark);
+  engine.spawnParticle({
+    kind: "ring",
+    x,
+    y,
+    vx: 0,
+    vy: 0,
+    life: 0,
+    maxLife: 0.2,
+    size: 16,
+  });
+  engine.shake(5, 0, 1);
+  engine.sound.splat();
+}
+
 export const paintball: Tool = {
   id: "paintball",
   name: "Paintball",
   icon: "🎨",
-  hint: "click to splat",
+  hint: "click once or hold for automatic fire",
   cursor: emojiCursor("🎨"),
   art: paintballArt,
+  reset(engine) {
+    paintballState.reset(engine);
+  },
+  hasPendingWork: () => false,
   onDown(engine, e) {
-    // A paintball needs a surface. Fired into a hole it flies straight
-    // through and is gone — no splat, no drips, nothing to hear it hit.
-    if (!engine.onPage(e.x, e.y)) {
-      engine.sound.whoosh();
+    const state = paintballState.get(engine);
+    firePaintball(engine, e.x, e.y);
+    state.cooldown = PAINTBALL_INTERVAL;
+  },
+  tick(engine, dt, held, pointer) {
+    const state = paintballState.get(engine);
+    if (!held || pointer.x <= -100) {
+      state.cooldown = 0;
       return;
     }
-    const paint = randomPaint();
-    const [base, dark, light] = drawSplat(engine.surfaceCtx, e.x, e.y, paint);
-    // Mark the splat's full reach explicitly. The engine's per-frame safety net
-    // only covers a held pointer — a fast click can be up again before the next
-    // frame, and an unmarked splat never reaches the shaded surface. Paint must
-    // stay, so it reports itself instead of relying on the pointer.
-    engine.markSurface(e.x, e.y, 120);
-
-    // Runs that actually run: each drip slides down over the next second or two
-    // and stamps its trail onto the page when it finally stops.
-    const drips = 2 + Math.floor(Math.random() * 3);
-    for (let i = 0; i < drips; i++) {
-      engine.spawnParticle({
-        kind: "paint",
-        x: e.x + (Math.random() - 0.5) * 26,
-        y: e.y + (Math.random() - 0.5) * 12,
-        vx: 0,
-        vy: 10 + Math.random() * 26,
-        life: 0,
-        maxLife: 1.4 + Math.random() * 2.2,
-        size: 2.4 + Math.random() * 2.6,
-        // Heavy but heavily damped: paint creeps at a near-constant crawl rather
-        // than accelerating away like a falling object.
-        gravity: 70,
-        drag: 1.3,
-        len: 0,
-        color: base,
-        color2: light,
-      });
+    state.cooldown -= dt;
+    // Preserve elapsed cadence across refresh rates. The catch-up bound avoids
+    // a tab-resume frame dumping an unbounded hopper at once.
+    let catchUp = 0;
+    while (state.cooldown <= 0 && catchUp++ < 4) {
+      firePaintball(engine, pointer.x, pointer.y);
+      state.cooldown += PAINTBALL_INTERVAL;
     }
-    // Wet flecks thrown clear of the impact, in the same paint.
-    debris(engine, e.x, e.y, 10, Math.random() < 0.5 ? base : dark);
-    engine.spawnParticle({
-      kind: "ring",
-      x: e.x,
-      y: e.y,
-      vx: 0,
-      vy: 0,
-      life: 0,
-      maxLife: 0.2,
-      size: 16,
-    });
-    engine.shake(5, 0, 1);
-    engine.sound.splat();
   },
 };
 
+const broomState = createEngineState(() => ({ sweepDebt: 0 }));
+
 /** Broom: drag to sweep damage away and put out fires. */
-export const broom: Tool & { sweepDebt: number } = {
+export const broom: Tool = {
   id: "broom",
   name: "Broom",
   icon: "🧹",
   hint: "drag to clean — swats bugs",
   cursor: emojiCursor("🧹"),
   art: broomArt,
-  sweepDebt: 0,
-  reset() {
-    broom.sweepDebt = 0;
+  reset(engine) {
+    broomState.reset(engine);
   },
   onDown(engine, e) {
+    // Distance debt belongs to one continuous sweep. A short stroke followed
+    // by a fresh click must not inherit the previous gesture's almost-ready
+    // dust/sound burst.
+    broomState.get(engine).sweepDebt = 0;
     engine.eraseDamage(e.x, e.y, 42);
     engine.dowseFlames(e.x, e.y, 50, 1);
     // The oldest bug-control tool there is: anything under the bristles is
@@ -905,10 +901,10 @@ export const broom: Tool & { sweepDebt: number } = {
     engine.dowseFlames(e.x, e.y, 50, 1);
     engine.squashBugs(e.x, e.y, 46);
 
-    const self = broom;
-    self.sweepDebt += Math.hypot(e.dx, e.dy);
-    if (self.sweepDebt < 26) return;
-    self.sweepDebt = 0;
+    const state = broomState.get(engine);
+    state.sweepDebt += Math.hypot(e.dx, e.dy);
+    if (state.sweepDebt < 26) return;
+    state.sweepDebt = 0;
     engine.sound.sweep();
 
     // Motes kicked up ahead of the bristles...

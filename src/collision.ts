@@ -52,10 +52,10 @@ export function createContactPoint(): ContactPoint {
   return { px: 0, py: 0, sep: 0, pn: 0, pt: 0, mn: 0, mt: 0, bias: 0 };
 }
 
-export function createManifold(): Manifold {
+export function createManifold(a: Body, b: Body): Manifold {
   return {
-    a: null as unknown as Body,
-    b: null as unknown as Body,
+    a,
+    b,
     nx: 0,
     ny: 0,
     points: [createContactPoint(), createContactPoint()],
@@ -189,7 +189,10 @@ export function collide(a: Body, b: Body, out: Manifold): boolean {
   // Side planes of the reference face.
   let clipped = clipSegment(clipA, ix0, iy0, ix1, iy1, -ux, -uy, -(ux * rx0 + uy * ry0));
   if (clipped.length < 4) return false;
-  [ix0, iy0, ix1, iy1] = clipped as [number, number, number, number];
+  ix0 = clipped[0];
+  iy0 = clipped[1];
+  ix1 = clipped[2];
+  iy1 = clipped[3];
   clipped = clipSegment(clipB, ix0, iy0, ix1, iy1, ux, uy, ux * rx1 + uy * ry1);
   if (clipped.length < 4) return false;
 

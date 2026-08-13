@@ -612,7 +612,7 @@ export class PhysicsWorld {
         const dy = b.y - a.y;
         const reach = a.radius + b.radius;
         if (dx * dx + dy * dy > reach * reach) continue;
-        const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold());
+        const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold(a, b));
         if (collide(a, b, m)) {
           manifoldCount++;
           // Anything touching a moving body joins the simulation again.
@@ -623,7 +623,7 @@ export class PhysicsWorld {
       for (const s of statics) {
         if (!a.awake) continue;
         if (a.maxX < s.minX || a.minX > s.maxX || a.maxY < s.minY || a.minY > s.maxY) continue;
-        const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold());
+        const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold(a, s));
         if (collide(a, s, m)) manifoldCount++;
       }
     }

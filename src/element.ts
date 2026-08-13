@@ -17,9 +17,9 @@
 import { RAGELAYER_IGNORE_ATTR } from "./capture";
 import { defaultTools } from "./default-tools";
 import { DestroyerEngine } from "./engine";
-import { type BuiltInLoadoutId, resolveToolLoadout } from "./loadouts";
 import type { DestroyerStrings } from "./strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "./toolbar";
+import { toolbarIconElement } from "./toolbar-icons";
 import type { DestroyerOptions, Tool } from "./types";
 
 export const TAG_NAME = "rage-layer";
@@ -28,29 +28,56 @@ const SHEET = `
 :host {
   all: initial;
   position: fixed;
-  inset: auto 0 0 0;
+  inset: auto 0 max(16px, env(safe-area-inset-bottom)) 0;
   z-index: 2147483001;
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   pointer-events: none;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* One token set drives the bar, the hint pill and the status chip, so
+     contrast is tuned in a single place. */
+  --rl-surface: rgba(14, 13, 12, 0.94);
+  --rl-hairline: rgba(255, 255, 255, 0.1);
+  --rl-ink: rgba(255, 255, 255, 0.74);
+  --rl-accent: #ff7a28;
 }
 .bar {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   width: max-content;
   max-width: calc(100vw - 24px);
-  margin: 0 auto 16px;
-  padding: 8px 10px;
+  margin: 0 auto;
+  padding: 6px;
   flex-wrap: wrap;
   justify-content: center;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(20, 18, 16, 0.82);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  animation: rise 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  border-radius: 18px;
+  border: 1px solid var(--rl-hairline);
+  background: var(--rl-surface);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07) inset,
+    0 20px 50px -16px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.3);
+  animation: rise 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.guide {
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 6px 14px;
+  border: 1px solid var(--rl-hairline);
+  border-radius: 999px;
+  background: var(--rl-surface);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 12.5px;
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: pretty;
+  pointer-events: none;
 }
 @keyframes rise {
   from { transform: translateY(14px); opacity: 0; }
@@ -58,23 +85,37 @@ const SHEET = `
 }
 button {
   all: unset;
+  position: relative;
   box-sizing: border-box;
   display: grid;
   place-items: center;
   width: 40px;
   height: 40px;
-  border-radius: 11px;
+  flex: 0 0 auto;
+  border-radius: 12px;
   cursor: pointer;
   font-size: 19px;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.92);
-  transition: background 0.14s ease, transform 0.14s ease;
+  color: var(--rl-ink);
+  transition: background 0.14s ease, color 0.14s ease, transform 0.14s ease;
 }
-button:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.1); }
-button:active:not([aria-disabled="true"]) { transform: scale(0.94); }
+button:hover:not([aria-disabled="true"]) { background: rgba(255, 255, 255, 0.09); color: #fff; }
+button:active:not([aria-disabled="true"]) { transform: scale(0.93); }
 button[aria-pressed="true"] {
-  background: rgba(220, 90, 31, 0.9);
   color: #fff;
+  background: linear-gradient(180deg, rgba(255, 122, 40, 0.32), rgba(255, 122, 40, 0.18));
+  box-shadow: 0 0 0 1px rgba(255, 150, 70, 0.5) inset, 0 5px 16px -6px rgba(255, 110, 30, 0.7);
+}
+/* A dock-style marker, so the selection survives the pointer moving away and
+   the hover tint disappearing. */
+button[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--rl-accent);
 }
 /* A visible focus ring is the whole point for keyboard operation; never
    remove it, and keep it legible against both bar and active states. */
@@ -82,13 +123,16 @@ button:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
-button[aria-disabled="true"] { opacity: 0.38; cursor: default; }
-button img { width: 30px; height: 30px; display: block; }
+/* Disabled controls dim their ink rather than the whole button: an opacity
+   wash over the dark bar left undo and redo close to invisible. */
+button[aria-disabled="true"] { color: rgba(255, 255, 255, 0.26); cursor: default; }
+button img { width: 28px; height: 28px; display: block; }
+button svg { display: block; }
 .divider {
   width: 1px;
-  height: 26px;
-  margin: 0 2px;
-  background: rgba(255, 255, 255, 0.14);
+  align-self: stretch;
+  margin: 6px 7px;
+  background: var(--rl-hairline);
 }
 .chip {
   display: inline-flex;
@@ -99,9 +143,11 @@ button img { width: 30px; height: 30px; display: block; }
   height: 28px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 11px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .dot.pending { animation: pulse 1s ease-in-out infinite; }
@@ -114,7 +160,8 @@ button img { width: 30px; height: 30px; display: block; }
   margin-bottom: 8px;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(20, 18, 16, 0.92);
+  border: 1px solid var(--rl-hairline);
+  background: var(--rl-surface);
   color: #fff;
   font-size: 12px;
   white-space: nowrap;
@@ -134,11 +181,24 @@ button img { width: 30px; height: 30px; display: block; }
   button { transition: none; }
   .dot.pending { animation: none; }
 }
+@media (max-width: 640px) {
+  .guide { font-size: 14px; }
+  .bar {
+    width: calc(100vw - 24px);
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .bar::-webkit-scrollbar { display: none; }
+  /* Full 44px touch targets once the row scrolls instead of wrapping. */
+  button { width: 44px; height: 44px; }
+}
 `;
 
 export interface RageLayerElementConfig extends DestroyerOptions {
   tools?: readonly Tool[];
-  loadout?: BuiltInLoadoutId;
   strings?: Partial<DestroyerStrings>;
 }
 
@@ -158,14 +218,16 @@ const ElementBase: typeof HTMLElement =
  * usually remove the element in response.
  */
 export class RageLayerElement extends ElementBase {
-  static observedAttributes = ["loadout", "initial-tool", "sound"];
+  static observedAttributes = ["initial-tool", "sound"];
 
   private engine: DestroyerEngine | null = null;
   private model: ToolbarModel | null = null;
   private unsubscribe: (() => void) | null = null;
   private bar!: HTMLDivElement;
+  private guide!: HTMLDivElement;
   private live!: HTMLDivElement;
   private buttons: HTMLButtonElement[] = [];
+  private restoringFocus = false;
   private previousFocus: HTMLElement | null = null;
   private config: RageLayerElementConfig = {};
 
@@ -213,11 +275,12 @@ export class RageLayerElement extends ElementBase {
     this.live.className = "sr-only";
     this.live.setAttribute("role", "status");
     this.live.setAttribute("aria-live", "polite");
-    root.replaceChildren(style, this.live, this.bar);
+    this.guide = document.createElement("div");
+    this.guide.className = "guide";
+    this.guide.setAttribute("aria-hidden", "true");
+    root.replaceChildren(style, this.live, this.guide, this.bar);
 
-    const loadout =
-      (this.getAttribute("loadout") as BuiltInLoadoutId | null) ?? this.config.loadout;
-    const tools = this.config.tools ?? (loadout ? resolveToolLoadout(loadout) : defaultTools);
+    const tools = this.config.tools ?? defaultTools;
 
     const engine = new DestroyerEngine({
       soundEnabled: this.hasAttribute("sound"),
@@ -232,13 +295,11 @@ export class RageLayerElement extends ElementBase {
     const model = new ToolbarModel(engine, {
       tools,
       strings: this.config.strings,
+      toolStyle: this.config.toolStyle,
       onClose: () => this.dispatchEvent(new CustomEvent("ragelayer-close", { bubbles: true })),
     });
     this.model = model;
-    this.bar.setAttribute(
-      "aria-label",
-      model.state.buttons.length > 0 ? "RageLayer tools" : "RageLayer",
-    );
+    this.bar.setAttribute("aria-label", model.state.toolbarLabel);
 
     this.unsubscribe = model.subscribe((state) => this.render(state));
     this.bar.addEventListener("keydown", this.onBarKeyDown);
@@ -275,7 +336,7 @@ export class RageLayerElement extends ElementBase {
     if (!model) return;
     const count = this.buttons.length;
     if (count === 0) return;
-    const current = this.buttons.findIndex((button) => button === event.target);
+    const current = this.buttons.indexOf(event.target as HTMLButtonElement);
     if (current < 0) return;
 
     let next: number | null = null;
@@ -294,7 +355,9 @@ export class RageLayerElement extends ElementBase {
 
   private render(state: ToolbarState) {
     this.live.textContent = state.announcement;
+    this.guide.textContent = state.hint ?? "";
 
+    const focusedIndex = this.buttons.indexOf(this.shadowRoot?.activeElement as HTMLButtonElement);
     const nodes: Node[] = [];
     this.buttons = [];
     let previousKind: ToolbarButton["kind"] | null = null;
@@ -306,13 +369,15 @@ export class RageLayerElement extends ElementBase {
         nodes.push(divider);
       }
       previousKind = button.kind;
-      nodes.push(this.renderButton(button, index === state.focusIndex));
+      nodes.push(this.renderButton(button, index, index === state.focusIndex));
     }
 
     if (state.status) {
       const chip = document.createElement("span");
       chip.className = "chip";
       chip.title = state.status.title;
+      chip.setAttribute("role", "status");
+      chip.setAttribute("aria-live", "polite");
       const dot = document.createElement("span");
       dot.className = state.status.color ? "dot" : "dot pending";
       if (state.status.color) dot.style.color = state.status.color;
@@ -330,14 +395,17 @@ export class RageLayerElement extends ElementBase {
 
     // Focus survives the rebuild: replacing the bar's children while a button
     // is focused would otherwise drop focus to the body mid-interaction.
-    const focusedIndex = this.buttons.findIndex(
-      (button) => button === this.shadowRoot?.activeElement,
-    );
     this.bar.replaceChildren(...nodes);
-    if (focusedIndex >= 0) this.buttons[focusedIndex]?.focus();
+    if (focusedIndex >= 0) {
+      // Rebuilding must not drop keyboard focus, but restoring it must also
+      // not overwrite a pointer-previewed hint with the old focus index.
+      this.restoringFocus = true;
+      this.buttons[focusedIndex]?.focus();
+      this.restoringFocus = false;
+    }
   }
 
-  private renderButton(button: ToolbarButton, tabbable: boolean): HTMLButtonElement {
+  private renderButton(button: ToolbarButton, index: number, tabbable: boolean): HTMLButtonElement {
     const element = document.createElement("button");
     element.type = "button";
     element.setAttribute("aria-label", button.label);
@@ -345,7 +413,6 @@ export class RageLayerElement extends ElementBase {
     element.tabIndex = tabbable ? 0 : -1;
     if (button.pressed !== undefined) element.setAttribute("aria-pressed", String(button.pressed));
     if (button.disabled) element.setAttribute("aria-disabled", "true");
-    if (button.fontSize) element.style.fontSize = `${button.fontSize}px`;
     if (button.color) element.style.color = button.color;
 
     if (button.icon) {
@@ -353,8 +420,10 @@ export class RageLayerElement extends ElementBase {
       image.src = button.icon;
       image.alt = "";
       element.append(image);
+    } else if (button.iconPath) {
+      element.append(toolbarIconElement(button.iconPath));
     } else {
-      element.textContent = button.glyph ?? button.toolIcon ?? "";
+      element.textContent = button.toolIcon ?? "";
     }
 
     element.addEventListener("click", () => {
@@ -363,6 +432,11 @@ export class RageLayerElement extends ElementBase {
       if (button.disabled) return;
       button.run();
     });
+    element.addEventListener("focus", () => {
+      if (!this.restoringFocus) this.model?.setFocusIndex(index);
+    });
+    element.addEventListener("pointerenter", () => this.model?.setFocusIndex(index));
+    element.addEventListener("pointerdown", () => this.model?.setFocusIndex(index));
     this.buttons.push(element);
     return element;
   }

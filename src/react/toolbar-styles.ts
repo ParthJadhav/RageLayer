@@ -8,49 +8,65 @@ import type React from "react";
  * the component's logic buried the parts that actually do something.
  */
 
-export const barStyle: React.CSSProperties = {
+export const hostStyle: React.CSSProperties = {
   // Explicit visibility: while content-destruction mode hides the real page
   // (visibility: hidden on <body>), the toolbar re-enables itself.
   visibility: "visible",
   position: "fixed",
   left: "50%",
-  bottom: 18,
+  bottom: "max(18px, env(safe-area-inset-bottom))",
   transform: "translateX(-50%)",
   zIndex: 2147483001,
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: 10,
+  width: "max-content",
+  maxWidth: "calc(100vw - 24px)",
+  pointerEvents: "none",
+};
+
+export const barStyle: React.CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   // On narrow viewports the row wraps instead of clipping: every tool stays
   // reachable without a hidden horizontal scroll.
   flexWrap: "wrap",
-  gap: 3,
-  padding: "7px 9px",
+  gap: 2,
+  padding: 6,
   borderRadius: 18,
-  background: "rgba(18, 17, 16, 0.82)",
-  backdropFilter: "blur(14px)",
-  WebkitBackdropFilter: "blur(14px)",
-  border: "1px solid rgba(255,255,255,0.14)",
-  boxShadow: "0 12px 40px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3)",
+  background: "rgba(14, 13, 12, 0.94)",
+  backdropFilter: "blur(18px) saturate(140%)",
+  WebkitBackdropFilter: "blur(18px) saturate(140%)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  boxShadow:
+    "0 1px 0 rgba(255,255,255,0.07) inset, 0 20px 50px -16px rgba(0,0,0,0.7), 0 4px 14px rgba(0,0,0,0.3)",
   fontFamily: "ui-sans-serif, system-ui, sans-serif",
   userSelect: "none",
-  animation: "rl-rise 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.2)",
-  maxWidth: "calc(100vw - 24px)",
+  animation: "rl-rise 0.35s cubic-bezier(0.22, 1, 0.36, 1)",
+  maxWidth: "100%",
+  pointerEvents: "auto",
 };
 
 export const buttonBase: React.CSSProperties = {
+  position: "relative",
   appearance: "none",
-  border: "1px solid transparent",
+  border: 0,
   background: "transparent",
   borderRadius: 12,
-  width: 42,
-  height: 42,
-  fontSize: 22,
+  width: 40,
+  height: 40,
+  fontSize: 20,
   lineHeight: 1,
+  // Actions are SVG strokes drawn in `currentColor`, so one colour token moves
+  // the idle, hover and disabled states together.
+  color: "rgba(255,255,255,0.74)",
   cursor: "pointer",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
-  transition: "transform 0.12s ease, background 0.12s ease, border-color 0.12s ease",
+  transition: "transform 0.14s ease, background 0.14s ease, color 0.14s ease",
   flexShrink: 0,
 };
 
@@ -63,26 +79,21 @@ export const chipStyle: React.CSSProperties = {
   // Same reason as the toolbar: content mode hides the real page via
   // `visibility: hidden` on <body>, and this portal is a body descendant.
   visibility: "visible",
-  position: "fixed",
-  left: "50%",
-  bottom: 72,
-  transform: "translateX(-50%)",
-  zIndex: 2147483001,
   display: "flex",
   alignItems: "center",
   gap: 7,
-  padding: "5px 11px",
+  padding: "5px 12px",
   borderRadius: 999,
-  background: "rgba(18, 17, 16, 0.82)",
-  backdropFilter: "blur(14px)",
-  WebkitBackdropFilter: "blur(14px)",
-  border: "1px solid rgba(255,255,255,0.14)",
-  boxShadow: "0 8px 24px rgba(0,0,0,0.35)",
+  background: "rgba(14, 13, 12, 0.94)",
+  backdropFilter: "blur(18px)",
+  WebkitBackdropFilter: "blur(18px)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  boxShadow: "0 12px 32px -16px rgba(0,0,0,0.7)",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   fontSize: 10,
   letterSpacing: "0.09em",
   textTransform: "uppercase",
-  color: "rgba(255,255,255,0.82)",
+  color: "rgba(255,255,255,0.85)",
   whiteSpace: "nowrap",
   userSelect: "none",
   pointerEvents: "auto",
@@ -98,9 +109,9 @@ export const dotStyle: React.CSSProperties = {
 
 export const dividerStyle: React.CSSProperties = {
   width: 1,
-  height: 28,
-  background: "rgba(255,255,255,0.15)",
-  margin: "0 3px",
+  alignSelf: "stretch",
+  background: "rgba(255,255,255,0.10)",
+  margin: "6px 7px",
   flexShrink: 0,
 };
 
@@ -108,19 +119,30 @@ const STYLE_ATTR = "data-ragelayer-toolbar-styles";
 
 const KEYFRAMES = `
 @keyframes rl-rise {
-  from { opacity: 0; transform: translateX(-50%) translateY(24px) scale(0.92); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(24px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.rl-tool:hover { background: rgba(255,255,255,0.10); transform: translateY(-2px); }
-.rl-tool:active { transform: translateY(0) scale(0.92); }
+.rl-tool:hover { background: rgba(255,255,255,0.09); color: #fff; }
+.rl-tool:active { transform: scale(0.93); }
 .rl-tool:focus-visible {
-  outline: 2px solid rgba(255, 170, 90, 0.9);
-  outline-offset: 1px;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 .rl-tool[data-active="true"] {
-  background: rgba(255, 122, 40, 0.18);
-  border-color: rgba(255, 150, 70, 0.55);
-  box-shadow: 0 0 14px rgba(255, 130, 50, 0.25) inset;
+  color: #fff;
+  background: linear-gradient(180deg, rgba(255,122,40,0.32), rgba(255,122,40,0.18));
+  box-shadow: 0 0 0 1px rgba(255,150,70,0.5) inset, 0 5px 16px -6px rgba(255,110,30,0.7);
+}
+/* A dock-style marker, so the selection survives the pointer moving away and
+   the hover tint disappearing. */
+.rl-tool[data-active="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: #ff7a28;
 }
 @keyframes rl-spin { to { transform: rotate(360deg); } }
 .rl-spinner {
@@ -134,28 +156,43 @@ const KEYFRAMES = `
 }
 .rl-hint {
   visibility: visible;
-  position: fixed;
-  /* Clears the capture-status chip, which sits at 72px. */
-  bottom: 106px;
-  left: 50%;
-  transform: translateX(-50%);
   pointer-events: none;
 }
 .rl-hint-pill {
   display: inline-block;
-  padding: 5px 12px;
+  padding: 6px 14px;
   border-radius: 999px;
-  background: rgba(18,17,16,0.85);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.85);
+  background: rgba(14,13,12,0.94);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow: 0 12px 32px -16px rgba(0,0,0,0.7);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.88);
   font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 12px;
+  font-size: 12.5px;
   letter-spacing: 0.02em;
-  white-space: nowrap;
+  max-width: min(720px, calc(100vw - 32px));
+  line-height: 1.35;
+  text-align: center;
+  text-wrap: pretty;
 }
 @media (prefers-reduced-motion: reduce) {
   .rl-tool { transition: none; }
   .rl-tool:hover { transform: none; }
+}
+@media (max-width: 640px) {
+  .rl-hint-pill { font-size: 14px; }
+  /* Full 44px touch targets once the row scrolls instead of wrapping. */
+  .rl-tool { width: 44px; height: 44px; }
+  .rl-toolbar-bar {
+    width: calc(100vw - 24px);
+    flex-wrap: nowrap !important;
+    justify-content: flex-start !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .rl-toolbar-bar::-webkit-scrollbar { display: none; }
 }
 `;
 

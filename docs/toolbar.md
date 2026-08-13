@@ -11,6 +11,12 @@ are building your own UI, that model is published too, so you get the behaviour 
 | Anything else | `ragelayer/element` | `<rage-layer>` |
 | Your own UI | `ragelayer/toolbar` | `ToolbarModel` |
 
+The built-in views keep the current control's name and gesture visible instead of asking visitors
+to decode icon silhouettes. On narrow screens the controls stay in one horizontally scrollable row,
+retain 44 px targets, and raise the guide text to 14 px.
+
+![The focused Classic toolbar on a phone viewport](./screenshots/demo-mobile.png)
+
 ## The custom element
 
 The custom element is the shortest path to a real toolbar on any stack — Svelte, Angular, Solid,
@@ -21,14 +27,14 @@ Qwik, Astro, or plain HTML — because it is just an element.
   import "ragelayer/element";
 </script>
 
-<rage-layer loadout="chaos" initial-tool="hammer"></rage-layer>
+<rage-layer initial-tool="hammer" sound></rage-layer>
 ```
 
 Importing the entry registers `<rage-layer>`. It builds its UI in a shadow root, so the host
 page's CSS cannot reach in and its own styles cannot leak out, and it disposes the engine when the
 element leaves the document.
 
-Attributes cover the common cases (`loadout`, `initial-tool`, `sound`). For anything richer — a
+Attributes cover the common cases (`initial-tool`, `sound`). For anything richer — a
 custom toolset, engine options, translated strings — call `configure()` before connecting it:
 
 ```ts
@@ -66,7 +72,7 @@ const open = ref(false);
 
 <template>
   <button @click="open = true">Destroy this page</button>
-  <RageLayer v-if="open" loadout="chaos" @close="open = false" />
+  <RageLayer v-if="open" @close="open = false" />
 </template>
 ```
 
@@ -78,7 +84,9 @@ drive it yourself.
 
 `ToolbarModel` gives you the button list and every behaviour a destroyer toolbar needs: which tool
 is selected, whether undo is available, the capture-status chip, keyboard shortcuts that correctly
-ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export.
+ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export. Its
+`state.hint` is the current control's plain-language instruction; the built-in toolbars keep that
+instruction visible above the icons and update it on hover, focus, and keyboard navigation.
 
 ```ts
 import { mountRageLayer } from "ragelayer";
@@ -88,16 +96,18 @@ const engine = mountRageLayer({ history: true, initialTool: null });
 const toolbar = new ToolbarModel(engine, { onClose: () => engine.dispose() });
 
 const unsubscribe = toolbar.subscribe((state) => {
-  render(
-    state.buttons.map((button) => ({
+  render({
+    buttons: state.buttons.map((button) => ({
       label: button.label, // accessible name
       title: button.title, // tooltip, including the shortcut
-      icon: button.icon ?? button.glyph, // drawn art, or an emoji fallback
+      icon: button.icon, // a tool's drawn art, or null
+      iconPath: button.iconPath, // an action's SVG path data, or undefined
       pressed: button.pressed,
       disabled: button.disabled,
       onClick: button.run,
     })),
-  );
+    hint: state.hint, // visible instruction for the focused / hovered control
+  });
 });
 
 window.addEventListener("keydown", (event) => {
@@ -107,6 +117,21 @@ window.addEventListener("keydown", (event) => {
 
 Call `toolbar.destroy()` and `unsubscribe()` when your UI goes away. Disposing the engine destroys
 the model automatically.
+
+Tool buttons carry `icon`, a data URL of the drawn art. Action buttons carry `iconPath`, SVG path
+data on a 24×24 grid drawn in `currentColor` — one colour token then moves a control's idle, hover
+and disabled states together, which platform-drawn emoji could not do. Render it yourself, or use
+the helpers:
+
+```ts
+import { TOOLBAR_ICONS, toolbarIconElement, toolbarIconSvg } from "ragelayer";
+
+button.append(toolbarIconElement(state.iconPath)); // detached <svg> node
+element.innerHTML = toolbarIconSvg(TOOLBAR_ICONS.snapshot); // markup
+
+// TOOLBAR_ICONS also covers controls the built-in toolbar has no button for,
+// such as pause and play.
+```
 
 ## Keyboard shortcuts
 
@@ -130,7 +155,7 @@ mid-IME-composition, or holding a key down.
 The toolbar has always been keyboard-operable, but the canvas is a pointer surface: without a
 mouse you could select the hammer and then do nothing with it. Aiming mode closes that gap.
 
-Press `A` (or the 🎯 button) with a tool in hand to place a high-contrast cursor in the middle of
+Press `A` (or the crosshair button) with a tool in hand to place a high-contrast cursor in the middle of
 the viewport. Arrow keys move it, `Enter` or `Space` uses the tool there, and `Esc` leaves aiming
 without closing the toolbar. The page scrolls to follow the cursor, and every move and strike is
 announced in a live region.
@@ -142,7 +167,7 @@ your own UI:
 // Use the active tool at a document point, with no pointer involved.
 engine.strike(x, y);
 
-// Tools that work while held — a flamethrower, a freeze ray — need a duration.
+// Tools that work while held — a flamethrower, a water hose — need a duration.
 engine.strike(x, y, { holdMs: 400 });
 
 // Draw the aiming cursor yourself, in document coordinates.

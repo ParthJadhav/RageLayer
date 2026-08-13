@@ -24,7 +24,7 @@ describe("ComboTracker", () => {
 
   test("clear removes prior interactions", () => {
     const tracker = new ComboTracker();
-    tracker.record("glitch", 10, 10, 0);
+    tracker.record("gravity", 10, 10, 0);
     tracker.clear();
     expect(tracker.record("electricity", 10, 10, 10)).toEqual([]);
   });

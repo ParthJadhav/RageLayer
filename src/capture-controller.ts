@@ -17,16 +17,15 @@
  *   Failures here always fall back to snapshot rather than breaking the toy.
  *
  * It also owns everything that has to happen *before* the real DOM disappears:
- * harvesting the page's furniture for the demolition tool, mapping where the
- * text is for the surface shader, and scanning material regions. After
- * `enterContentMode` there is nothing left to measure.
+ * harvesting the page's furniture for the demolition tool and mapping where
+ * the text is for the surface shader. After `enterContentMode` there is
+ * nothing left to measure.
  */
 
 import { MAX_CAPTURE_HEIGHT, measureCapture, pickPixelRatio, resolvePageBackdrop } from "./capture";
 import { ContentLayer } from "./content";
 import { harvestElements, type PageElement } from "./elements";
 import { LiveContentSource, supportsLiveCapture } from "./live";
-import type { MaterialSystem } from "./materials";
 import type { Overlay } from "./overlay";
 import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
 import { buildTextMask } from "./textmask";
@@ -52,7 +51,6 @@ export interface CaptureSettings {
 /** What the pipeline needs from the engine around it. */
 export interface CaptureHost {
   readonly overlay: Overlay;
-  readonly materials: MaterialSystem;
   /** Document size, already capped to what a canvas can hold. */
   docSize(): { width: number; height: number };
   /** The document rows a live refresh should cover — what the user can see. */
@@ -155,7 +153,6 @@ export class CaptureController {
       const doc = this.host.docSize();
       const geometry = measureCapture(this.root, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
       const backdrop = resolvePageBackdrop(this.root);
-      this.host.materials.scan(this.root);
       this.harvest();
 
       const live = await this.rasterize(layer, geometry, backdrop);
@@ -199,7 +196,6 @@ export class CaptureController {
     if (document.hidden) return;
     this.refreshing = true;
     try {
-      this.host.materials.scan(this.root);
       const doc = this.host.docSize();
       const geometry = measureCapture(this.root, doc.width, doc.height, MAX_CAPTURE_HEIGHT);
       // A reflow invalidates the whole capture; the resize handler owns that.
@@ -221,6 +217,11 @@ export class CaptureController {
       // Refresh only what the user can see plus a screen either side — the page
       // below the fold keeps last refresh's (still pristine) pixels.
       layer.refreshBase(raster, this.host.refreshBand());
+      // The refresh runs off a timer, not the frame loop — which parks itself
+      // whenever nothing is animating. Presenting here pushes the recomposed
+      // band through the surface renderer even on an idle page; otherwise the
+      // new pixels sit in the texture source until the next tool use.
+      layer.present();
       this.backoffMs = 0;
     } catch (err) {
       // A failed refresh just means the base is a little stale — the existing

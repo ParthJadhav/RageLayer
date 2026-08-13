@@ -101,6 +101,16 @@ describe("destruction removes page pixels", () => {
     expect(layer.opacityAt(200, 200)).toBe(1);
   });
 
+  test("a clean cut keeps one constant kerf without torn nicks", () => {
+    layer.cut(80, 150, 320, 150, { edge: "clean", width: 3 });
+
+    for (const x of [80, 120, 200, 280, 320]) {
+      expect(layer.opacityAt(x, 150)).toBe(0);
+      expect(surfaceAlpha(x, 156)).toBe(255);
+      expect(surfaceAlpha(x, 144)).toBe(255);
+    }
+  });
+
   test("carving a shape removes exactly that region", () => {
     const square = new Path2D();
     square.rect(150, 100, 100, 100);
@@ -277,4 +287,9 @@ describe("lifecycle", () => {
       empty.restoreAll();
     }).not.toThrow();
   });
+});
+
+test("freeze-specific melt support is absent", () => {
+  const layer = new ContentLayer();
+  expect("melt" in layer).toBe(false);
 });

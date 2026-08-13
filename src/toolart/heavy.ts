@@ -1,6 +1,6 @@
 /**
- * The heavy ordnance: wrecking ball, rocket launcher, storm rod, freeze ray,
- * singularity ring and specimen jar. Same conventions as `./base`.
+ * The heavy ordnance: demolition breaker, rocket launcher, storm rod, singularity
+ * ring and specimen jar. Same conventions as `./base`.
  */
 
 import { TAU } from "../math";
@@ -19,76 +19,68 @@ import {
   rivet,
   rod,
   STEEL,
-  TEAL,
 } from "./primitives";
 
-// ── Demolition: wrecking ball ────────────────────────────────────────────────
+// ── Demolition breaker ───────────────────────────────────────────────────────
 
-/** An iron wrecking ball on a chain from above; it swings with your motion. */
+/** Compact hydraulic breaker with its chisel tip exactly on the pointer. */
 export const demolitionArt: ToolArtFn = (ctx, s) => {
-  // The ball lags the pointer: fast motion tilts the chain.
-  const tilt = Math.max(-0.5, Math.min(0.5, s.vx * 0.0012)) + Math.sin(s.time * 1.4) * 0.03;
-  let drop = 0;
-  if (Number.isFinite(s.sinceDown)) drop = Math.exp(-s.sinceDown * 10) * 5;
-
-  const r = 21;
-  const cx = 0;
-  const cy = -r + drop; // ball bottom kisses the origin
-
-  castShadow(ctx, 2, 4, 26, 9, 0.22);
-
+  const recoil = Number.isFinite(s.sinceDown) ? Math.exp(-s.sinceDown * 15) * 5 : 0;
+  const vibration = s.held ? Math.sin(s.time * 75) * 1.2 : 0;
   ctx.save();
-  // Chain pivots above the ball; tilt swings ball + chain together.
-  ctx.translate(cx, cy - r);
-  ctx.rotate(tilt);
-  ctx.translate(-cx, -(cy - r));
+  ctx.translate(recoil + vibration, 0);
+  castShadow(ctx, 52, 18, 50, 12, 0.2);
 
-  // Chain links climbing off toward the upper right.
-  ctx.strokeStyle = "#3c4046";
-  ctx.lineWidth = 3;
-  for (let i = 0; i < 5; i++) {
-    const lx = cx + 8 + i * 11;
-    const ly = cy - r - 6 - i * 13;
-    ctx.save();
-    ctx.translate(lx, ly);
-    ctx.rotate(0.65 + (i % 2) * Math.PI * 0.5);
-    ctx.strokeStyle = i % 2 ? "#575c63" : "#33363c";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 6.5, 4, 0, 0, TAU);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Shackle on top of the ball.
-  ctx.strokeStyle = "#4a4e55";
-  ctx.lineWidth = 4;
+  // Hardened chisel: the point at (0, 0) is where the page is struck.
+  ctx.fillStyle = grad(ctx, 0, -4, 0, 4, STEEL);
   ctx.beginPath();
-  ctx.arc(cx + 2, cy - r + 1, 6, Math.PI, TAU);
-  ctx.stroke();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(28, -6);
+  ctx.lineTo(35, -4);
+  ctx.lineTo(35, 4);
+  ctx.lineTo(28, 6);
+  ctx.closePath();
+  ctx.fill();
+  outline(ctx, 0.6);
 
-  // The ball: iron sphere with an off-centre specular bloom.
-  const g = ctx.createRadialGradient(cx - r * 0.4, cy - r * 0.45, r * 0.1, cx, cy, r * 1.15);
-  g.addColorStop(0, "#b9bfc7");
-  g.addColorStop(0.25, "#6f757d");
-  g.addColorStop(0.6, "#33373d");
-  g.addColorStop(1, "#0d0e11");
-  ctx.fillStyle = g;
+  // High-visibility hydraulic body with a dark steel collar.
+  ctx.fillStyle = grad(ctx, 0, -15, 0, 15, [
+    [0, "#6d4305"],
+    [0.28, "#ffe26a"],
+    [0.58, "#d59a16"],
+    [1, "#704806"],
+  ]);
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, TAU);
+  ctx.roundRect(32, -15, 56, 30, 7);
+  ctx.fill();
+  outline(ctx);
+  ctx.fillStyle = grad(ctx, 0, -13, 0, 13, DARKMETAL);
+  ctx.beginPath();
+  ctx.roundRect(28, -12, 12, 24, 3);
+  ctx.fill();
+  outline(ctx, 0.6);
+
+  // Rear motor cap, vents and a stout two-hand grip.
+  ctx.fillStyle = DARKMETAL[1][1];
+  ctx.beginPath();
+  ctx.roundRect(84, -12, 11, 24, 4);
+  ctx.fill();
+  outline(ctx, 0.6);
+  ctx.fillStyle = "rgba(35,29,15,.55)";
+  for (let x = 50; x <= 72; x += 7) ctx.fillRect(x, -10, 3, 20);
+  ctx.fillStyle = grad(ctx, 0, -40, 0, -12, DARKMETAL);
+  ctx.beginPath();
+  ctx.roundRect(59, -39, 13, 27, 5);
+  ctx.fill();
+  outline(ctx, 0.6);
+  ctx.fillStyle = "#f6c33a";
+  ctx.beginPath();
+  ctx.roundRect(72, -31, 17, 9, 4);
   ctx.fill();
   outline(ctx, 0.5);
-  // Casting seam.
-  ctx.strokeStyle = "rgba(0,0,0,0.35)";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.ellipse(cx, cy, r * 0.96, r * 0.4, 0.5, 0, TAU);
-  ctx.stroke();
-  // Hot specular dot.
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  ctx.beginPath();
-  ctx.ellipse(cx - r * 0.42, cy - r * 0.48, 3.2, 2.2, -0.6, 0, TAU);
-  ctx.fill();
 
+  rivet(ctx, 44, 0, 2);
+  rivet(ctx, 81, 0, 2);
   ctx.restore();
 };
 
@@ -232,89 +224,6 @@ export const lightningArt: ToolArtFn = (ctx, s) => {
   ctx.arc(orbX - 2, orbY - 2, orbR - 2.5, Math.PI * 0.9, Math.PI * 1.6);
   ctx.stroke();
   glow(ctx, orbX, orbY, orbR * (1.6 + flash * 2.2), "rgba(170,140,255,0.7)", 0.4 + flash * 0.6);
-};
-
-// ── Freeze ray ───────────────────────────────────────────────────────────────
-
-/** Retro raygun: cooling fins, glowing cryo emitter, icicles under the barrel. */
-export const freezeArt: ToolArtFn = (ctx, s) => {
-  const charge = s.held ? Math.min(1, s.sinceDown * 2) : 0;
-  const pulse = 0.7 + 0.3 * Math.sin(s.time * 6);
-
-  castShadow(ctx, 34, 42, 40, 13, 0.16);
-
-  ctx.save();
-  ctx.rotate(0.5);
-
-  // Barrel.
-  rod(ctx, 4, 0, 48, 0, 11, TEAL);
-  // Cooling fins: three discs seen edge-on, shrinking toward the muzzle.
-  for (let i = 0; i < 3; i++) {
-    const fx = 12 + i * 10;
-    const fr = 12 - i * 1.5;
-    ctx.fillStyle = grad(ctx, fx, -fr, fx, fr, STEEL);
-    ctx.beginPath();
-    ctx.ellipse(fx, 0, 3, fr, 0, 0, TAU);
-    ctx.fill();
-    outline(ctx, 0.4);
-  }
-  // Body bulb at the rear with a dome.
-  ctx.fillStyle = grad(ctx, 0, -13, 0, 13, TEAL);
-  ctx.beginPath();
-  ctx.ellipse(54, 0, 14, 13, 0, 0, TAU);
-  ctx.fill();
-  outline(ctx);
-  ctx.fillStyle = "rgba(255,255,255,0.35)";
-  ctx.beginPath();
-  ctx.ellipse(50, -5, 5, 3, -0.5, 0, TAU);
-  ctx.fill();
-  // Grip.
-  ctx.save();
-  ctx.translate(52, 10);
-  ctx.rotate(0.35);
-  ctx.fillStyle = grad(ctx, 0, 0, 12, 0, DARKMETAL);
-  ctx.beginPath();
-  ctx.roundRect(0, 0, 12, 26, 5);
-  ctx.fill();
-  outline(ctx);
-  ctx.restore();
-
-  // Icicles hanging off the barrel.
-  ctx.fillStyle = "rgba(200,240,255,0.85)";
-  for (let i = 0; i < 3; i++) {
-    const ix = 10 + i * 12;
-    const il = 5 + hash(i * 5.1) * 6;
-    ctx.beginPath();
-    ctx.moveTo(ix - 2, 5);
-    ctx.lineTo(ix, 5 + il);
-    ctx.lineTo(ix + 2, 5);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // Emitter: cryo glow at the muzzle, spinning frost star while firing.
-  ctx.beginPath();
-  ctx.arc(2, 0, 3.4, 0, TAU);
-  ctx.fillStyle = "#dff6ff";
-  ctx.fill();
-  outline(ctx, 0.4);
-  ctx.restore();
-
-  glow(ctx, 0, 0, 10 + charge * 10, "rgba(150,220,255,0.9)", 0.45 * pulse + charge * 0.4);
-  if (charge > 0.1) {
-    ctx.save();
-    ctx.strokeStyle = `rgba(220,245,255,${0.7 * charge})`;
-    ctx.lineWidth = 1.4;
-    ctx.rotate(s.time * 2.4);
-    for (let i = 0; i < 6; i++) {
-      ctx.rotate(TAU / 6);
-      ctx.beginPath();
-      ctx.moveTo(4, 0);
-      ctx.lineTo(9 + charge * 5, 0);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
 };
 
 // ── Black hole: singularity ring ─────────────────────────────────────────────

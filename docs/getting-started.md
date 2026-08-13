@@ -2,7 +2,7 @@
 
 `ragelayer` is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
-shoot, burn, soak, saw, paint, freeze, bomb — and then sweep it all up. Zero assets, zero
+shoot, burn, soak, saw, paint, corrode, bomb — and then sweep it all up. Zero assets, zero
 runtime dependencies, framework-agnostic core with a drop-in React component.
 
 ![The demo page mid-destruction](./screenshots/aftermath.png)
@@ -56,28 +56,43 @@ const destroyer = createRageLayer({
 document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
 ```
 
-The controller registers all 19 tools and handles repeated open/close cycles. Build whatever UI
+The controller registers all 16 tools and handles repeated open/close cycles. Build whatever UI
 you like on top—the [live demo](./demo/) is a complete example with a hand-rolled toolbar.
 
 ## The toolset
+
+### Base tools (7)
 
 | | Tool | Gesture |
 |---|---|---|
 | 🔨 | Hammer | click — escalating blows until the spot fractures into rigid debris |
 | 🔫 | Gun | click / hold for full-auto |
 | 🔥 | Flamethrower | hold — fire catches, spreads and eats the page |
-| 💦 | Water hose | hold — douses fire, washes stains |
+| 💦 | Water Hose | hold — a compact pressure nozzle douses fire and washes stains |
 | 🪚 | Chainsaw | drag — close a loop and the piece drops out whole |
-| 🎨 | Paintball | click |
+| 🎨 | Paintball | click once or hold for automatic fire |
+| 🧹 | Broom | drag — sweeps damage away and repairs content |
+
+### Heavy tools (5)
+
+| | Tool | Gesture |
+|---|---|---|
 | 🏗️ | Demolition | click — knocks a real page element loose as one object |
 | 🚀 | Rocket launcher | click |
 | ⚡ | Lightning | click |
-| ❄️ | Freeze ray | hold — frost resists fire, shatters like glass |
 | 🕳️ | Black hole | hold — lenses the page, eats debris, detonates on release |
 | 🐛 | Bug | click — releases a bug that gnaws trails through the page |
-| 🧹 | Broom | drag — sweeps damage away and repairs content |
 
-Screenshots of each: [tool gallery](./tools.md).
+### Advanced tools (4)
+
+| | Tool | Gesture |
+|---|---|---|
+| 🔫 | Gravity Gun | hold to pull debris, release to launch it |
+| 🔴 | Laser Cutter | drag — makes a clean structural cut and drops isolated pieces |
+| 🧪 | Acid Sprayer | hold — aligned corrosion creeps slightly around each deposit |
+| 💣 | Sticky Bombs | click — attaches a timed charge |
+
+Screenshots and detailed behavior notes: [tool gallery](./tools.md).
 
 Need a smaller initial graph or different visual sizing? See [procedural 3D models](./models.md) for
 `toolScale`, engine-only imports, base/heavy/advanced tool entry points, and on-demand loading.

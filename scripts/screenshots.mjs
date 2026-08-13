@@ -7,180 +7,38 @@
 // Every shot loads a fresh demo page, selects a tool, performs a scripted
 // gesture and captures a PNG — so the images always reflect the current build.
 
-import { spawn } from "node:child_process";
-import { createReadStream } from "node:fs";
-import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import {
+  evaluate as evaluateCdp,
+  launchChrome,
+  packageRoot,
+  startStaticServer,
+  waitFor,
+} from "./lib/browser.mjs";
 
-const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = join(packageRoot, "docs", "screenshots");
-const chromePath =
-  process.env.RAGELAYER_CHROME_PATH ??
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const WIDTH = 1280;
 const HEIGHT = 800;
 
-function contentType(pathname) {
-  return (
-    {
-      ".html": "text/html; charset=utf-8",
-      ".js": "text/javascript; charset=utf-8",
-      ".map": "application/json; charset=utf-8",
-      ".css": "text/css; charset=utf-8",
-    }[extname(pathname)] ?? "application/octet-stream"
-  );
-}
-
-async function startServer() {
-  const server = createServer(async (request, response) => {
-    try {
-      const url = new URL(request.url ?? "/", "http://localhost");
-      const pathname = decodeURIComponent(url.pathname === "/" ? "/demo/index.html" : url.pathname);
-      const filepath = resolve(packageRoot, `.${pathname}`);
-      if (!filepath.startsWith(`${packageRoot}/`)) throw new Error("outside package root");
-      const info = await stat(filepath);
-      if (!info.isFile()) throw new Error("not a file");
-      response.writeHead(200, {
-        "Content-Type": contentType(filepath),
-        "Cache-Control": "no-store",
-      });
-      createReadStream(filepath).pipe(response);
-    } catch {
-      response.writeHead(404, { "Content-Type": "text/plain" });
-      response.end("Not found");
-    }
-  });
-  await new Promise((resolveReady, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
-  });
-  return server;
-}
-
-class CdpClient {
-  constructor(socket) {
-    this.socket = socket;
-    this.nextId = 1;
-    this.pending = new Map();
-    socket.addEventListener("message", (event) => {
-      const message = JSON.parse(String(event.data));
-      if (!message.id) return;
-      const pending = this.pending.get(message.id);
-      if (!pending) return;
-      this.pending.delete(message.id);
-      if (message.error) pending.reject(new Error(message.error.message));
-      else pending.resolve(message.result);
-    });
-  }
-
-  send(method, params = {}, sessionId) {
-    const id = this.nextId++;
-    return new Promise((resolveMessage, reject) => {
-      this.pending.set(id, { resolve: resolveMessage, reject });
-      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
-    });
-  }
-}
-
-async function waitForDebugger(port) {
-  const deadline = Date.now() + 15_000;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) return response.json();
-    } catch {
-      // Chrome has not opened the debugging socket yet.
-    }
-    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-  }
-  throw new Error("Chrome DevTools endpoint did not become ready");
-}
-
-async function freePort() {
-  const server = createServer();
-  await new Promise((resolveReady, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolveReady);
-  });
-  const address = server.address();
-  const port = typeof address === "object" && address ? address.port : 0;
-  await new Promise((resolveClosed) => server.close(resolveClosed));
-  return port;
-}
-
 const wait = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms));
 
-const server = await startServer();
-const serverAddress = server.address();
-const serverPort = typeof serverAddress === "object" && serverAddress ? serverAddress.port : 0;
-const debugPort = await freePort();
-const profileDir = await mkdtemp(join(tmpdir(), "ragelayer-shots-"));
-const chrome = spawn(
-  chromePath,
-  [
-    "--headless=new",
-    // CI runners (Ubuntu 23.10+) restrict unprivileged user namespaces, which the
-    // Chrome sandbox needs; these harnesses only ever load their own local files.
-    ...(process.env.CI || process.env.RAGELAYER_CHROME_NO_SANDBOX ? ["--no-sandbox"] : []),
-    `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profileDir}`,
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-background-timer-throttling",
-    "--disable-renderer-backgrounding",
-    "--disable-features=Translate,BackForwardCache",
-    "--disable-extensions",
-    "--disable-sync",
-    "--enable-unsafe-swiftshader",
-    `--window-size=${WIDTH},${HEIGHT}`,
-    "about:blank",
-  ],
-  { stdio: ["ignore", "ignore", "pipe"] },
-);
-
-let stderr = "";
-chrome.stderr.on("data", (chunk) => {
-  stderr += chunk;
+const server = await startStaticServer("/demo/index.html");
+const browser = await launchChrome({
+  url: "about:blank",
+  flags: ["--enable-unsafe-swiftshader", `--window-size=${WIDTH},${HEIGHT}`],
 });
+const { cdp, sessionId } = browser;
 
 try {
   await mkdir(outputDir, { recursive: true });
-  const version = await waitForDebugger(debugPort);
-  const socket = new WebSocket(version.webSocketDebuggerUrl);
-  await new Promise((resolveOpen, reject) => {
-    socket.addEventListener("open", resolveOpen, { once: true });
-    socket.addEventListener("error", reject, { once: true });
-  });
-  const cdp = new CdpClient(socket);
-  const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
-  const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
-  await Promise.all([
-    cdp.send("Runtime.enable", {}, sessionId),
-    cdp.send("Page.enable", {}, sessionId),
-    cdp.send(
-      "Emulation.setDeviceMetricsOverride",
-      { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: false },
-      sessionId,
-    ),
-  ]);
+  await cdp.send(
+    "Emulation.setDeviceMetricsOverride",
+    { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: false },
+    sessionId,
+  );
 
-  const evaluate = async (expression) => {
-    const result = await cdp.send(
-      "Runtime.evaluate",
-      { expression, awaitPromise: true, returnByValue: true, userGesture: true },
-      sessionId,
-    );
-    if (result.exceptionDetails) {
-      throw new Error(
-        result.exceptionDetails.exception?.description ?? result.exceptionDetails.text,
-      );
-    }
-    return result.result.value;
-  };
+  const evaluate = (expression) => evaluateCdp(cdp, sessionId, expression);
 
   const mouse = async (type, x, y, held) =>
     cdp.send(
@@ -225,20 +83,13 @@ try {
   };
 
   const loadDemo = async () => {
-    await cdp.send("Page.navigate", { url: `http://127.0.0.1:${serverPort}/` }, sessionId);
-    const deadline = Date.now() + 20_000;
-    // Optional chaining throughout: between `Page.navigate` returning and the
-    // new document existing there is a window where `documentElement` is null
-    // and evaluating against it throws rather than simply reporting "not yet".
-    while (!(await evaluate("document.documentElement?.dataset.ready === 'true'"))) {
-      if (Date.now() > deadline) throw new Error("Demo page did not become ready");
-      await wait(100);
-    }
-    // Wait for the page capture to finish so tools hit real content.
-    while ((await evaluate("window.engine?.captureStatus ?? 'capturing'")) === "capturing") {
-      if (Date.now() > deadline) throw new Error("Page capture did not finish");
-      await wait(100);
-    }
+    await cdp.send("Page.navigate", { url: server.origin }, sessionId);
+    await waitFor(cdp, sessionId, "document.documentElement?.dataset.ready === 'true'", {
+      label: "the demo page to become ready",
+    });
+    await waitFor(cdp, sessionId, "window.engine?.captureStatus !== 'capturing'", {
+      label: "the page capture to finish",
+    });
     await wait(300);
   };
 
@@ -257,6 +108,26 @@ try {
   // ── 1. The pristine demo page with the toolbar ──────────────────────────
   await loadDemo();
   await shoot("demo-page");
+
+  // The toolbar has a different interaction shape on a phone: one horizontal
+  // row, 44 px targets, and a larger persistent guide. Keep a documentation
+  // image for that state instead of relying only on geometric assertions.
+  await cdp.send(
+    "Emulation.setDeviceMetricsOverride",
+    { width: 375, height: 667, deviceScaleFactor: 2, mobile: true },
+    sessionId,
+  );
+  // Reload after the mobile override so Chrome applies the meta viewport while
+  // constructing the document. Switching an already-loaded desktop page to
+  // mobile emulation leaves its old layout viewport cached and produces a
+  // misleading cropped screenshot.
+  await loadDemo();
+  await shoot("demo-mobile");
+  await cdp.send(
+    "Emulation.setDeviceMetricsOverride",
+    { width: WIDTH, height: HEIGHT, deviceScaleFactor: 2, mobile: false },
+    sessionId,
+  );
 
   // ── 2. Hammer — escalating blows until regions fracture into debris ─────
   await loadDemo();
@@ -341,24 +212,7 @@ try {
   await wait(90);
   await shoot("lightning");
 
-  // ── 9. Frost shatter — frozen page breaking as glass, glints in the air ─
-  await loadDemo();
-  await selectTool("freeze");
-  await hold(620, 340, 2000);
-  await release(620, 340);
-  await wait(150);
-  await selectTool("hammer");
-  // Work the site up to the breaking blow, then capture immediately so the
-  // ice shards and crystalline glints are still in the air.
-  for (let hit = 0; hit < 3; hit++) {
-    await click(620 + hit * 2, 340 + hit);
-    await wait(110);
-  }
-  await click(626, 344);
-  await wait(70);
-  await shoot("frost-shatter");
-
-  // ── 10. Water hose — sheeting water putting a fire out ──────────────────
+  // ── 9. Water hose — sheeting water putting a fire out ───────────────────
   await loadDemo();
   await selectTool("flamethrower");
   await drag(
@@ -369,12 +223,14 @@ try {
     { stepMs: 180, settleMs: 400 },
   );
   await selectTool("water");
-  await hold(630, 300, 900);
+  // The hose defaults upward, so stage it below the burning strip. This keeps
+  // the visible pressure core and the fire it extinguishes on the same line.
+  await hold(630, 530, 900);
   await shoot("water");
-  await release(630, 300);
+  await release(630, 530);
   await wait(200);
 
-  // ── 11. Broom — sweeping wreckage back to a pristine page ───────────────
+  // ── 10. Broom — sweeping wreckage back to a pristine page ───────────────
   await loadDemo();
   await selectTool("gun");
   await drag(
@@ -390,7 +246,7 @@ try {
   );
   await shoot("broom");
 
-  // ── 12. Rocket launcher — captured on detonation ────────────────────────
+  // ── 11. Rocket launcher — captured in flight ────────────────────────────
   await loadDemo();
   await selectTool("rocket");
   await click(420, 300);
@@ -398,7 +254,7 @@ try {
   await wait(700);
   await shoot("rocket");
 
-  // ── 13. Demolition — whole elements knocked loose and falling ───────────
+  // ── 12. Demolition — whole elements knocked loose and falling ───────────
   await loadDemo();
   await selectTool("demolition");
   for (const spot of [
@@ -412,7 +268,7 @@ try {
   await wait(700);
   await shoot("demolition");
 
-  // ── 14. Bugs — crawling over the surviving page ─────────────────────────
+  // ── 13. Bugs — crawling over the surviving page ─────────────────────────
   await loadDemo();
   await selectTool("bugs");
   for (const spot of [
@@ -427,7 +283,7 @@ try {
   await wait(900);
   await shoot("bugs");
 
-  // ── 15. Aftermath — a mixed session with the debris heap ────────────────
+  // ── 14. Aftermath — a mixed session with the debris heap ────────────────
   await loadDemo();
   await selectTool("gun");
   await drag(
@@ -455,19 +311,9 @@ try {
 
   console.log(`\nWrote screenshots to ${outputDir}`);
 } catch (error) {
-  console.error(stderr.slice(-2000));
+  console.error(browser.stderr().slice(-2000));
   throw error;
 } finally {
-  chrome.kill("SIGKILL");
-  // Wait for the actual exit so Chrome isn't still flushing its profile
-  // directory while rm deletes it.
-  await Promise.race([
-    new Promise((resolveExit) => {
-      if (chrome.exitCode != null) resolveExit();
-      else chrome.once("exit", resolveExit);
-    }),
-    new Promise((resolveTimeout) => setTimeout(resolveTimeout, 2_000)),
-  ]);
-  await new Promise((resolveClosed) => server.close(resolveClosed));
-  await rm(profileDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  await browser.close();
+  await server.close();
 }

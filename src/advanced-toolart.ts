@@ -112,60 +112,39 @@ export const laserCutterArt: ToolArtFn = (ctx, state) => {
 
 export const acidSprayerArt: ToolArtFn = (ctx, state) => {
   const slosh = Math.sin(state.time * 3) * 2;
+  const aim = Math.atan2(state.aimY, state.aimX);
   ctx.save();
+  // The pointer is the nozzle hotspot. Rotating the body behind the live aim
+  // keeps the visible bore, emitted droplets and affected surface collinear.
+  ctx.rotate(aim + Math.PI);
   ctx.fillStyle = "#242b2c";
   ctx.beginPath();
-  ctx.roundRect(18, 3, 55, 25, 8);
+  ctx.roundRect(18, -12, 55, 25, 8);
   ctx.fill();
   ctx.strokeStyle = "#0a0d0d";
   ctx.stroke();
   ctx.fillStyle = "#a8b1b2";
   ctx.beginPath();
-  ctx.moveTo(18, 9);
-  ctx.lineTo(-6, 13);
-  ctx.lineTo(18, 20);
+  ctx.moveTo(18, -8);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(18, 8);
   ctx.fill();
   ctx.fillStyle = "#253b26";
   ctx.beginPath();
-  ctx.roundRect(34, 28, 32, 48, 9);
+  ctx.roundRect(36, 12, 32, 48, 9);
   ctx.fill();
   ctx.stroke();
-  const liquid = ctx.createLinearGradient(0, 38, 0, 71);
+  const liquid = ctx.createLinearGradient(0, 22, 0, 55);
   liquid.addColorStop(0, "#d8ff47");
   liquid.addColorStop(1, "#48a913");
   ctx.fillStyle = liquid;
   ctx.beginPath();
-  ctx.roundRect(39, 38 + slosh, 22, 31 - slosh, 6);
+  ctx.roundRect(41, 22 + slosh, 22, 31 - slosh, 6);
   ctx.fill();
-  glow(ctx, 50, 56, 18, "rgba(132,255,33,.35)");
+  glow(ctx, 52, 40, 18, "rgba(132,255,33,.35)");
   ctx.fillStyle = "#caff60";
   ctx.beginPath();
-  ctx.arc(-7, 14, state.held ? 4 : 2, 0, TAU);
-  ctx.fill();
-  ctx.restore();
-};
-
-export const wreckingBallArt: ToolArtFn = (ctx, state) => {
-  const swing = Math.sin(state.time * 1.8) * (state.held ? 0.22 : 0.07);
-  ctx.save();
-  ctx.rotate(swing);
-  ctx.strokeStyle = "#4e555e";
-  ctx.lineWidth = 4;
-  ctx.setLineDash([3, 2]);
-  ctx.beginPath();
-  ctx.moveTo(4, -8);
-  ctx.lineTo(45, 55);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = metal(ctx, 28, 42, 65, 73);
-  ctx.beginPath();
-  ctx.arc(49, 61, 18, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = "#090b0e";
-  ctx.stroke();
-  ctx.fillStyle = "rgba(255,255,255,.35)";
-  ctx.beginPath();
-  ctx.arc(43, 55, 5, 0, TAU);
+  ctx.arc(0, 0, state.held ? 4 : 2, 0, TAU);
   ctx.fill();
   ctx.restore();
 };
@@ -194,27 +173,7 @@ export const stickyBombArt: ToolArtFn = (ctx, state) => {
   ctx.restore();
 };
 
-export const glitchGunArt: ToolArtFn = (ctx, state) => {
-  const jitter = state.held ? Math.sin(state.time * 70) * 2 : 0;
-  ctx.save();
-  ctx.translate(jitter, 0);
-  glow(ctx, 2, 12, 17, "rgba(220,30,255,.65)");
-  gunBody(ctx, "#7a268d");
-  ctx.fillStyle = "#16e9ff";
-  ctx.fillRect(-8, 7, 17, 3);
-  ctx.fillStyle = "#ff2b82";
-  ctx.fillRect(-12, 14, 21, 3);
-  ctx.fillStyle = "#d7ff36";
-  ctx.fillRect(-4, 20, 13, 2);
-  ctx.fillStyle = "rgba(255,255,255,.7)";
-  ctx.font = "bold 10px monospace";
-  ctx.fillText("ERR", 31, 24);
-  ctx.restore();
-};
-
 registerToolIconBounds(gravityGunArt, [40, 45, 140, 150]);
 registerToolIconBounds(laserCutterArt, [34, 40, 135, 140]);
-registerToolIconBounds(acidSprayerArt, [48, 50, 145, 148]);
-registerToolIconBounds(wreckingBallArt, [55, 48, 140, 150]);
+registerToolIconBounds(acidSprayerArt, [55, 32, 145, 145]);
 registerToolIconBounds(stickyBombArt, [60, 64, 133, 130]);
-registerToolIconBounds(glitchGunArt, [42, 45, 142, 150]);

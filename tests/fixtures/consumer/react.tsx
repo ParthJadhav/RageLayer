@@ -6,7 +6,6 @@ type Props = ComponentProps<typeof RageLayer>;
 const props = {
   soundDefault: false,
   toolStyle: "emoji",
-  loadout: "chaos",
   engineOptions: { captureContent: false, quality: "low", history: true },
 } satisfies Props;
 

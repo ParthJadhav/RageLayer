@@ -41,10 +41,12 @@
       .stat small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-top: 4px; }
       .chart {
         margin-top: 18px; height: 120px; border-radius: 8px;
-        background:
-          repeating-linear-gradient(90deg, transparent 0 39px, var(--line) 39px 40px),
-          linear-gradient(180deg, #fdf3ec 0%, #ffffff 100%);
+        border: 1px solid var(--line); background: #fffaf6;
         position: relative; overflow: hidden;
+      }
+      .chart::before {
+        content: ""; position: absolute; inset: 29px 0 auto; height: 1px;
+        background: var(--line); box-shadow: 0 30px var(--line), 0 60px var(--line);
       }
       .chart::after {
         content: ""; position: absolute; inset: 0;
@@ -56,48 +58,117 @@
       }
       blockquote {
         margin: 64px auto 0; max-width: 720px; background: var(--card);
-        border: 1px solid var(--line); border-left: 4px solid var(--accent);
-        border-radius: 12px; padding: 26px 30px; font-size: 18px;
+        border: 1px solid var(--line); position: relative;
+        border-radius: 12px; padding: 30px 30px 26px; font-size: 18px;
+      }
+      blockquote::before {
+        content: "“"; position: absolute; top: -13px; left: 22px;
+        color: var(--accent); font: 700 42px/1 Georgia, serif;
       }
       blockquote footer { border: 0; padding: 12px 0 0; background: none; color: var(--muted); font-size: 14px; }
       .footnote { margin-top: 72px; color: var(--muted); font-size: 13px; text-align: center; }
 
       /* Demo toolbar (vanilla integration example) */
+      #rl-host {
+        visibility: visible;
+        position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+        z-index: 2147483200; width: max-content; max-width: calc(100vw - 24px);
+        display: flex; flex-direction: column; align-items: center; gap: 10px;
+        font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        /* One set of tokens drives the bar, the hint pill and the status chip,
+           so contrast is tuned in a single place. */
+        --rl-surface: rgba(14, 13, 12, 0.94);
+        --rl-hairline: rgba(255, 255, 255, 0.1);
+        --rl-ink: rgba(255, 255, 255, 0.74);
+        --rl-ink-strong: #fff;
+        --rl-accent: #ff7a28;
+        --rl-lift: 0 1px 0 rgba(255, 255, 255, 0.07) inset,
+                   0 20px 50px -16px rgba(0, 0, 0, 0.7), 0 4px 14px rgba(0, 0, 0, 0.3);
+      }
       #rl-bar {
         visibility: visible;
-        position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
-        display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; padding: 8px;
-        border-radius: 14px; max-width: calc(100vw - 24px);
-        background: rgba(24, 22, 20, 0.92); box-shadow: 0 12px 40px rgba(0,0,0,0.35);
-        z-index: 2147483200;
+        display: flex; align-items: center; flex-wrap: wrap; justify-content: center;
+        gap: 2px; padding: 6px;
+        width: max-content; max-width: calc(100vw - 24px);
+        border-radius: 18px; border: 1px solid var(--rl-hairline);
+        background: var(--rl-surface);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        box-shadow: var(--rl-lift);
       }
       #rl-bar button {
-        width: 40px; height: 40px; border: 0; border-radius: 9px; cursor: pointer;
-        background: transparent; font-size: 20px; display: grid; place-items: center;
+        position: relative;
+        width: 40px; height: 40px; padding: 0; border: 0; border-radius: 12px; cursor: pointer;
+        flex: 0 0 auto; background: transparent; color: var(--rl-ink);
+        display: grid; place-items: center;
+        transition: background 140ms ease, color 140ms ease, transform 140ms ease;
       }
-      #rl-bar button img { width: 30px; height: 30px; }
-      #rl-bar button[data-active="true"] { background: rgba(255, 255, 255, 0.18); }
-      #rl-bar button:hover { background: rgba(255, 255, 255, 0.1); }
-      #rl-bar button:disabled { opacity: 0.3; cursor: default; }
-      #rl-bar .rl-divider { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255, 255, 255, 0.16); }
-      #rl-bar select {
-        height: 40px; border: 0; border-radius: 9px; padding: 0 8px; cursor: pointer;
-        background: rgba(255, 255, 255, 0.1); color: #f2ede4; font: 600 13px/1 system-ui, sans-serif;
+      #rl-bar button svg { display: block; }
+      #rl-bar button img { width: 28px; height: 28px; display: block; }
+      #rl-bar button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.09); color: var(--rl-ink-strong); }
+      #rl-bar button:active:not(:disabled) { transform: scale(0.93); }
+      #rl-bar button[data-active="true"] {
+        color: #fff;
+        background: linear-gradient(180deg, rgba(255, 122, 40, 0.32), rgba(255, 122, 40, 0.18));
+        box-shadow: 0 0 0 1px rgba(255, 150, 70, 0.5) inset, 0 5px 16px -6px rgba(255, 110, 30, 0.7);
       }
-      #rl-bar select:hover { background: rgba(255, 255, 255, 0.18); }
+      /* A dock-style marker: the selected tool stays obvious once the pointer
+         moves away and the hover tint is gone. */
+      #rl-bar button[data-active="true"]::after {
+        content: ""; position: absolute; bottom: 3px; width: 12px; height: 2px;
+        border-radius: 2px; background: var(--rl-accent);
+      }
+      #rl-bar button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+      /* Disabled controls dim their ink instead of the whole button: a 0.3
+         opacity wash left undo/redo almost invisible on the dark bar. */
+      #rl-bar button:disabled { color: rgba(255, 255, 255, 0.26); cursor: default; }
+      #rl-bar .rl-divider { width: 1px; align-self: stretch; margin: 6px 7px; background: var(--rl-hairline); }
+      #rl-meta {
+        display: flex; align-items: center; gap: 10px;
+        height: 32px; padding: 0 13px; width: max-content; max-width: calc(100vw - 24px);
+        border: 1px solid var(--rl-hairline); border-radius: 999px;
+        background: var(--rl-surface);
+        backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+      }
+      #rl-name {
+        display: flex; align-items: center; gap: 8px; color: var(--rl-ink-strong);
+        white-space: nowrap; font: 650 12px/1 inherit; letter-spacing: 0.01em;
+      }
+      #rl-name::before {
+        content: ""; width: 7px; height: 7px; border-radius: 50%;
+        background: var(--rl-accent); box-shadow: 0 0 10px rgba(255, 122, 40, 0.85);
+      }
       #rl-status {
-        align-self: center; margin: 0 4px; color: rgba(242, 237, 228, 0.65);
-        font: 500 11px/1.2 system-ui, sans-serif; text-align: center; min-width: 58px;
+        padding-left: 10px; border-left: 1px solid var(--rl-hairline);
+        color: rgba(255, 255, 255, 0.66); white-space: nowrap;
+        font: 500 11px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+        letter-spacing: 0.05em; text-transform: uppercase;
       }
+      #rl-guide {
+        max-width: min(620px, calc(100vw - 32px)); padding: 6px 14px; border-radius: 999px;
+        border: 1px solid var(--rl-hairline); background: var(--rl-surface);
+        backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+        box-shadow: 0 12px 32px -16px rgba(0, 0, 0, 0.7);
+        color: rgba(255, 255, 255, 0.72); font: 500 12.5px/1.35 inherit;
+        text-align: center; text-wrap: pretty;
+      }
+      #rl-guide b { color: var(--rl-ink-strong); font-weight: 650; }
       #rl-combo {
         position: fixed; left: 50%; top: 26px; transform: translateX(-50%) translateY(-8px);
         padding: 10px 18px; border-radius: 999px; pointer-events: none; opacity: 0;
-        background: rgba(24, 22, 20, 0.92); color: #ffd66e; font: 700 15px/1.2 system-ui, sans-serif;
-        box-shadow: 0 12px 40px rgba(0,0,0,0.35); transition: opacity 0.25s, transform 0.25s;
+        border: 1px solid rgba(255, 190, 120, 0.28);
+        background: rgba(14, 13, 12, 0.94); color: #ffc07a;
+        font: 700 15px/1.2 ui-sans-serif, system-ui, sans-serif; text-align: center;
+        box-shadow: 0 18px 44px -14px rgba(0, 0, 0, 0.7); transition: opacity 0.25s, transform 0.25s;
         z-index: 2147483200;
       }
       #rl-combo[data-shown="true"] { opacity: 1; transform: translateX(-50%) translateY(0); }
-      #rl-combo small { display: block; font-weight: 500; font-size: 11px; color: rgba(242, 237, 228, 0.7); }
+      #rl-combo small { display: block; font-weight: 500; font-size: 11px; color: rgba(255, 255, 255, 0.6); }
+
+      @media (prefers-reduced-motion: reduce) {
+        #rl-bar button, #rl-combo { transition: none; }
+      }
 
       @media (max-width: 700px) {
         header { padding: 14px 20px; }
@@ -106,13 +177,21 @@
         h1 { font-size: 36px; }
         .grid { grid-template-columns: 1fr; margin-top: 40px; }
         .card[style] { grid-column: auto !important; }
-        #rl-bar { bottom: 10px; width: calc(100vw - 24px); }
-        #rl-bar button { width: 36px; height: 36px; }
+        #rl-host { bottom: max(10px, env(safe-area-inset-bottom)); width: calc(100vw - 24px); }
+        #rl-bar {
+          width: 100%; max-width: none; flex-wrap: nowrap; justify-content: flex-start;
+          overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+        }
+        #rl-bar::-webkit-scrollbar { display: none; }
+        /* Full 44px touch targets once the row scrolls instead of wrapping. */
+        #rl-bar button { width: 44px; height: 44px; }
+        #rl-guide { font-size: 14px; }
+        #rl-meta { max-width: calc(100vw - 24px); }
       }
     </style>
   </head>
   <body>
-    <header data-ragelayer-material="metal">
+    <header>
       <div class="logo">acme<span>analytics</span></div>
       <nav><a href="#">Product</a><a href="#">Pricing</a><a href="#">Docs</a><a href="#">Sign in</a></nav>
     </header>
@@ -125,10 +204,10 @@
       <a class="cta" href="#">Start free trial</a>
 
       <div class="grid">
-        <div class="card" data-ragelayer-material="glass"><div class="stat">48,201<small>page views today</small></div></div>
-        <div class="card" data-ragelayer-material="rubber"><div class="stat">3.4%<small>conversion rate</small></div></div>
-        <div class="card" data-ragelayer-material="stone"><div class="stat">99.98%<small>uptime this quarter</small></div></div>
-        <div class="card" data-ragelayer-material="wood" style="grid-column: 1 / -1">
+        <div class="card"><div class="stat">48,201<small>page views today</small></div></div>
+        <div class="card"><div class="stat">3.4%<small>conversion rate</small></div></div>
+        <div class="card"><div class="stat">99.98%<small>uptime this quarter</small></div></div>
+        <div class="card" style="grid-column: 1 / -1">
           <h3>Weekly sessions</h3>
           <p>Organic search continues to climb after the March content push.</p>
           <div class="chart"></div>
@@ -158,10 +237,12 @@
 
     <script type="module">
       import {
-        BUILT_IN_LOADOUTS,
+        defaultTools,
         DestroyerEngine,
         downloadBlob,
         snapshotFilename,
+        TOOLBAR_ICONS,
+        toolbarIconElement,
         toolIconDataUrl,
       } from "../dist/index.js";
 
@@ -169,21 +250,45 @@
       window.engine = engine;
       window.__rageLayer = engine;
 
-      // Vanilla toolbar exercising the full public surface — tools and loadouts,
-      // undo/redo, repair, snapshot export, sound, pause and the performance feed.
-      // The React/Vue/Svelte wrappers build the same thing for you.
+      // Vanilla toolbar exercising the full public surface — every built-in
+      // tool, undo/redo, repair, snapshot export, sound, pause and the
+      // performance feed. The React/Vue/Svelte wrappers build the same thing
+      // for you.
+      const host = document.createElement("div");
+      host.id = "rl-host";
+      host.setAttribute("data-ragelayer-ignore", "");
       const bar = document.createElement("div");
       bar.id = "rl-bar";
       bar.setAttribute("data-ragelayer-ignore", "");
       bar.setAttribute("role", "toolbar");
       bar.setAttribute("aria-label", "RageLayer tools");
 
-      const toolButtons = document.createElement("div");
-      toolButtons.style.display = "contents";
-      bar.append(toolButtons);
+      const guide = document.createElement("div");
+      guide.id = "rl-guide";
+      guide.setAttribute("aria-hidden", "true");
+      const meta = document.createElement("div");
+      meta.id = "rl-meta";
+      host.append(guide, meta, bar);
+      // The tool name carries the weight; the gesture reads as supporting text.
+      const showGuide = (name, hint) => {
+        const strong = document.createElement("b");
+        strong.textContent = name;
+        guide.replaceChildren(strong, hint ? ` — ${hint}` : "");
+      };
 
-      let buttons = new Map();
-      let currentTools = [];
+      const tools = [...defaultTools];
+      engine.registerTools(tools);
+
+      const buttons = new Map();
+      const restoreGuide = () => {
+        const active = engine.tool;
+        if (active) showGuide(active.name, active.hint);
+        else
+          showGuide(
+            "Pick a tool",
+            `all ${tools.length} are here — choose one, then use it anywhere on the page`,
+          );
+      };
       const select = (id) => {
         const next = engine.tool?.id === id ? null : id;
         engine.setTool(next);
@@ -192,60 +297,62 @@
           el.dataset.active = String(active);
           el.setAttribute("aria-pressed", String(active));
         }
+        restoreGuide();
       };
-      const buildToolButtons = (tools) => {
-        toolButtons.replaceChildren();
-        buttons = new Map();
-        for (const tool of tools) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.title = `${tool.name} — ${tool.hint}`;
-          button.setAttribute("aria-label", tool.name);
-          button.setAttribute("aria-pressed", "false");
-          const icon = tool.art ? toolIconDataUrl(tool.art, 30) : null;
-          if (icon) {
-            const img = document.createElement("img");
-            img.src = icon;
-            img.alt = "";
-            button.append(img);
-          } else {
-            button.textContent = tool.icon;
-          }
-          button.addEventListener("click", () => select(tool.id));
-          buttons.set(tool.id, button);
-          toolButtons.append(button);
+      const explains = (element, name, hint) => {
+        element.addEventListener("pointerenter", () => showGuide(name, hint));
+        element.addEventListener("pointerdown", () => showGuide(name, hint));
+        element.addEventListener("focus", () => showGuide(name, hint));
+        element.addEventListener("pointerleave", restoreGuide);
+      };
+
+      for (const tool of tools) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.title = `${tool.name} — ${tool.hint}`;
+        button.setAttribute("aria-label", tool.name);
+        button.setAttribute("aria-pressed", "false");
+        const icon = tool.art ? toolIconDataUrl(tool.art, 28) : null;
+        if (icon) {
+          const img = document.createElement("img");
+          img.src = icon;
+          img.alt = "";
+          button.append(img);
+        } else {
+          button.textContent = tool.icon;
         }
-      };
-      const applyLoadout = (id) => {
-        const loadout = BUILT_IN_LOADOUTS[id];
-        if (!loadout) return;
-        engine.setTool(null);
-        for (const tool of currentTools) engine.unregisterTool(tool.id);
-        currentTools = [...loadout.tools];
-        engine.registerTools(currentTools);
-        buildToolButtons(currentTools);
-      };
-      applyLoadout("all"); // the complete 19-tool set
+        button.addEventListener("click", () => select(tool.id));
+        explains(button, tool.name, tool.hint);
+        buttons.set(tool.id, button);
+        bar.append(button);
+      }
 
       const divider = () => {
         const el = document.createElement("div");
         el.className = "rl-divider";
         bar.append(el);
       };
-      const controlButton = (label, title, action) => {
+      // Line icons rather than emoji: they inherit the button's colour, so the
+      // idle, hover and disabled states are one token each instead of a
+      // platform-drawn glyph the page cannot restyle.
+      const controlButton = (iconPath, title, action) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = label;
+        button.append(toolbarIconElement(iconPath, 20));
         button.title = title;
         button.setAttribute("aria-label", title);
         button.addEventListener("click", action);
+        explains(button, title);
         bar.append(button);
         return button;
       };
+      const setIcon = (button, iconPath) => {
+        button.replaceChildren(toolbarIconElement(iconPath, 20));
+      };
 
       divider();
-      const undo = controlButton("↶", "Undo destruction", () => engine.undo());
-      const redo = controlButton("↷", "Redo destruction", () => engine.redo());
+      const undo = controlButton(TOOLBAR_ICONS.undo, "Undo destruction", () => engine.undo());
+      const redo = controlButton(TOOLBAR_ICONS.redo, "Redo destruction", () => engine.redo());
       const syncHistory = () => {
         undo.disabled = !engine.historyState.canUndo;
         redo.disabled = !engine.historyState.canRedo;
@@ -254,44 +361,38 @@
       syncHistory();
 
       divider();
-      controlButton("✨", "Repair the whole page", () => engine.clear());
-      controlButton("📸", "Download a snapshot of the wreckage", async () => {
+      controlButton(TOOLBAR_ICONS.repair, "Repair the whole page", () => engine.clear());
+      controlButton(TOOLBAR_ICONS.snapshot, "Download a snapshot of the wreckage", async () => {
         const blob = await engine.snapshot();
         if (blob) downloadBlob(blob, snapshotFilename());
       });
       let soundOn = true;
-      const soundToggle = controlButton("🔊", "Mute sound", () => {
+      const soundToggle = controlButton(TOOLBAR_ICONS.soundOn, "Mute sound", () => {
         soundOn = !soundOn;
         engine.setSound(soundOn);
-        soundToggle.textContent = soundOn ? "🔊" : "🔇";
+        setIcon(soundToggle, soundOn ? TOOLBAR_ICONS.soundOn : TOOLBAR_ICONS.soundOff);
         soundToggle.title = soundToggle.ariaLabel = soundOn ? "Mute sound" : "Unmute sound";
       });
-      const pauseToggle = controlButton("⏸", "Pause the simulation", () => {
+      const pauseToggle = controlButton(TOOLBAR_ICONS.pause, "Pause the simulation", () => {
         if (engine.paused) engine.resume();
         else engine.pause();
-        pauseToggle.textContent = engine.paused ? "▶" : "⏸";
+        setIcon(pauseToggle, engine.paused ? TOOLBAR_ICONS.play : TOOLBAR_ICONS.pause);
         pauseToggle.title = pauseToggle.ariaLabel = engine.paused
           ? "Resume the simulation"
           : "Pause the simulation";
       });
 
-      divider();
-      const loadoutPicker = document.createElement("select");
-      loadoutPicker.setAttribute("aria-label", "Tool loadout");
-      loadoutPicker.title = "Tool loadout";
-      for (const loadout of Object.values(BUILT_IN_LOADOUTS)) {
-        const option = document.createElement("option");
-        option.value = loadout.id;
-        option.textContent = loadout.label;
-        loadoutPicker.append(option);
-      }
-      loadoutPicker.addEventListener("change", () => applyLoadout(loadoutPicker.value));
-      bar.append(loadoutPicker);
+      restoreGuide();
 
       const status = document.createElement("div");
       status.id = "rl-status";
       status.textContent = "capturing…";
-      bar.append(status);
+      const name = document.createElement("strong");
+      name.id = "rl-name";
+      name.textContent = "Destroyer";
+      // Identity and performance context sit above the action row so the
+      // complete desktop toolset never wraps around these wider labels.
+      meta.append(name, status);
       engine.onPerformance((snapshot) => {
         status.textContent = `${Math.round(snapshot.fps)} fps · ${engine.captureStatus}`;
       });
@@ -299,7 +400,7 @@
         status.textContent = `— fps · ${engine.captureStatus}`;
       });
 
-      document.body.append(bar);
+      document.body.append(host);
 
       // Elemental combos (fire + water, gravity + explosion, …) surface as toasts.
       const comboToast = document.createElement("div");
@@ -325,7 +426,6 @@
 
       window.ddDemo = {
         select,
-        applyLoadout,
         ready: true,
       };
       document.documentElement.dataset.ready = "true";

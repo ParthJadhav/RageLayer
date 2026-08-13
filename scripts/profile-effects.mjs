@@ -1,13 +1,19 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { launchChrome } from "./lib/browser.mjs";
+import {
+  evaluate as evaluateCdp,
+  launchChrome,
+  startStaticServer,
+  waitFor,
+} from "./lib/browser.mjs";
 
-const targetUrl = readFlag("--url", "http://127.0.0.1:4321/");
+const requestedTargetUrl = readFlag("--url", null);
 const cpuRate = Math.max(1, Number(readFlag("--cpu", "1")));
 const deviceScaleFactor = Math.max(1, Number(readFlag("--dpr", "2")));
 const durationMs = Math.max(1_500, Number(readFlag("--duration", "5000")));
 const variant = readFlag("--variant", "full");
+const quality = readFlag("--quality", "high");
 const metricsOnly = process.argv.includes("--metrics-only");
 const captureScreenshots = process.argv.includes("--screenshots");
 const outputDir = resolve(readFlag("--output", join(tmpdir(), `ragelayer-effects-${Date.now()}`)));
@@ -16,25 +22,26 @@ const effects = readFlag("--effects", "lightning,paintball,blackhole")
   .map((value) => value.trim())
   .filter(Boolean);
 
+if (!["high", "balanced", "low", "auto"].includes(quality)) {
+  throw new Error(`Unknown quality tier: ${quality}`);
+}
+
 const EFFECT_CONFIG = {
   hammer: { mode: "click", intervalMs: 260, activeRatio: 0.8, movePx: 34, moveHz: 0.7 },
   gun: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 48, moveHz: 0.45 },
   flamethrower: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 84, moveHz: 0.36 },
   water: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 92, moveHz: 0.4 },
   chainsaw: { mode: "loop", intervalMs: 0, activeRatio: 0.8, movePx: 150, moveHz: 0.5 },
-  paintball: { mode: "click", intervalMs: 90, activeRatio: 0.8, movePx: 76, moveHz: 0.55 },
+  paintball: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 76, moveHz: 0.55 },
   demolition: { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 190, moveHz: 0.34 },
   rocket: { mode: "click", intervalMs: 780, activeRatio: 0.8, movePx: 95, moveHz: 0.33 },
   lightning: { mode: "click", intervalMs: 340, activeRatio: 0.8, movePx: 70, moveHz: 0.4 },
-  freeze: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 82, moveHz: 0.34 },
   blackhole: { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 0, moveHz: 0 },
   bugs: { mode: "click", intervalMs: 420, activeRatio: 0.8, movePx: 180, moveHz: 0.27 },
   "gravity-gun": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 100, moveHz: 0.4 },
   "laser-cutter": { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 150, moveHz: 0.55 },
   "acid-sprayer": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 90, moveHz: 0.42 },
-  "wrecking-ball": { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 180, moveHz: 0.65 },
   "sticky-bombs": { mode: "click", intervalMs: 220, activeRatio: 0.8, movePx: 130, moveHz: 0.35 },
-  "glitch-gun": { mode: "hold", intervalMs: 0, activeRatio: 0.8, movePx: 100, moveHz: 0.48 },
   broom: { mode: "drag", intervalMs: 0, activeRatio: 0.8, movePx: 150, moveHz: 0.62 },
 };
 
@@ -265,9 +272,7 @@ async ({ effect, durationMs, intervalMs, activeRatio, mode, movePx, moveHz, vari
     heap: heapStart == null ? null : { startBytes: heapStart, endBytes: heapEnd, deltaBytes: heapEnd - heapStart },
     engine: engine.performanceSnapshot,
     entities: {
-      particles: engine.particles.length,
-      flames: engine.flames.length,
-      bodies: engine.physics.count,
+      ...engine.performanceSnapshot.entities,
     },
   };
 }`;
@@ -315,8 +320,10 @@ async ({ effect, mode, movePx }) => {
 }`;
 
 await mkdir(outputDir, { recursive: true });
+const localServer = requestedTargetUrl ? null : await startStaticServer("/benchmarks/runtime.html");
+const targetUrl = requestedTargetUrl ?? `${localServer.origin}/benchmarks/runtime.html`;
 const browser = await launchChrome({ url: targetUrl, cpuRate });
-const { cdp, sessionId, targetId, version } = browser;
+const { cdp, sessionId, version } = browser;
 
 try {
   const enableDomains = [
@@ -357,51 +364,31 @@ try {
     return result.result.value;
   };
 
-  const evalValue = async (expression) => {
-    const result = await cdp.send(
-      "Runtime.evaluate",
-      { expression, awaitPromise: true, returnByValue: true, userGesture: true },
-      sessionId,
-    );
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
-    return result.result.value;
-  };
+  const evalValue = (expression) => evaluateCdp(cdp, sessionId, expression);
 
-  const waitUntil = async (expression, timeoutMs, message) => {
-    const deadline = Date.now() + timeoutMs;
-    while (true) {
-      try {
-        if (await evalValue(expression)) return;
-      } catch (error) {
-        // Attaching while the target commits its first navigation destroys the
-        // temporary about:blank execution context. Retry only that known race.
-        if (!/Cannot find context|Execution context was destroyed/.test(String(error))) throw error;
-      }
-      if (Date.now() > deadline) throw new Error(message);
-      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
-    }
-  };
-
-  await waitUntil(
+  await waitFor(
+    cdp,
+    sessionId,
     `location.href === ${JSON.stringify(targetUrl)} && document.readyState === "complete"`,
-    20_000,
-    "Production page did not load",
+    { timeoutMs: 20_000, label: "production page" },
   );
   await evalValue(
     `Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "DESTROY")?.click()`,
   );
   await evalValue(
-    `if (!window.__rageLayer && window.ddBenchmark) window.ddBenchmark.setupScenario("idle")`,
+    `if (!window.__rageLayer && window.ddBenchmark) window.ddBenchmark.setupScenario("idle", ${JSON.stringify(
+      { quality, toolStyle: "3d" },
+    )})`,
   );
-  await waitUntil(
-    "Boolean(window.__rageLayer)",
-    Math.max(45_000, 10_000 * cpuRate),
-    "RageLayer did not mount",
-  );
-  await waitUntil(
+  await waitFor(cdp, sessionId, "Boolean(window.__rageLayer)", {
+    timeoutMs: Math.max(45_000, 10_000 * cpuRate),
+    label: "RageLayer to mount",
+  });
+  await waitFor(
+    cdp,
+    sessionId,
     "window.__rageLayer.opts.captureContent === false || ['snapshot', 'live'].includes(window.__rageLayer.captureStatus)",
-    Math.max(30_000, 20_000 * cpuRate),
-    "RageLayer capture did not become ready",
+    { timeoutMs: Math.max(30_000, 20_000 * cpuRate), label: "RageLayer capture" },
   );
 
   const idle = await evalValue(`new Promise((resolve) => {
@@ -442,8 +429,6 @@ try {
       x + 24, y + 24,
       x - 24, y + 24,
     ]);
-    engine.freeze(x, y, 48, 1);
-    const frostInVoid = engine.frostAt(x, y);
     const demolitionInVoid = engine.demolish(x, y);
     engine.explode(x, y, 48, { incendiary: false });
     const bodiesAfterVoidActions = engine.physics.count;
@@ -455,7 +440,6 @@ try {
       restored,
       fractureInVoid,
       cutoutInVoid,
-      frostInVoid,
       demolitionInVoid,
       bodiesCreatedInVoid: bodiesAfterVoidActions - bodiesBeforeVoidActions,
     };
@@ -586,6 +570,7 @@ try {
     deviceScaleFactor,
     durationMs,
     variant,
+    quality,
     metricsOnly,
     opacityCheck,
     targetFrameMs,
@@ -599,6 +584,7 @@ try {
   process.exitCode = 1;
 } finally {
   await browser.close();
+  await localServer?.close();
 }
 
 // Node's built-in WebSocket can retain an undici keep-alive handle after CDP

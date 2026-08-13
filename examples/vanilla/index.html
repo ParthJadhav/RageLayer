@@ -13,13 +13,14 @@
       /* The host's own toolbar. `data-ragelayer-ignore` keeps it out of the capture,
          so the toy cannot destroy its own controls. */
       #bar {
-        position: fixed; inset: auto 0 16px 0; display: flex; gap: 6px;
+        position: fixed; inset: auto 0 max(16px, env(safe-area-inset-bottom)) 0; display: flex; gap: 6px;
         width: max-content; max-width: 92vw; margin: 0 auto; padding: 8px;
         flex-wrap: wrap; justify-content: center; border-radius: 14px;
         background: #141210ee; box-shadow: 0 12px 40px #0007;
       }
       #bar button {
-        all: unset; display: grid; place-items: center; width: 38px; height: 38px;
+        all: unset; display: grid; place-items: center; width: 44px; height: 44px;
+        flex: 0 0 auto;
         border-radius: 10px; cursor: pointer; color: #fff; font-size: 18px;
       }
       #bar button[aria-pressed="true"] { background: #dc5a1f; }
@@ -39,7 +40,7 @@
     </main>
 
     <script type="module">
-      import { createRageLayer } from "../../dist/index.js";
+      import { createRageLayer, toolbarIconElement } from "../../dist/index.js";
       import { ToolbarModel } from "../../dist/toolbar/index.js";
 
       const launch = document.getElementById("launch");
@@ -92,8 +93,11 @@
                 image.src = button.icon;
                 image.alt = "";
                 element.append(image);
+              } else if (button.iconPath) {
+                // Actions ship as SVG path data drawn in `currentColor`.
+                element.append(toolbarIconElement(button.iconPath, 20));
               } else {
-                element.textContent = button.glyph ?? button.toolIcon ?? "";
+                element.textContent = button.toolIcon ?? "";
               }
               element.addEventListener("click", () => {
                 if (!button.disabled) button.run();

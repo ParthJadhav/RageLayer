@@ -17,7 +17,8 @@ import type { DestroyerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
 import { type DestroyerStrings, formatString, resolveStrings, toolStrings } from "./strings";
 import { toolIconDataUrl } from "./toolart";
-import type { CaptureStatus, Tool } from "./types";
+import { TOOLBAR_ICONS } from "./toolbar-icons";
+import type { CaptureStatus, Tool, ToolStyle } from "./types";
 
 export interface ToolbarButton {
   kind: "tool" | "action";
@@ -27,15 +28,14 @@ export interface ToolbarButton {
   label: string;
   /** Tooltip text. */
   title: string;
-  /** Emoji or symbol for actions. */
-  glyph?: string;
+  /** SVG path data for actions, drawn in `currentColor` on a 24×24 grid. */
+  iconPath?: string;
   /** Rendered icon for tools, or null when the tool has no drawn art. */
   icon?: string | null;
   /** Fallback glyph for a tool without drawn art. */
   toolIcon?: string;
   pressed?: boolean;
   disabled?: boolean;
-  fontSize?: number;
   color?: string;
   run(): void;
 }
@@ -48,10 +48,14 @@ export interface ToolbarStatusChip {
 }
 
 export interface ToolbarState {
+  /** Accessible name for the toolbar container. */
+  toolbarLabel: string;
   buttons: readonly ToolbarButton[];
   activeToolId: string | null;
   /** Index of the single tabbable button (roving tabindex). */
   focusIndex: number;
+  /** Visible instruction for the focused or hovered control. */
+  hint: string | null;
   status: ToolbarStatusChip | null;
   /** Transient confirmation, e.g. after a snapshot. */
   flash: string | null;
@@ -69,6 +73,8 @@ export interface ToolbarModelOptions {
   tools?: readonly Tool[];
   /** Overridden or translated user-visible strings. */
   strings?: Partial<DestroyerStrings>;
+  /** Match toolbar icons to the engine's pointer-art style. */
+  toolStyle?: ToolStyle;
   /** Called by the close action and by Escape with no tool selected. */
   onClose?(): void;
   /** How far one arrow-key press moves the keyboard aim, in CSS px. */
@@ -153,7 +159,9 @@ export class ToolbarModel {
   setFocusIndex(index: number) {
     const count = this.state.buttons.length;
     if (count === 0) return;
-    this.focusIndex = ((index % count) + count) % count;
+    const next = ((index % count) + count) % count;
+    if (next === this.focusIndex) return;
+    this.focusIndex = next;
     this.invalidate();
   }
 
@@ -339,6 +347,7 @@ export class ToolbarModel {
   // ── Derived state ─────────────────────────────────────────────────────────
 
   private icon(tool: Tool): string | null {
+    if (this.options.toolStyle === "emoji") return null;
     if (!tool.art) return null;
     let url = this.iconCache.get(tool.id);
     if (url === undefined) {
@@ -400,20 +409,18 @@ export class ToolbarModel {
         {
           kind: "action",
           id: "undo",
-          glyph: "↶",
+          iconPath: TOOLBAR_ICONS.undo,
           label: s.undo,
           title: `${s.undo} (${s.undoHint})`,
-          fontSize: 20,
           disabled: !history.canUndo,
           run: () => engine.undo(),
         },
         {
           kind: "action",
           id: "redo",
-          glyph: "↷",
+          iconPath: TOOLBAR_ICONS.redo,
           label: s.redo,
           title: `${s.redo} (${s.redoHint})`,
-          fontSize: 20,
           disabled: !history.canRedo,
           run: () => engine.redo(),
         },
@@ -424,47 +431,42 @@ export class ToolbarModel {
       {
         kind: "action",
         id: "collapse",
-        glyph: "💥",
+        iconPath: TOOLBAR_ICONS.collapse,
         label: s.collapse,
         title: `${s.collapse} (X)`,
-        fontSize: 19,
         run: () => engine.collapse(),
       },
       {
         kind: "action",
         id: "snapshot",
-        glyph: "📸",
+        iconPath: TOOLBAR_ICONS.snapshot,
         label: s.snapshot,
         title: `${s.snapshot} (P)`,
-        fontSize: 18,
         run: () => void this.saveSnapshot(),
       },
       {
         kind: "action",
         id: "sound",
-        glyph: soundEnabled ? "🔊" : "🔇",
+        iconPath: soundEnabled ? TOOLBAR_ICONS.soundOn : TOOLBAR_ICONS.soundOff,
         label: soundEnabled ? s.muteSound : s.enableSound,
         title: `${soundEnabled ? s.muteSound : s.enableSound} (M)`,
-        fontSize: 18,
         pressed: soundEnabled,
         run: () => this.setSound(!soundEnabled),
       },
       {
         kind: "action",
         id: "repair",
-        glyph: "🩹",
+        iconPath: TOOLBAR_ICONS.repair,
         label: s.repair,
         title: `${s.repair} (R)`,
-        fontSize: 18,
         run: () => engine.clear(),
       },
       {
         kind: "action",
         id: "aim",
-        glyph: "🎯",
+        iconPath: TOOLBAR_ICONS.aim,
         label: s.keyboardCursor,
         title: `${s.keyboardCursor} (A)`,
-        fontSize: 17,
         pressed: this.aim !== null,
         disabled: activeToolId === null,
         run: () => (this.aim ? this.stopAiming() : this.startAiming()),
@@ -472,10 +474,9 @@ export class ToolbarModel {
       {
         kind: "action",
         id: "close",
-        glyph: "✕",
+        iconPath: TOOLBAR_ICONS.close,
         label: s.close,
         title: s.closeTitle,
-        fontSize: 16,
         color: "rgba(255,255,255,0.8)",
         run: () => {
           this.selectTool(null);
@@ -484,10 +485,13 @@ export class ToolbarModel {
       },
     );
 
+    const focusIndex = Math.min(this.focusIndex, Math.max(0, buttons.length - 1));
     return {
+      toolbarLabel: s.toolbarLabel,
       buttons,
       activeToolId,
-      focusIndex: Math.min(this.focusIndex, Math.max(0, buttons.length - 1)),
+      focusIndex,
+      hint: buttons[focusIndex]?.title ?? null,
       status: this.statusChip(),
       flash: this.flash,
       soundEnabled,

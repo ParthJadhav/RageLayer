@@ -15,6 +15,29 @@ export interface TopologyBounds {
   y1: number;
 }
 
+/** Expand a retained scan region to include one cut segment. */
+export function includeTopologySegment(
+  bounds: TopologyBounds | null,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+): TopologyBounds {
+  if (!bounds) {
+    return {
+      x0: Math.min(x1, x2),
+      y0: Math.min(y1, y2),
+      x1: Math.max(x1, x2),
+      y1: Math.max(y1, y2),
+    };
+  }
+  bounds.x0 = Math.min(bounds.x0, x1, x2);
+  bounds.y0 = Math.min(bounds.y0, y1, y2);
+  bounds.x1 = Math.max(bounds.x1, x1, x2);
+  bounds.y1 = Math.max(bounds.y1, y1, y2);
+  return bounds;
+}
+
 export interface MaterialTopology {
   width: number;
   height: number;

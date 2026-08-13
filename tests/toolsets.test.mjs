@@ -7,11 +7,15 @@ import { baseTools } from "../src/tools.ts";
 const ids = (tools) => tools.map((tool) => tool.id);
 
 describe("split and lazy toolsets", () => {
+  test("every built-in hint starts with its primary gesture", () => {
+    for (const tool of defaultTools) expect(tool.hint).toMatch(/^(click|hold|drag)\b/);
+  });
+
   test("base, heavy, and advanced sets are disjoint and compose the official order", () => {
     expect(baseTools).toHaveLength(7);
-    expect(heavyTools).toHaveLength(6);
-    expect(advancedTools).toHaveLength(6);
-    expect(new Set([...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)]).size).toBe(19);
+    expect(heavyTools).toHaveLength(5);
+    expect(advancedTools).toHaveLength(4);
+    expect(new Set([...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)]).size).toBe(16);
     expect(ids(defaultTools)).toEqual([
       ...ids(baseTools.slice(0, -1)),
       ...ids(heavyTools),
@@ -41,9 +45,9 @@ describe("split and lazy toolsets", () => {
     advanced.pop();
     all.pop();
     expect(baseTools).toHaveLength(7);
-    expect(heavyTools).toHaveLength(6);
-    expect(advancedTools).toHaveLength(6);
-    expect(defaultTools).toHaveLength(19);
+    expect(heavyTools).toHaveLength(5);
+    expect(advancedTools).toHaveLength(4);
+    expect(defaultTools).toHaveLength(16);
   });
 });
 

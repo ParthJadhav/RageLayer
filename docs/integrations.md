@@ -47,9 +47,9 @@ Important props:
 | --- | --- | --- | --- |
 | `onClose` | `() => void` | — | Close button / second `Esc` callback |
 | `tools` | `Tool[]` | `defaultTools` | Replace the toolbar's tools |
-| `loadout` | `BuiltInLoadoutId \| ToolLoadout` | `"all"` | Choose a built-in or custom tool preset; `tools` takes precedence |
 | `soundDefault` | `boolean` | `false` | Start with sound enabled |
 | `toolStyle` | `"3d" \| "emoji"` | `"3d"` | Drawn tool art or classic cursors |
+| `strings` | `Partial<DestroyerStrings>` | English defaults | Translate or reword toolbar labels and tool hints |
 | `engineOptions` | `DestroyerOptions` | `{}` | Capture, rendering, physics, and quality options |
 | `debugGlobal` | `boolean` | `false` | Expose the engine for profiling or end-to-end tests |
 
@@ -183,7 +183,7 @@ For explicit lifecycle control:
   import { onDestroy } from "svelte";
   import { createRageLayer } from "ragelayer/svelte";
 
-  const destroyer = createRageLayer({ initialTool: "freeze" });
+  const destroyer = createRageLayer({ initialTool: "laser-cutter" });
   onDestroy(destroyer.close);
 </script>
 

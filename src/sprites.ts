@@ -88,6 +88,80 @@ function twinkle(radius: number): HTMLCanvasElement {
   return canvas;
 }
 
+/**
+ * One vertically coherent flame body, baked from three nested tongues.
+ *
+ * Earlier fire assembled its body from up to five overlapping radial sprites
+ * every frame. Besides the draw-call cost, the overlaps read as a stack of
+ * glowing beads. Baking the silhouette once gives the flame one continuous
+ * edge and lets animation come from cheap scale/sway at draw time.
+ */
+function flameBody(): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+
+  const tongue = (
+    points: readonly [number, number, number, number, number, number, number, number],
+    stops: readonly Stop[],
+    glow: string,
+    blur: number,
+  ) => {
+    const [tipX, tipY, leftX, shoulderY, baseLeft, baseY, baseRight, curlX] = points;
+    const gradient = ctx.createLinearGradient(0, tipY, 0, baseY);
+    for (const [offset, color] of stops) gradient.addColorStop(offset, color);
+    ctx.save();
+    ctx.fillStyle = gradient;
+    ctx.shadowColor = glow;
+    ctx.shadowBlur = blur;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.bezierCurveTo(leftX, shoulderY, baseLeft, baseY * 0.68, baseLeft, baseY);
+    ctx.quadraticCurveTo((baseLeft + baseRight) / 2, baseY + 8, baseRight, baseY);
+    ctx.bezierCurveTo(baseRight, baseY * 0.66, curlX, shoulderY * 0.82, tipX, tipY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  ctx.globalCompositeOperation = "lighter";
+  tongue(
+    [76, 15, 34, 86, 22, 229, 140, 124],
+    [
+      [0, "rgba(255, 88, 18, 0)"],
+      [0.16, "rgba(255, 104, 22, 0.72)"],
+      [0.58, "rgba(255, 128, 24, 0.92)"],
+      [1, "rgba(255, 82, 12, 0.32)"],
+    ],
+    "rgba(255, 92, 18, 0.9)",
+    13,
+  );
+  tongue(
+    [103, 54, 61, 112, 50, 232, 130, 132],
+    [
+      [0, "rgba(255, 176, 42, 0)"],
+      [0.2, "rgba(255, 182, 48, 0.9)"],
+      [0.7, "rgba(255, 210, 82, 0.96)"],
+      [1, "rgba(255, 160, 32, 0.48)"],
+    ],
+    "rgba(255, 166, 36, 0.85)",
+    8,
+  );
+  tongue(
+    [74, 103, 56, 145, 62, 232, 109, 104],
+    [
+      [0, "rgba(255, 232, 154, 0)"],
+      [0.28, "rgba(255, 232, 154, 0.92)"],
+      [0.76, "rgba(255, 248, 216, 1)"],
+      [1, "rgba(255, 212, 112, 0.72)"],
+    ],
+    "rgba(255, 226, 132, 0.8)",
+    5,
+  );
+  return canvas;
+}
+
 export interface Sprites {
   /** Fire + effects (drawn additively). */
   smoke: HTMLCanvasElement;
@@ -98,6 +172,8 @@ export interface Sprites {
   flameLow: HTMLCanvasElement;
   flameHigh: HTMLCanvasElement;
   flameCore: HTMLCanvasElement;
+  /** Coherent multi-tone flame silhouette, anchored at its lower edge. */
+  flameBody: HTMLCanvasElement;
   flash: HTMLCanvasElement;
   /** White-hot impact pop, brighter and tighter than the muzzle `flash`. */
   flashWhite: HTMLCanvasElement;
@@ -119,8 +195,6 @@ export interface Sprites {
   dust: HTMLCanvasElement;
   mist: HTMLCanvasElement;
   sparkle: HTMLCanvasElement;
-  /** Milky rime bloom under the frost needles. */
-  frost: HTMLCanvasElement;
   /** Opaque core of a singularity — it occludes, so it is drawn normally. */
   singularity: HTMLCanvasElement;
   /** Hot violet/amber accretion band around a black hole (hollow, like heatRing). */
@@ -181,6 +255,7 @@ export function sprites(): Sprites {
       [0, "rgba(255, 250, 220, 1)"],
       [1, "rgba(255, 200, 90, 0)"],
     ]),
+    flameBody: flameBody(),
     // Stops carry the muzzle flash's original 0.9 : 0.5 : 0 alpha ratio.
     flash: radial(96, [
       [0, "rgba(255, 240, 180, 1)"],
@@ -242,11 +317,6 @@ export function sprites(): Sprites {
       [1, "rgba(180, 210, 245, 0)"],
     ]),
     sparkle: twinkle(24),
-    frost: radial(96, [
-      [0, "rgba(226, 246, 255, 1)"],
-      [0.45, "rgba(186, 224, 250, 0.6)"],
-      [1, "rgba(160, 205, 240, 0)"],
-    ]),
     // Hard-edged at the horizon and only feathered over the last few percent:
     // a black hole's edge is the one part of it that is genuinely sharp.
     singularity: radial(96, [

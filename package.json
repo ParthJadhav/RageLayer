@@ -1,16 +1,16 @@
 {
   "name": "ragelayer",
   "version": "0.6.1",
-  "description": "A framework-neutral web toy that lets visitors smash, burn, freeze, and physically demolish any page.",
+  "description": "A framework-neutral web toy that lets visitors smash, burn, cut, and physically demolish any page.",
   "license": "MIT",
   "author": "Parth Jadhav <jadhavparth99@gmail.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ParthJadhav/ragelayer.git"
+    "url": "git+https://github.com/ParthJadhav/RageLayer.git"
   },
-  "homepage": "https://parthjadhav.github.io/ragelayer/",
+  "homepage": "https://parthjadhav.github.io/RageLayer/",
   "bugs": {
-    "url": "https://github.com/ParthJadhav/ragelayer/issues"
+    "url": "https://github.com/ParthJadhav/RageLayer/issues"
   },
   "type": "module",
   "sideEffects": [
@@ -52,11 +52,6 @@
       "types": "./dist/lazy/index.d.ts",
       "import": "./dist/lazy/index.js",
       "default": "./dist/lazy/index.js"
-    },
-    "./loadouts": {
-      "types": "./dist/loadouts/index.d.ts",
-      "import": "./dist/loadouts/index.js",
-      "default": "./dist/loadouts/index.js"
     },
     "./sdk": {
       "types": "./dist/sdk/index.d.ts",
@@ -116,9 +111,6 @@
       "lazy": [
         "./dist/lazy/index.d.ts"
       ],
-      "loadouts": [
-        "./dist/loadouts/index.d.ts"
-      ],
       "sdk": [
         "./dist/sdk/index.d.ts"
       ],
@@ -149,6 +141,7 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage && node scripts/check-coverage.mjs",
     "test:browser": "bun run build && node scripts/browser-test.mjs",
+    "test:tools:visual": "bun run build && node scripts/tool-gallery.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:consumers": "tsc -p tests/fixtures/consumer/tsconfig.json && tsc -p tests/fixtures/consumer/tsconfig.node16.json",
     "lint": "biome check .",
@@ -162,13 +155,13 @@
     "docs:preview": "vitepress preview docs",
     "benchmark": "bun run build && node scripts/benchmark.mjs",
     "benchmark:low-end": "bun run build && node scripts/benchmark.mjs --cpu 6",
-    "profile:effects": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,wrecking-ball,sticky-bombs,glitch-gun,broom",
-    "profile:effects:low-end": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,freeze,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,wrecking-ball,sticky-bombs,glitch-gun,broom --cpu 6",
+    "profile:effects": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,sticky-bombs,broom",
+    "profile:effects:low-end": "bun run build && node scripts/profile-effects.mjs --effects hammer,gun,flamethrower,water,chainsaw,paintball,demolition,rocket,lightning,blackhole,bugs,gravity-gun,laser-cutter,acid-sprayer,sticky-bombs,broom --cpu 6",
     "memory:check": "bun run build && node scripts/benchmark.mjs --scenarios idle --duration 250 --warmup 100 --leak-cycles 80",
     "screenshots": "bun run build && node scripts/screenshots.mjs",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "bun run check && changeset publish",
+    "release": "bun run check && bun run test:tools:visual && changeset publish",
     "prepack": "bun run build"
   },
   "keywords": [

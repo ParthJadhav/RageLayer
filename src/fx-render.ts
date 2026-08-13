@@ -69,7 +69,6 @@ export class FxPainter {
         case "sawdust":
         case "shard":
         case "paint":
-        case "ice":
           bit.push(p);
           break;
         case "ember":
@@ -160,14 +159,26 @@ export class FxPainter {
     for (const p of this.puff) {
       const t = p.life / p.maxLife;
       if (p.kind === "dust") {
-        blit(
-          ctx,
-          sprite.dust,
-          p.x,
-          p.y,
-          p.size * (1 + t * 2.6),
-          0.3 * (1 - t) * Math.min(1, t * 8),
+        // Keep impact dust close to the contact plane. A scaled radial sprite
+        // reads as a soap bubble when many debris collisions overlap, so dust
+        // uses a few small, flattened lobes instead of an expanding disc.
+        const swell = Math.min(10, p.size * (0.72 + t * 0.48));
+        const alpha = (1 - t) * Math.min(1, t * 8);
+        ctx.globalAlpha = 0.075 * alpha;
+        ctx.fillStyle = "rgb(202, 194, 182)";
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, swell, swell * 0.34, 0, 0, TAU);
+        ctx.ellipse(
+          p.x - swell * 0.62,
+          p.y + swell * 0.08,
+          swell * 0.58,
+          swell * 0.25,
+          -0.12,
+          0,
+          TAU,
         );
+        ctx.ellipse(p.x + swell * 0.52, p.y - swell * 0.1, swell * 0.5, swell * 0.22, 0.1, 0, TAU);
+        ctx.fill();
         continue;
       }
       if (p.kind === "steam") {
@@ -235,20 +246,7 @@ export class FxPainter {
       ctx.translate(p.x, p.y);
       ctx.rotate(p.angle ?? 0);
       ctx.globalAlpha = 1 - t * t;
-      if (p.kind === "ice") {
-        // A splinter of frozen page: a pale facet with one lit edge. Triangular
-        // rather than square, because ice breaks along planes.
-        ctx.fillStyle = "rgba(206, 238, 255, 0.9)";
-        ctx.beginPath();
-        ctx.moveTo(0, -p.size);
-        ctx.lineTo(p.size * 0.8, p.size * 0.7);
-        ctx.lineTo(-p.size * 0.7, p.size * 0.6);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-      } else if (p.kind === "shard" && p.img) {
+      if (p.kind === "shard" && p.img) {
         // A torn-off chunk of the real page tumbling through the air. The ghost
         // behind it is a cheap motion blur — one extra blit, no filter.
         const speed = Math.abs(p.vx) + Math.abs(p.vy);
@@ -399,10 +397,12 @@ export class FxPainter {
 }
 
 /**
- * Flickering multi-layer flame: glowing char rim, body, licking tongue, core.
+ * Flickering flame: glowing char rim, coherent body, and a detached tongue.
  *
- * Baked sprites rather than freshly built radial gradients; the flicker lives
- * entirely in the per-draw scale and alpha, which are plain numbers.
+ * The body is one baked, continuous silhouette rather than a stack of radial
+ * sprites. Flicker lives entirely in per-draw scale, sway, and alpha, which
+ * are plain numbers. High quality therefore needs four blits per flame instead
+ * of nine, while the outline reads more like fire and less like glowing beads.
  *
  * Two frequencies drive every offset — a slow sway and a fast jitter. One
  * frequency is a wobble; two is the shimmer that reads as heat.
@@ -430,34 +430,28 @@ export function drawFlame(ctx: CanvasRenderingContext2D, f: Flame, time: number,
     0.2 * f.intensity * (0.85 + 0.15 * Math.sin(time * 7 + f.seed)),
   );
 
-  // Flame body — a column of vertical ellipses, narrower and hotter toward the
-  // top, rising well clear of the hole so the fire licks upward. Five layers,
-  // not seven: with dozens of flames alight this loop is the render path's
-  // hottest blit site, and the two dropped layers were overdraw inside the
-  // column, not silhouette.
-  for (let i = 0; i < layers; i++) {
-    const t = i / (layers - 1);
-    const ly = y - r * 2.9 * t;
-    const lr = r * (0.82 - t * 0.58) * (0.88 + 0.18 * Math.sin(time * 17 + f.seed + i * 2.1));
-    const wobble =
-      Math.sin(time * 9 + f.seed + i * 1.7) * r * 0.36 * t +
-      Math.sin(time * 24 + f.seed * 3 + i) * r * 0.12 * t;
-    const hot = t >= 0.3;
-    blitRect(
-      ctx,
-      hot ? sprite.flameHigh : sprite.flameLow,
-      x + wobble,
-      ly,
-      lr,
-      lr * 1.65,
-      (hot ? 0.4 : 0.48) * f.intensity,
-    );
-  }
+  // One continuous flame body. It is baked with its base at the sprite's lower
+  // edge, so destination placement keeps it planted on the burning surface as
+  // the width and height breathe independently.
+  const bodySway =
+    Math.sin(time * 8.7 + f.seed) * r * 0.22 + Math.sin(time * 21 + f.seed * 2.3) * r * 0.08;
+  const bodyWidth = r * (1.05 + 0.1 * Math.sin(time * 17 + f.seed));
+  const bodyHeight = r * (3.5 + 0.25 * Math.sin(time * 11 + f.seed * 1.4));
+  // Intensity already scales the silhouette through `r`. Applying it a second
+  // time to alpha made young/spreading flames disappear behind their smoke.
+  ctx.globalAlpha = (layers <= 2 ? 0.5 : 0.58) + f.intensity * 0.3;
+  ctx.drawImage(
+    sprite.flameBody,
+    x + bodySway - bodyWidth,
+    y - bodyHeight + r * 0.32,
+    bodyWidth * 2,
+    bodyHeight,
+  );
 
   // A tongue that detaches off the top and gutters out — the thing real fire
   // does that a stack of circles never will.
   const lick = 0.5 + 0.5 * Math.sin(time * 7.3 + f.seed * 1.7);
-  if (lick > 0.42) {
+  if (layers >= 4 && lick > 0.42) {
     blitRect(
       ctx,
       sprite.flameHigh,
@@ -468,9 +462,6 @@ export function drawFlame(ctx: CanvasRenderingContext2D, f: Flame, time: number,
       0.42 * f.intensity * lick,
     );
   }
-
-  // White-hot core at the base.
-  blitRect(ctx, sprite.flameCore, x, y - r * 0.3, r * 0.5, r * 0.86, 0.85 * f.intensity);
 }
 
 /**

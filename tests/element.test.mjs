@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { hammer } from "../src/tools.ts";
+import { broom, hammer } from "../src/tools.ts";
 import { setViewport } from "./support/dom.mjs";
 
 /**
@@ -87,6 +87,14 @@ describe("mounting", () => {
     expect(element.hasAttribute("data-ragelayer-ignore")).toBe(true);
   });
 
+  test("the focused control has a visible name and usage hint", () => {
+    mount((node) => node.configure({ tools: [hammer], captureContent: false }));
+
+    const guide = shadow().querySelector(".guide");
+    expect(guide.textContent).toContain(hammer.name);
+    expect(guide.textContent).toContain(hammer.hint);
+  });
+
   test("an engine is created and exposed", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
 
@@ -103,15 +111,19 @@ describe("mounting", () => {
     expect(element.destroyerEngine.tool?.id).toBe("hammer");
   });
 
-  test("a named loadout limits the toolset", () => {
-    mount((node) => {
-      node.setAttribute("loadout", "precision");
-      node.configure({ captureContent: false, loadout: "precision" });
-    });
+  test("the element registers every built-in tool by default", () => {
+    mount((node) => node.configure({ captureContent: false }));
 
     const ids = element.destroyerEngine.getTools().map((tool) => tool.id);
-    expect(ids.length).toBeGreaterThan(0);
-    expect(ids).not.toContain("blackhole");
+    expect(ids).toContain("hammer");
+    expect(ids).toContain("blackhole");
+  });
+
+  test("an explicit toolset replaces the defaults", () => {
+    mount((node) => node.configure({ captureContent: false, tools: [hammer, broom] }));
+
+    const ids = element.destroyerEngine.getTools().map((tool) => tool.id);
+    expect(ids).toEqual(["hammer", "broom"]);
   });
 });
 
@@ -160,6 +172,20 @@ describe("accessibility", () => {
     const live = shadow().querySelector('[aria-live="polite"]');
     expect(live).not.toBeNull();
   });
+
+  test("translated strings include the toolbar's accessible name", () => {
+    mount((node) =>
+      node.configure({
+        tools: [hammer],
+        captureContent: false,
+        strings: { toolbarLabel: "Outils de destruction" },
+      }),
+    );
+
+    expect(shadow().querySelector('[role="toolbar"]').getAttribute("aria-label")).toBe(
+      "Outils de destruction",
+    );
+  });
 });
 
 describe("interaction", () => {
@@ -170,6 +196,25 @@ describe("interaction", () => {
 
     expect(element.destroyerEngine.tool?.id).toBe("hammer");
     expect(buttonNamed(hammer.name).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("a state update preserves focus on the control that caused it", () => {
+    mount((node) => node.configure({ tools: [hammer], captureContent: false }));
+    const hammerButton = buttonNamed(hammer.name);
+    hammerButton.focus();
+
+    hammerButton.click();
+
+    expect(shadow().activeElement?.getAttribute("aria-label")).toBe(hammer.name);
+  });
+
+  test("touching a tool exposes its name and gesture before selection", () => {
+    mount((node) => node.configure({ tools: [hammer, broom], captureContent: false }));
+
+    buttonNamed(broom.name).dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+
+    expect(shadow().querySelector(".guide").textContent).toContain(broom.name);
+    expect(shadow().querySelector(".guide").textContent).toContain(broom.hint);
   });
 
   test("the close button emits ragelayer-close", () => {

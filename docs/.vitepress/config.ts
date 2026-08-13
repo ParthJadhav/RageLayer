@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "RageLayer",
   description: "Turn any web page into a destructible canvas.",
-  base: "/ragelayer/",
+  base: "/RageLayer/",
   cleanUrls: true,
   lastUpdated: true,
   head: [
@@ -14,12 +14,12 @@ export default defineConfig({
       "meta",
       {
         property: "og:description",
-        content: "Smash, burn, freeze, and demolish any page with one npm package.",
+        content: "Smash, burn, cut, and demolish any page with one npm package.",
       },
     ],
   ],
   sitemap: {
-    hostname: "https://parthjadhav.github.io/ragelayer/",
+    hostname: "https://parthjadhav.github.io/RageLayer/",
   },
   themeConfig: {
     nav: [
@@ -58,12 +58,12 @@ export default defineConfig({
       },
     ],
     socialLinks: [
-      { icon: "github", link: "https://github.com/ParthJadhav/ragelayer" },
+      { icon: "github", link: "https://github.com/ParthJadhav/RageLayer" },
       { icon: "npm", link: "https://www.npmjs.com/package/ragelayer" },
     ],
     search: { provider: "local" },
     editLink: {
-      pattern: "https://github.com/ParthJadhav/ragelayer/edit/main/docs/:path",
+      pattern: "https://github.com/ParthJadhav/RageLayer/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
     outline: [2, 3],

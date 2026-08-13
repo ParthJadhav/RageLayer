@@ -1,6 +1,5 @@
 import { DestroyerEngine, type DestroyerOptions, type Tool } from "ragelayer/engine";
 import { loadAdvancedTools, loadBaseTools, loadDefaultTools, loadHeavyTools } from "ragelayer/lazy";
-import { BUILT_IN_LOADOUTS, resolveToolLoadout } from "ragelayer/loadouts";
 import { createRateLimiter, createTool } from "ragelayer/sdk";
 import { baseTools, broom, hammer } from "ragelayer/tools";
 import { advancedTools, gravityGun, laserCutter } from "ragelayer/tools/advanced";
@@ -25,8 +24,6 @@ void heavyTools;
 void advancedTools;
 void gravityGun;
 void laserCutter;
-void BUILT_IN_LOADOUTS.chaos;
-void resolveToolLoadout("precision");
 void selected;
 void createRateLimiter(20);
 void createTool({

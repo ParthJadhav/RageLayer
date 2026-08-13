@@ -54,7 +54,7 @@ describe("framework adapters", () => {
     expect(node.getAttribute("aria-pressed")).toBe("false");
     expect(changes).toEqual([{ engine: null, open: false }]);
 
-    action.update({ initialTool: "freeze", toggle: false });
+    action.update({ initialTool: "water", toggle: false });
     expect(changes).toHaveLength(2);
     action.destroy();
     expect(node.getAttribute("aria-pressed")).toBe("mixed");

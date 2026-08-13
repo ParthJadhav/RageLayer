@@ -23,7 +23,6 @@ import {
 import { RAGELAYER_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
 import { DestroyerEngine } from "../engine";
-import { type BuiltInLoadoutId, resolveToolLoadout, type ToolLoadout } from "../loadouts";
 import type { DestroyerStrings } from "../strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar";
 import type { DestroyerOptions, Tool } from "../types";
@@ -33,10 +32,6 @@ export const RageLayer = defineComponent({
   name: "RageLayer",
   props: {
     tools: { type: Array as PropType<readonly Tool[]>, default: undefined },
-    loadout: {
-      type: [String, Object] as PropType<BuiltInLoadoutId | ToolLoadout>,
-      default: undefined,
-    },
     engineOptions: { type: Object as PropType<DestroyerOptions>, default: undefined },
     strings: { type: Object as PropType<Partial<DestroyerStrings>>, default: undefined },
     soundDefault: { type: Boolean, default: false },
@@ -53,9 +48,7 @@ export const RageLayer = defineComponent({
     let unsubscribe: (() => void) | null = null;
     let previousFocus: HTMLElement | null = null;
 
-    const toolset = computed<readonly Tool[]>(
-      () => props.tools ?? (props.loadout ? resolveToolLoadout(props.loadout) : defaultTools),
-    );
+    const toolset = computed<readonly Tool[]>(() => props.tools ?? defaultTools);
 
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (model.value?.handleKeyDown(event)) event.preventDefault();
@@ -74,6 +67,7 @@ export const RageLayer = defineComponent({
       const created_model = new ToolbarModel(created, {
         tools: toolset.value,
         strings: props.strings,
+        toolStyle: props.engineOptions?.toolStyle,
         onClose: () => emit("close"),
       });
       model.value = created_model;
@@ -132,20 +126,38 @@ export const RageLayer = defineComponent({
           tabindex: index === current.focusIndex ? 0 : -1,
           ...(button.pressed === undefined ? {} : { "aria-pressed": String(button.pressed) }),
           ...(button.disabled ? { "aria-disabled": "true" } : {}),
-          style: {
-            ...(button.fontSize ? { fontSize: `${button.fontSize}px` } : {}),
-            ...(button.color ? { color: button.color } : {}),
-          },
+          style: button.color ? { color: button.color } : {},
           onClick: () => {
             // `aria-disabled` keeps the button reachable, so the press is
             // refused here rather than by the `disabled` attribute.
             if (!button.disabled) button.run();
           },
           onFocus: () => model.value?.setFocusIndex(index),
+          onPointerenter: () => model.value?.setFocusIndex(index),
+          onPointerdown: () => model.value?.setFocusIndex(index),
         },
         button.icon
-          ? [h("img", { src: button.icon, alt: "", width: 30, height: 30 })]
-          : [button.glyph ?? button.toolIcon ?? ""],
+          ? [h("img", { src: button.icon, alt: "", width: 28, height: 28 })]
+          : button.iconPath
+            ? [
+                h(
+                  "svg",
+                  {
+                    viewBox: "0 0 24 24",
+                    width: 22,
+                    height: 22,
+                    fill: "none",
+                    stroke: "currentColor",
+                    "stroke-width": 1.8,
+                    "stroke-linecap": "round",
+                    "stroke-linejoin": "round",
+                    "aria-hidden": "true",
+                    focusable: "false",
+                  },
+                  [h("path", { d: button.iconPath })],
+                ),
+              ]
+            : [button.toolIcon ?? ""],
       );
 
     return () => {
@@ -183,13 +195,16 @@ export const RageLayer = defineComponent({
             current.announcement,
           ),
           current.flash ? h("div", { class: "rl-flash", role: "status" }, current.flash) : null,
+          current.hint
+            ? h("div", { key: "guide", class: "rl-guide", "aria-hidden": "true" }, current.hint)
+            : null,
           h(
             "div",
             {
               ref: bar,
               class: BAR_CLASS,
               role: "toolbar",
-              "aria-label": props.strings?.toolbarLabel ?? "RageLayer tools",
+              "aria-label": current.toolbarLabel,
               "aria-orientation": "horizontal",
               onKeydown: onBarKeyDown,
             },
