@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>RageLayer stress harness</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0d0f14;
+        color: #e8ecf3;
+        font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      header {
+        padding: 48px 40px 28px;
+        background: linear-gradient(120deg, #1d2333, #101623);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 34px;
+        letter-spacing: -0.5px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+        padding: 28px 40px;
+      }
+
+      .card {
+        border-radius: 10px;
+        padding: 18px;
+        background: linear-gradient(160deg, #1b2130, #141926);
+        border: 1px solid #262e42;
+      }
+
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 16px;
+      }
+
+      .card p {
+        margin: 0;
+        color: #9aa6bd;
+        font-size: 13px;
+      }
+
+      .swatch {
+        height: 54px;
+        border-radius: 6px;
+        margin-bottom: 12px;
+      }
+
+      table {
+        width: calc(100% - 80px);
+        margin: 12px 40px 40px;
+        border-collapse: collapse;
+      }
+
+      td,
+      th {
+        border: 1px solid #283048;
+        padding: 8px 12px;
+        text-align: left;
+        font-size: 13px;
+      }
+
+      footer {
+        padding: 40px;
+        color: #7c88a1;
+        background: #0a0c11;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>RageLayer stress harness</h1>
+      <p>
+        Synthetic but realistic page content: headings, cards, a table and a footer spanning
+        multiple viewports, so content capture, the surface shader, the opacity map, text masking
+        and element harvest all carry real weight during the load test.
+      </p>
+    </header>
+    <main>
+      <div class="grid" id="cards"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Subsystem</th>
+            <th>Path</th>
+            <th>Budget</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="grid" id="cards2"></div>
+    </main>
+    <footer>
+      <p>RageLayer stress fixture. Network-free; every pixel above comes from this document.</p>
+    </footer>
+
+    <script type="module">
+      import { advancedTools } from "../dist/tools/advanced.js";
+      import { DestroyerEngine, defaultTools } from "../dist/index.js";
+      import { heavyTools } from "../dist/tools/heavy.js";
+
+      // ---- Page content ------------------------------------------------------
+      const hues = [212, 268, 340, 24, 88, 152];
+      const cardHost = (id) => document.getElementById(id);
+      for (const host of [cardHost("cards"), cardHost("cards2")]) {
+        for (let i = 0; i < 12; i++) {
+          const hue = hues[i % hues.length];
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="swatch" style="background: linear-gradient(135deg,
+              hsl(${hue} 60% 46%), hsl(${(hue + 40) % 360} 65% 30%))"></div>
+            <h3>Card ${i + 1}</h3>
+            <p>Destructible content block with enough text to make text masking and the
+            opacity map earn their keep under sustained damage.</p>`;
+          host.append(card);
+        }
+      }
+      const rows = document.getElementById("rows");
+      const subsystems = [
+        ["particles", "canvas 2d", "step+draw", "pooled, compaction walk"],
+        ["flames", "canvas 2d + heat", "spread", "merge + scorch ticks"],
+        ["physics", "canvas 2d", "SAT solver", "sweep-and-prune broadphase"],
+        ["surface", "webgl2", "dirty rects", "refraction + char shading"],
+        ["postfx", "webgl1", "bloom+haze", "quarter-res separable blur"],
+        ["decals", "canvas 2d", "on demand", "document-sized layer"],
+      ];
+      for (let i = 0; i < 4; i++) {
+        for (const [a, b, c, d] of subsystems) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${a}</td><td>${b}</td><td>${c}</td><td>${d}</td>`;
+          rows.append(tr);
+        }
+      }
+
+      // ---- Engine ------------------------------------------------------------
+      const TAU = Math.PI * 2;
+      let engine = null;
+
+      // Deterministic PRNG so every run of a scenario applies the same load.
+      function mulberry32(seed) {
+        let a = seed >>> 0;
+        return () => {
+          a = (a + 0x6d2b79f5) | 0;
+          let t = Math.imul(a ^ (a >>> 15), 1 | a);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      async function init(options = {}) {
+        dispose();
+        engine = new DestroyerEngine({
+          soundEnabled: false,
+          captureContent: options.captureContent ?? true,
+          captureMode: options.captureMode ?? "auto",
+          harvestElements: true,
+          textMask: true,
+          postFX: true,
+          physics: true,
+          maxFlames: options.maxFlames ?? 32,
+          maxParticles: options.maxParticles ?? 1400,
+          quality: options.quality ?? "auto",
+          toolStyle: "emoji",
+        });
+        engine.registerTools([...defaultTools, ...heavyTools, ...advancedTools]);
+        window.__rageLayer = engine;
+        if (engine.opts.captureContent) {
+          await new Promise((resolve, reject) => {
+            const startedAt = performance.now();
+            const poll = () => {
+              if (["snapshot", "live"].includes(engine.captureStatus)) resolve();
+              else if (performance.now() - startedAt > 30_000) reject(new Error("capture timeout"));
+              else setTimeout(poll, 50);
+            };
+            poll();
+          });
+        }
+        return { captureStatus: engine.captureStatus ?? "none" };
+      }
+
+      function dispose() {
+        if (!engine) return;
+        engine.dispose();
+        if (window.__rageLayer === engine) delete window.__rageLayer;
+        engine = null;
+      }
+
+      // ---- Pointer-driven tool gestures -------------------------------------
+      function dispatchPointer(type, buttons, x, y) {
+        engine.container.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            pointerId: 1,
+            pointerType: "mouse",
+            isPrimary: true,
+            clientX: x,
+            clientY: y,
+            buttons,
+            button: 0,
+          }),
+        );
+      }
+
+      /** Drives one held tool along a Lissajous path while the scenario runs. */
+      function makeGesture(tool, movePx, moveHz) {
+        const cx = innerWidth * 0.5;
+        const cy = innerHeight * 0.45;
+        let held = false;
+        return {
+          tick(t) {
+            if (!held) {
+              engine.setTool(tool);
+              dispatchPointer("pointerdown", 1, cx, cy);
+              held = true;
+            }
+            const phase = t * moveHz * TAU;
+            dispatchPointer(
+              "pointermove",
+              1,
+              cx + Math.sin(phase) * movePx,
+              cy + Math.sin(phase * 0.73) * movePx * 0.55,
+            );
+          },
+          stop() {
+            if (held) dispatchPointer("pointerup", 0, cx, cy);
+            held = false;
+          },
+        };
+      }
+
+      // ---- Direct-API load generators ---------------------------------------
+      function particleAt(random, kind) {
+        const speed = 30 + random() * 120;
+        const angle = random() * TAU;
+        return {
+          kind,
+          x: 40 + random() * (innerWidth - 80),
+          y: 60 + random() * (innerHeight - 120),
+          vx: Math.cos(angle) * speed,
+          vy: kind === "smoke" ? -20 - random() * 40 : Math.sin(angle) * speed,
+          life: 0,
+          maxLife: 60 + random() * 120,
+          size: 2 + random() * 12,
+          gravity: kind === "water" ? 300 : 0,
+          drag: 0,
+          phase: random() * TAU,
+          angle: random() * TAU,
+        };
+      }
+
+      const PARTICLE_KINDS = ["spark", "smoke", "dust", "ember", "water"];
+
+      function topUpParticles(random, target, kinds = PARTICLE_KINDS) {
+        const deficit = target - engine.particles.count;
+        // Cap refills per frame so the generator itself stays cheap.
+        const budget = Math.min(80, deficit);
+        for (let i = 0; i < budget; i++) {
+          engine.spawnParticle(particleAt(random, kinds[i % kinds.length]));
+        }
+      }
+
+      function topUpFlames(random, target) {
+        const deficit = target - engine.flames.length;
+        for (let i = 0; i < Math.min(6, deficit); i++) {
+          engine.spawnFlame(
+            60 + random() * (innerWidth - 120),
+            100 + random() * (innerHeight - 200),
+            0.5 + random() * 0.5,
+          );
+        }
+      }
+
+      /** Runs `fn` every `intervalMs` of scenario time. */
+      function every(intervalMs, fn) {
+        let next = 0;
+        return (tMs, ...rest) => {
+          if (tMs < next) return;
+          next = tMs + intervalMs;
+          fn(tMs, ...rest);
+        };
+      }
+
+      const randomPoint = (random) => ({
+        x: 80 + random() * (innerWidth - 160),
+        y: 100 + random() * (innerHeight - 200),
+      });
+
+      // ---- Scenarios ---------------------------------------------------------
+      // Each scenario returns { tick(tMs), stop() }. `tick` runs once per rAF and
+      // applies as much simultaneous load as the scenario calls for.
+      const SCENARIOS = {
+        /** Everything at once: the headline "smooth on a low-end laptop" gate. */
+        mayhem(random) {
+          const gesture = makeGesture("flamethrower", 120, 0.35);
+          const fractures = every(700, (t) => {
+            const { x, y } = randomPoint(random);
+            engine.fracture(x, y, 40 + random() * 40, { power: 260 });
+          });
+          const explosions = every(1100, () => {
+            const { x, y } = randomPoint(random);
+            engine.explode(x, y, 60, { incendiary: true });
+          });
+          const strikes = every(600, () => {
+            const { x, y } = randomPoint(random);
+            engine.strike(x, y);
+          });
+          const bugs = every(1300, () => {
+            const { x, y } = randomPoint(random);
+            engine.spawnBugs(x, y, 4);
+          });
+          const shakes = every(2000, () => engine.shake(7));
+          return {
+            tick(tMs) {
+              gesture.tick(tMs / 1000);
+              topUpParticles(random, 1100);
+              topUpFlames(random, 24);
+              engine.setSingularity({
+                x: innerWidth * 0.72,
+                y: innerHeight * 0.6,
+                radius: 46,
+                power: 900,
+                charge: 1,
+              });
+              fractures(tMs);
+              explosions(tMs);
+              strikes(tMs);
+              bugs(tMs);
+              shakes(tMs);
+            },
+            stop() {
+              gesture.stop();
+              engine.setSingularity(null);
+            },
+          };
+        },
+
+        /** Fire path: flames at cap, heavy heat + bloom, burn decals. */
+        inferno(random) {
+          const gesture = makeGesture("flamethrower", 160, 0.4);
+          return {
+            tick(tMs) {
+              gesture.tick(tMs / 1000);
+              topUpFlames(random, 32);
+              topUpParticles(random, 700, ["ember", "smoke", "spark"]);
+              const { x, y } = randomPoint(random);
+              engine.heat(x, y, 80, 0.5);
+            },
+            stop: () => gesture.stop(),
+          };
+        },
+
+        /** Physics path: rigid bodies near cap, constant fracturing. */
+        debris(random) {
+          const fractures = every(420, () => {
+            const { x, y } = randomPoint(random);
+            engine.fracture(x, y, 55, { power: 320 });
+          });
+          const demolitions = every(900, () => {
+            const { x, y } = randomPoint(random);
+            engine.demolish(x, y);
+          });
+          const shatters = every(650, () => {
+            const { x, y } = randomPoint(random);
+            engine.shatter(x, y, 30);
+          });
+          return {
+            tick(tMs) {
+              fractures(tMs);
+              demolitions(tMs);
+              shatters(tMs);
+              topUpParticles(random, 500, ["dust", "spark"]);
+            },
+            stop() {},
+          };
+        },
+
+        /** Wet path: water particles force the destination-in page mask. */
+        flood(random) {
+          const gesture = makeGesture("water", 140, 0.45);
+          return {
+            tick(tMs) {
+              gesture.tick(tMs / 1000);
+              topUpParticles(random, 1200, ["water"]);
+            },
+            stop: () => gesture.stop(),
+          };
+        },
+
+        /** Black hole: full-pool attract every frame plus feeding debris. */
+        singularity(random) {
+          const feed = every(500, () => {
+            const { x, y } = randomPoint(random);
+            engine.fracture(x, y, 45, { power: 200 });
+          });
+          return {
+            tick(tMs) {
+              engine.setSingularity({
+                x: innerWidth * 0.5,
+                y: innerHeight * 0.5,
+                radius: 60,
+                power: 1200,
+                charge: 1,
+              });
+              topUpParticles(random, 1000);
+              feed(tMs);
+            },
+            stop: () => engine.setSingularity(null),
+          };
+        },
+
+        /** Bug swarm plus dust: sprite-heavy 2D path. */
+        swarm(random) {
+          const spawns = every(400, () => {
+            const { x, y } = randomPoint(random);
+            engine.spawnBugs(x, y, 6);
+          });
+          return {
+            tick(tMs) {
+              spawns(tMs);
+              topUpParticles(random, 800, ["dust", "smoke"]);
+            },
+            stop() {},
+          };
+        },
+
+        /** Rapid tool switching with real pointer gestures over background load. */
+        frenzy(random) {
+          const tools = [
+            "hammer",
+            "gun",
+            "flamethrower",
+            "water",
+            "chainsaw",
+            "paintball",
+            "demolition",
+            "rocket",
+            "lightning",
+            "blackhole",
+            "bugs",
+            "gravity-gun",
+            "laser-cutter",
+            "acid-sprayer",
+            "sticky-bombs",
+            "broom",
+          ];
+          let gesture = null;
+          let index = -1;
+          const swap = every(1200, () => {
+            gesture?.stop();
+            index = (index + 1) % tools.length;
+            gesture = makeGesture(tools[index], 130, 0.5);
+          });
+          return {
+            tick(tMs) {
+              swap(tMs);
+              gesture?.tick(tMs / 1000);
+              topUpParticles(random, 400);
+              topUpFlames(random, 8);
+            },
+            stop: () => gesture?.stop(),
+          };
+        },
+      };
+
+      // ---- Measurement -------------------------------------------------------
+      /**
+       * Runs one scenario for `durationMs`, sampling rAF cadence, long tasks,
+       * heap and the engine's own 1 Hz performance snapshots (the timegraph).
+       */
+      async function run(name, durationMs = 8000, seed = 1337) {
+        const factory = SCENARIOS[name];
+        if (!factory) throw new Error(`Unknown scenario: ${name}`);
+        if (!engine) throw new Error("stress.init() first");
+        engine.clear();
+        const scenario = factory(mulberry32(seed));
+
+        const intervals = [];
+        const longTasks = [];
+        const snapshots = [];
+        const offSnapshot = engine.onPerformance((snapshot) =>
+          snapshots.push(JSON.parse(JSON.stringify(snapshot))),
+        );
+        const observer = new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) longTasks.push(entry.duration);
+        });
+        try {
+          observer.observe({ type: "longtask", buffered: false });
+        } catch {
+          // Long Task API is optional; rAF cadence still carries the signal.
+        }
+        const heapStart = performance.memory?.usedJSHeapSize ?? null;
+        const startedAt = performance.now();
+        let previous = startedAt;
+        await new Promise((resolve) => {
+          const sample = () => {
+            // One clock throughout: under CDP CPU throttling the rAF timestamp
+            // drifts from performance.now() and would stretch the run.
+            const now = performance.now();
+            intervals.push(now - previous);
+            previous = now;
+            const t = now - startedAt;
+            if (t >= durationMs) {
+              resolve();
+              return;
+            }
+            try {
+              scenario.tick(t);
+            } catch (error) {
+              console.error("[stress] scenario tick failed", error);
+            }
+            requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        });
+        scenario.stop();
+        observer.disconnect();
+        if (typeof offSnapshot === "function") offSnapshot();
+
+        const elapsedMs = performance.now() - startedAt;
+        const heapEnd = performance.memory?.usedJSHeapSize ?? null;
+        return {
+          scenario: name,
+          elapsedMs,
+          intervals,
+          snapshots,
+          longTasks: {
+            count: longTasks.length,
+            totalMs: longTasks.reduce((sum, value) => sum + value, 0),
+            maxMs: Math.max(0, ...longTasks),
+          },
+          heap:
+            heapStart == null
+              ? null
+              : { startBytes: heapStart, endBytes: heapEnd, deltaBytes: heapEnd - heapStart },
+          entities: {
+            particles: engine.particles.count,
+            flames: engine.flames.length,
+            bodies: engine.physics.count,
+          },
+          engine: engine.performanceSnapshot,
+        };
+      }
+
+      window.stress = { scenarios: Object.keys(SCENARIOS), init, run, dispose };
+      document.documentElement.dataset.ready = "true";
+    </script>
+  </body>
+</html>
