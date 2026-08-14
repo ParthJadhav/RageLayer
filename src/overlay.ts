@@ -87,6 +87,8 @@ export class Overlay {
   private vignetteOffsetY = -1;
   private vignetteShown = -1;
   private shakeAmount = 0;
+  /** Last transform-origin Y written for the shake; it only moves with scroll. */
+  private shakeOriginY = -1;
   /** Directional lurch and roll layered on top of the omnidirectional rattle. */
   private kickX = 0;
   private kickY = 0;
@@ -356,8 +358,13 @@ export class Overlay {
     const roll = this.shakeRoll + (Math.random() - 0.5) * s * 0.00022;
     // Pivot around the middle of what the user is looking at. The container
     // spans the whole document, so the default 50%/50% origin would swing the
-    // top of a long page by tens of pixels for a fraction of a degree.
-    this.container.style.transformOrigin = `50% ${scrollY + this.viewportHeight * 0.5}px`;
+    // top of a long page by tens of pixels for a fraction of a degree. The
+    // origin only moves with scroll, so skip the style write while it holds.
+    const originY = scrollY + this.viewportHeight * 0.5;
+    if (originY !== this.shakeOriginY) {
+      this.shakeOriginY = originY;
+      this.container.style.transformOrigin = `50% ${originY}px`;
+    }
     this.container.style.transform = `translate(${tx}px, ${ty}px) rotate(${roll}rad)`;
     const decay = Math.exp(-dt * 14);
     this.shakeAmount *= decay;

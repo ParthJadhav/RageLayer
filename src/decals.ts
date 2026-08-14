@@ -18,7 +18,100 @@
  */
 
 import { rand, TAU } from "./math";
-import { blit, blitRect, sprites } from "./sprites";
+import { sprites } from "./sprites";
+
+/**
+ * Pre-scaled stamp cache.
+ *
+ * Decals stamp the same soft sprites (scorch, dust, dent, bullet core) over
+ * and over at small sizes, and the scorch under a burning flame lands every
+ * frame. A raw `drawImage` of a 192px sprite squeezed into a 30px destination
+ * resamples the full source each time; baking the sprite once at (quantized)
+ * destination size and blitting that copy near-1:1 turns the per-stamp cost
+ * into a plain pixel copy.
+ *
+ * The outer WeakMap is keyed by the sprite canvas itself, so
+ * `clearSpriteCache()` invalidates every derived stamp for free when the
+ * sprites are rebuilt. Each sprite keeps a small FIFO of sizes (a Map iterates
+ * in insertion order, so the first key is the oldest); sizes are quantized to
+ * whole device pixels, which under destruction effects is invisible. The hit
+ * path is a single `Map.get` — no allocation, no LRU bookkeeping.
+ */
+const STAMPS_PER_SPRITE = 12;
+/**
+ * Above this device half-size a cached copy stops paying for itself: the draw
+ * is close to the sprite's native 192px resolution, and the canvas would cost
+ * real memory.
+ */
+const MAX_STAMP_HALF = 160;
+let stampCache: WeakMap<HTMLCanvasElement, Map<number, HTMLCanvasElement>> | null = null;
+/**
+ * Device scale (dpr) per context, read once — `getTransform` allocates a
+ * DOMMatrix, which the per-frame scorch path cannot afford. Damage targets
+ * keep a fixed dpr transform for their lifetime, and `hypot(a, b)` makes the
+ * read indifferent to any rotation active at the time.
+ */
+let ctxScale: WeakMap<CanvasRenderingContext2D, number> | null = null;
+
+function deviceScale(ctx: CanvasRenderingContext2D): number {
+  let scale = (ctxScale ??= new WeakMap()).get(ctx);
+  if (scale === undefined) {
+    const m = ctx.getTransform();
+    scale = Math.hypot(m.a, m.b) || 1;
+    ctxScale.set(ctx, scale);
+  }
+  return scale;
+}
+
+/**
+ * Draw `sprite` centred on (x, y) covering `halfW` × `halfH` at `alpha`,
+ * through the pre-scaled cache. Mirrors `blit`'s contract: sub-perceptual and
+ * degenerate stamps are skipped outright, and `globalAlpha` is left set for
+ * the caller to reset once per decal rather than per draw.
+ */
+function stamp(
+  ctx: CanvasRenderingContext2D,
+  sprite: HTMLCanvasElement,
+  x: number,
+  y: number,
+  halfW: number,
+  halfH: number,
+  alpha: number,
+) {
+  if (alpha <= 0.004 || halfW <= 0.3 || halfH <= 0.3) return;
+  const scale = deviceScale(ctx);
+  const w = Math.round(halfW * scale) || 1;
+  const h = Math.round(halfH * scale) || 1;
+  if (w > MAX_STAMP_HALF || h > MAX_STAMP_HALF) {
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(sprite, x - halfW, y - halfH, halfW * 2, halfH * 2);
+    return;
+  }
+  let bySize = (stampCache ??= new WeakMap()).get(sprite);
+  if (!bySize) stampCache.set(sprite, (bySize = new Map()));
+  const key = w * 2048 + h;
+  let scaled = bySize.get(key);
+  if (!scaled) {
+    scaled = document.createElement("canvas");
+    scaled.width = w * 2;
+    scaled.height = h * 2;
+    scaled.getContext("2d")!.drawImage(sprite, 0, 0, w * 2, h * 2);
+    if (bySize.size >= STAMPS_PER_SPRITE) {
+      // Zero the evicted stamp before dropping it, so its backing store is
+      // released now rather than at the GC's leisure (the pattern every
+      // detached canvas in the repo follows).
+      const [oldestKey, evicted] = bySize.entries().next().value!;
+      evicted.width = 0;
+      evicted.height = 0;
+      bySize.delete(oldestKey);
+    }
+    bySize.set(key, scaled);
+  }
+  ctx.globalAlpha = alpha;
+  const dw = w / scale;
+  const dh = h / scale;
+  ctx.drawImage(scaled, x - dw, y - dh, dw * 2, dh * 2);
+}
 
 /**
  * Stroke the current path twice: a dark shadow offset away from the light, then
@@ -76,10 +169,10 @@ export function drawCrack(
   // Bruised shading under the cracks, plus a low dust scuff. The dust used to
   // be a circular radial sprite; repeated heavy impacts made those circles
   // read as bubbles rather than material thrown along the contact plane.
-  blit(ctx, sprites().dent, 0, 0, 30 * scale, 0.2);
+  stamp(ctx, sprites().dent, 0, 0, 30 * scale, 30 * scale, 0.2);
   ctx.save();
   ctx.rotate(bias ?? rand(-0.65, 0.65));
-  blitRect(ctx, sprites().dust, 0, 0, 46 * scale, 15 * scale, 0.075);
+  stamp(ctx, sprites().dust, 0, 0, 46 * scale, 15 * scale, 0.075);
   ctx.restore();
   ctx.globalAlpha = 1;
 
@@ -187,7 +280,7 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.rotate(Math.random() * TAU);
 
   // Pale impact halo — powdered page around the entry wound.
-  blit(ctx, sprites().dust, 0, 0, 26 * scale, 0.16);
+  stamp(ctx, sprites().dust, 0, 0, 26 * scale, 26 * scale, 0.16);
   ctx.globalAlpha = 1;
 
   // A few short cracks past the hole itself — uneven lengths, no ring
@@ -216,7 +309,7 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   }
 
   // Dark core with soft edge.
-  blit(ctx, sprites().bulletCore, 0, 0, 6 * scale, 0.98);
+  stamp(ctx, sprites().bulletCore, 0, 0, 6 * scale, 6 * scale, 0.98);
   ctx.globalAlpha = 1;
 
   // Glint on the rim.
@@ -227,7 +320,16 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.restore();
 }
 
-/** Soft scorch mark accumulated under a flame. Alpha scales with intensity. */
+/**
+ * Soft scorch mark accumulated under a flame. Alpha scales with intensity.
+ *
+ * This is the one decal stamped every frame (once per burning flame), so it
+ * skips `save`/`restore` — a full state push just to flip the composite mode —
+ * and instead restores exactly the two properties it touches. Coordinates are
+ * snapped to the device-pixel grid: the caller already jitters the stamp by
+ * several pixels, so the snap is invisible, and it lets the pre-scaled stamp
+ * land as an axis-aligned 1:1 copy.
+ */
 export function drawScorch(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -235,11 +337,21 @@ export function drawScorch(
   radius: number,
   alpha: number,
 ) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  blit(ctx, sprites().scorch, x, y, radius, alpha);
-  ctx.restore();
+  if (alpha <= 0.004 || radius <= 0.3) return;
+  const scale = deviceScale(ctx);
+  const prev = ctx.globalCompositeOperation;
+  if (prev !== "source-atop") ctx.globalCompositeOperation = "source-atop";
+  stamp(
+    ctx,
+    sprites().scorch,
+    Math.round(x * scale) / scale,
+    Math.round(y * scale) / scale,
+    radius,
+    radius,
+    alpha,
+  );
   ctx.globalAlpha = 1;
+  if (prev !== "source-atop") ctx.globalCompositeOperation = prev;
 }
 
 /**

@@ -27,6 +27,7 @@ import { ContentLayer } from "./content";
 import { harvestElements, type PageElement } from "./elements";
 import { LiveContentSource, supportsLiveCapture } from "./live";
 import type { Overlay } from "./overlay";
+import type { PerfCounterSink } from "./performance";
 import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
 import { buildTextMask } from "./textmask";
 import type { CaptureMode, CaptureStatus, EngineErrorScope } from "./types";
@@ -46,6 +47,8 @@ export interface CaptureSettings {
   filter: (node: Node) => boolean;
   /** `false` mounts the raw 2D canvas; an object overrides the shader defaults. */
   surface: Partial<SurfaceParams> | false | undefined;
+  /** Engine telemetry sink, attached to every layer this controller owns. */
+  perfCounters?: PerfCounterSink;
 }
 
 /** What the pipeline needs from the engine around it. */
@@ -133,6 +136,7 @@ export class CaptureController {
   install(layer: ContentLayer | null) {
     this.layer = layer;
     if (!layer) return;
+    layer.setPerfCounters(this.settings.perfCounters ?? null);
     const overlay = this.host.overlay;
     overlay.container.insertBefore(layer.canvas, overlay.damageCanvas);
   }
@@ -148,6 +152,7 @@ export class CaptureController {
       // Set before the capture: `adopt` is what brings the renderer up, so this
       // has to be known by then rather than applied to it afterwards.
       layer.shadingEnabled = this.shading;
+      layer.setPerfCounters(this.settings.perfCounters ?? null);
       // Match the overlay's own geometry so the destructible surface, the void
       // and the fx canvas share one coordinate space.
       const doc = this.host.docSize();

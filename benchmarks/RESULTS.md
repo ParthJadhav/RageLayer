@@ -143,3 +143,79 @@ The matching 80-cycle mount/work/dispose gate retained zero DOM nodes, documents
 layout objects, or array buffers. Post-GC JavaScript heap ended 215,052 bytes above its baseline,
 within the bounded allocator warm-up allowance, and every exposed engine collection, canvas, and
 callback registry was empty after disposal.
+
+## 2026-08-14 simultaneous-load stress pass
+
+A new suite (`bun run perf`, `scripts/perf-suite.mjs` + `benchmarks/stress.html`) load-tests many
+effects running at once on a real captured page — the headline `mayhem` scenario holds a
+flamethrower drag while fractures, explosions, lightning, a black hole, bug swarms, and page shake
+all fire continuously at the particle/flame/body caps. Seven scenarios ran 8 s each at 1× and
+Chrome's 6× CPU throttle (Chrome 151, 1280×720, DPR 2, quality `auto`, snapshot capture), with CPU
+profiles, flamegraphs, Chrome traces, GPU timings, and 1 Hz engine telemetry archived under
+`artifacts/perf/`.
+
+Optimizations in this pass: chunked same-style particle fills (state set once per alpha bucket, no
+path over 24 subpaths), matrix-composed transforms instead of `save/restore` per solid/body,
+pre-scaled decal stamp caching, pointer-event coalescing through a per-frame replay ring, a
+persistent near-sorted physics broadphase, allocation-free particle/flame object pooling, a bounded
+dirty-rect list (up to 8 rects) for surface uploads, a banded full-reconcile sweep instead of one
+document-sized `texImage2D` stall, gated heat-canvas clears/uploads, and cached scroll offsets in
+the pointer path.
+
+| Result (worst scenario at 6× CPU throttle) | Before | After |
+| --- | ---: | ---: |
+| Frame p50 (`mayhem`) | 10.3 ms | **9.1 ms** |
+| Frame p95 (`mayhem`) | 13.7 ms | **13.0 ms** |
+| Frame p95 (`flood`) | 12.9 ms | **10.1 ms** |
+| Worst frame (`mayhem`, 8 s) | 130 ms | **94 ms** |
+| Surface upload traffic (`inferno`, 1×) | 58.6 M px/s | **21.9 M px/s** |
+| Scenarios held at `high` quality, 6× | 2 of 7 | **3 of 7**, rest `balanced` |
+
+Every scenario × throttle cell meets the 60 fps budget (p95 ≤ 17.5 ms, ≤ 5 % frames over 20 ms).
+The larger structural win is capacity: `flood` and `debris` previously forced the adaptive
+controller down to `balanced` at 6× and now run the full 8 s at `high` with ~40 % more live
+particles and lower per-frame CPU. Two measured dead-ends are documented in
+`src/fx-render.ts` (giant batched paths) and the git history (sprite mip chains) so they are not
+retried.
+
+Telemetry added with this pass (all in `PerformanceSnapshot`): per-subsystem update breakdown
+(`toolsMs`…`physicsMs`), render bucket counts, surface upload/reconcile/coverage counters,
+opacity-map hit-test counters, GPU pass timings via `EXT_disjoint_timer_query(_webgl2)`, and
+live-capture recompose cost. Reproduce with `bun run perf`; emulate low-end with
+`bun run perf:low-end`.
+
+## 2026-08-14 quality-retention and memory pass
+
+Goal: every stress scenario holds the **high** visual tier under low-end load, plus memory
+reduction. Three changes landed:
+
+**Rate-vs-quality ladder.** The adaptive controller previously budgeted the high tier against the
+display's native refresh — on a 120 Hz panel that demanded engine cost fit 72% of 8.3 ms, so heavy
+scenarios dropped to `balanced` (reduced budgets, no post-FX) chasing 120 fps. There is now a rung
+between "high at native refresh" and "balanced": when sustained cost outgrows the native budget but
+fits the 60 fps budget, the frame rate caps at 60 with every visual intact, releasing only with
+sustained headroom against the native cadence. Cap eligibility is judged on p95 alone — one-off
+fracture-storm spikes no longer force a visual downgrade that would not have prevented them.
+
+Result (8 s scenarios, Chrome 151, 6× CPU throttle): **all 7 scenarios hold `high` for the entire
+run** (previously 2 of 7; the rest sat in `balanced`), each meeting the 60 fps budget — worst
+p95 16.9 ms (inferno), zero frames over 20 ms in 5 of 7. At 1× all scenarios run high at native
+120 fps.
+
+**Memory.** An allocation inventory showed the footprint is dominated by document-sized planes
+(~80 MB each at the 20 Mpx capture budget; ~437 MB total in snapshot mode, ~587 MB in live mode on
+a 1600×12000 page). Landed: live-mode wound/decal buffers now allocate at the tracked damage rect
+(padded, grown geometrically with content-preserving re-blits) instead of the whole document —
+~150 MB saved for a screenful of destruction, and live-mode undo checkpoints shrink
+proportionally, which also re-enables history on tall pages where the checkpoint previously
+exceeded its pixel budget. Evicted decal-stamp canvases release their backing store eagerly.
+Documented for future work: a scroll-band surface renderer (~160 MB of GL on tall pages) and the
+measured rejection of a half-resolution repair base (`restoreAll` blits it 1:1 to the visible
+page).
+
+**Measured experiments** (kept only if >20% off the relevant self-time, no p95 regression):
+ImageBitmap sprite sources — no effect, Chrome's accelerated canvas sources are already
+GPU-resident; `Path2D.addPath` batching — 4× slower than `ellipse()` appends; per-particle
+`setTransform` + unit-circle fill — a wash. Kept: dust's baked 3-lobe cluster `Path2D`, one
+uniform-scale stamp per particle — 53% off dust fill self-time, 26% off the swarm `drawPuffs`
+pass. Cached-path stamping wins only when one stamp replaces three or more path appends.

@@ -9,6 +9,8 @@
  * set (integer texture sizing, `texSubImage2D` from a canvas at an offset).
  */
 
+import type { PerfCounterName, PerfCounterSink } from "./performance";
+
 /**
  * Full-screen triangle strip in clip space. `vUv` is flipped on Y at sample
  * time rather than here, because every source we bind (2D canvases) has its
@@ -105,4 +107,162 @@ export function createTexture(gl: WebGL2RenderingContext): WebGLTexture {
 /** Largest square texture this context will accept, for the fallback check. */
 export function maxTextureSize(gl: WebGL2RenderingContext): number {
   return gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
+}
+
+// ── GPU pass timing ─────────────────────────────────────────────────────────
+
+/** The constants both disjoint timer-query extensions share. */
+interface DisjointTimerExt {
+  readonly TIME_ELAPSED_EXT: number;
+  readonly GPU_DISJOINT_EXT: number;
+}
+
+/** WebGL1 `EXT_disjoint_timer_query`: query objects live on the extension. */
+interface DisjointTimerExt1 extends DisjointTimerExt {
+  readonly QUERY_RESULT_EXT: number;
+  readonly QUERY_RESULT_AVAILABLE_EXT: number;
+  createQueryEXT(): WebGLQuery | null;
+  deleteQueryEXT(query: WebGLQuery): void;
+  beginQueryEXT(target: number, query: WebGLQuery): void;
+  endQueryEXT(target: number): void;
+  getQueryObjectEXT(query: WebGLQuery, pname: number): number | boolean;
+}
+
+/** In-flight query cap. When results lag this far behind, frames go untimed. */
+const MAX_PENDING_QUERIES = 4;
+
+/**
+ * Asynchronous GPU timing for one render pass, built on
+ * `EXT_disjoint_timer_query_webgl2` (WebGL2) or `EXT_disjoint_timer_query`
+ * (WebGL1) where the driver offers one.
+ *
+ * Wrap a pass in `begin()`/`end()`, then `poll(sink, name)` on later frames to
+ * report whichever results have landed — results are never waited for, so this
+ * can never stall the pipeline. Query objects come from a small fixed pool and
+ * are reused, keeping the per-frame path allocation-free. Everything degrades
+ * to a no-op: a missing context, a missing extension, or a query call that
+ * throws just leaves `available` false. Follows this file's no-throw contract.
+ */
+export class GpuTimer {
+  /** True while the context exposes a usable timer-query extension. */
+  available = false;
+  private gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
+  private gl2: WebGL2RenderingContext | null = null;
+  private ext: DisjointTimerExt | null = null;
+  private ext1: DisjointTimerExt1 | null = null;
+  /** Fixed pool used as a ring: `head` is the oldest in-flight query. */
+  private readonly queries: (WebGLQuery | null)[] = new Array(MAX_PENDING_QUERIES).fill(null);
+  private head = 0;
+  private pending = 0;
+  private active = false;
+
+  constructor(gl: WebGLRenderingContext | WebGL2RenderingContext | null) {
+    if (!gl) return;
+    try {
+      const gl2 =
+        typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext
+          ? gl
+          : null;
+      if (gl2) {
+        this.ext = gl2.getExtension("EXT_disjoint_timer_query_webgl2") as DisjointTimerExt | null;
+      } else {
+        this.ext1 = gl.getExtension("EXT_disjoint_timer_query") as DisjointTimerExt1 | null;
+        this.ext = this.ext1;
+      }
+      if (!this.ext) return;
+      this.gl = gl;
+      this.gl2 = gl2;
+      this.available = true;
+    } catch {
+      this.available = false;
+    }
+  }
+
+  /** Start timing this frame's pass. Skipped while the query pool is full. */
+  begin() {
+    if (!this.available || this.active || this.pending >= MAX_PENDING_QUERIES) return;
+    try {
+      const slot = (this.head + this.pending) % MAX_PENDING_QUERIES;
+      const query = (this.queries[slot] ??= this.gl2
+        ? this.gl2.createQuery()
+        : this.ext1!.createQueryEXT());
+      if (!query) return;
+      if (this.gl2) this.gl2.beginQuery(this.ext!.TIME_ELAPSED_EXT, query);
+      else this.ext1!.beginQueryEXT(this.ext!.TIME_ELAPSED_EXT, query);
+      this.active = true;
+    } catch {
+      this.available = false;
+    }
+  }
+
+  /** Close the pass opened by `begin()`. Safe to call unconditionally. */
+  end() {
+    if (!this.active) return;
+    this.active = false;
+    try {
+      if (this.gl2) this.gl2.endQuery(this.ext!.TIME_ELAPSED_EXT);
+      else this.ext1!.endQueryEXT(this.ext!.TIME_ELAPSED_EXT);
+      this.pending++;
+    } catch {
+      this.available = false;
+    }
+  }
+
+  /**
+   * Report every resolved query to `sink` as `name` milliseconds, one call per
+   * result, oldest first. Also records that a working timer exists, so the
+   * monitor can distinguish "no GPU work ran" from "no extension".
+   */
+  poll(sink: PerfCounterSink | null, name: PerfCounterName) {
+    if (!this.available || !sink) return;
+    sink.count("gpuTimerAvailable", 0);
+    if (this.pending === 0) return;
+    try {
+      const gl = this.gl!;
+      // A disjoint event (GPU clock discontinuity) invalidates every pending
+      // result; drop them rather than report garbage.
+      if (gl.getParameter(this.ext!.GPU_DISJOINT_EXT) === true) {
+        this.head = (this.head + this.pending) % MAX_PENDING_QUERIES;
+        this.pending = 0;
+        return;
+      }
+      while (this.pending > 0) {
+        const query = this.queries[this.head]!;
+        const ready = this.gl2
+          ? (this.gl2.getQueryParameter(query, this.gl2.QUERY_RESULT_AVAILABLE) as boolean)
+          : (this.ext1!.getQueryObjectEXT(query, this.ext1!.QUERY_RESULT_AVAILABLE_EXT) as boolean);
+        if (!ready) break;
+        const nanoseconds = this.gl2
+          ? (this.gl2.getQueryParameter(query, this.gl2.QUERY_RESULT) as number)
+          : (this.ext1!.getQueryObjectEXT(query, this.ext1!.QUERY_RESULT_EXT) as number);
+        sink.count(name, nanoseconds / 1e6);
+        this.head = (this.head + 1) % MAX_PENDING_QUERIES;
+        this.pending--;
+      }
+    } catch {
+      this.available = false;
+    }
+  }
+
+  dispose() {
+    try {
+      for (let i = 0; i < this.queries.length; i++) {
+        const query = this.queries[i];
+        if (!query) continue;
+        if (this.gl2) this.gl2.deleteQuery(query);
+        else this.ext1?.deleteQueryEXT(query);
+        this.queries[i] = null;
+      }
+    } catch {
+      // The context may already be lost; there is nothing left to release.
+    }
+    this.available = false;
+    this.pending = 0;
+    this.head = 0;
+    this.active = false;
+    this.gl = null;
+    this.gl2 = null;
+    this.ext = null;
+    this.ext1 = null;
+  }
 }

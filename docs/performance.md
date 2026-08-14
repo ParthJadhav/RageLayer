@@ -16,6 +16,13 @@ cadence alone never triggers a downgrade when the engine's own work is cheap.
 | balanced | 60 updates/s cap, reduced budgets, direct 2D effects canvas |
 | low | Reduced solver iterations, two-layer flames, direct 2D canvas, roughly one-third budgets |
 
+On displays faster than 60 Hz there is a rung between "high at native refresh" and "balanced":
+when sustained cost outgrows the native frame budget but still fits a 60 fps frame with the usual
+safety margin, the controller caps the frame rate at 60 and keeps every visual
+(`snapshot.targetFps` drops to 60 and `qualityReason` says so). The cap releases only once cost
+would also fit the native cadence comfortably, so it does not flap. Visual quality is reduced only
+when even the 60 fps budget cannot be held.
+
 Set an explicit tier to disable adaptation while keeping telemetry; `performance: false`
 disables both.
 
@@ -26,8 +33,18 @@ const engine = new DestroyerEngine({
   performance: {
     sampleIntervalMs: 1000,
     onSample(sample) {
-      // fps, cpu p50/p95/p99/max, update/surface/render/postFX breakdown,
-      // entity counts, capture/effects pixel ratios, capture ms, quality tier, Chrome heap figures
+      // fps, cpu p50/p95/p99/max, update/surface/render/postFX breakdown —
+      // with the update step split per subsystem (tools/collapse/flames/bugs/
+      // singularity/particles/physics), entity counts, capture/effects pixel
+      // ratios, capture ms, quality tier, Chrome heap figures, plus:
+      // sample.render  — avg fx buckets drawn per frame (wet/puffs/solids/hot),
+      //                  flames drawn, physics bodies submitted
+      // sample.surface — texSubImage2D uploads, uploaded pixels, full
+      //                  reconciles, avg dirty-rect page coverage
+      // sample.opacity — opacity-map sample() calls, path hit-tests, flattens
+      // sample.gpu     — async GPU pass ms for the surface shader and post-FX
+      //                  chain (timer-query extensions; `available` says so)
+      // sample.capture — live-mode band recompose count + avg ms
       sendToYourRUM(sample);
     },
   },

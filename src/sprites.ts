@@ -15,7 +15,8 @@
  * `globalAlpha`, which reproduces the original colours exactly.
  *
  * Sprites are built lazily on first use (they need a DOM) and shared process-
- * wide; the whole set is a few hundred KB.
+ * wide; the whole set is ~3 MB of canvas backing store (17 sprites at 192px
+ * dominate), released by `clearSpriteCache` when the last engine disposes.
  */
 
 type Stop = readonly [offset: number, color: string];

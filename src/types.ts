@@ -270,6 +270,83 @@ export interface PerformanceFrameBreakdown {
   surfaceMs: number;
   renderMs: number;
   postFXMs: number;
+  /** Tool ticks plus pointer tool-art posing (`stepTools` + `stepToolArt`). */
+  toolsMs: number;
+  /** Element-by-element page collapse queue (`stepCollapse`). */
+  collapseMs: number;
+  /** Fire spread, fuel consumption, and page erosion (`fire.step`). */
+  flamesMs: number;
+  /** Crawling bug simulation (`bugs.step`). */
+  bugsMs: number;
+  /** Singularity pull, feeding, and lensing bookkeeping (`stepSingularity`). */
+  singularityMs: number;
+  /** Transient particle simulation (`particles.step`). */
+  particlesMs: number;
+  /** Rigid-body debris solver (`stepPhysics`). */
+  physicsMs: number;
+}
+
+/**
+ * What the effects layer actually drew, averaged per frame over the sample
+ * window. The four particle buckets mirror `FxPainter.classify`'s passes.
+ */
+export interface PerformanceRenderCounts {
+  /** Surface-bound water particles (wet/splash/water/rivulet/stream pass). */
+  wet: number;
+  /** Smoke, steam, and dust particles (normal-blend puff pass). */
+  puffs: number;
+  /** Debris, casings, sawdust, paint, and page shards (solid pass). */
+  solids: number;
+  /** Additive particles: embers, sparks, flashes, rings, jets, streaks. */
+  hot: number;
+  /** Flames drawn after view culling. */
+  flames: number;
+  /** Rigid physics bodies submitted to the debris draw. */
+  bodies: number;
+}
+
+/** Destructible-surface texture upload activity over the sample window. */
+export interface PerformanceSurfaceStats {
+  /** Incremental `texSubImage2D` dirty-rect uploads this window. */
+  uploads: number;
+  /** Total device pixels uploaded incrementally (sum of dirty-rect w×h). */
+  uploadPixels: number;
+  /** Whole-surface `texImage2D` safety-net reconciles this window. */
+  reconciles: number;
+  /** Average fraction of the page each upload covered (a reconcile counts as 1). */
+  coverage: number;
+}
+
+/** CPU-side page-coverage query activity over the sample window. */
+export interface PerformanceOpacityStats {
+  /** `OpacityMap.sample()` calls this window. */
+  samples: number;
+  /** `isPointInPath`/`isPointInStroke` tests performed inside those walks. */
+  pathTests: number;
+  /** Cell flattens (retained wound geometry resolved into the raster plane). */
+  flattens: number;
+}
+
+/**
+ * GPU frame timing from the disjoint timer-query extensions, read
+ * asynchronously so it never stalls the pipeline. All zeros with
+ * `available: false` when no context exposes a timer extension.
+ */
+export interface PerformanceGpuStats {
+  /** Average GPU time per surface-shader pass this window. */
+  surfaceMs: number;
+  /** Average GPU time per post-FX chain run this window. */
+  postFXMs: number;
+  /** At least one context reported a working timer-query extension. */
+  available: boolean;
+}
+
+/** Live-mode base refresh (recompose) activity over the sample window. */
+export interface PerformanceCaptureStats {
+  /** Capture-band refreshes recomposed into the visible surface this window. */
+  recomposes: number;
+  /** Average main-thread cost of one of those refreshes. */
+  recomposeMs: number;
 }
 
 export interface PerformanceSnapshot {
@@ -294,6 +371,16 @@ export interface PerformanceSnapshot {
   /** Backing ratio used by transient effects and pointer tool art. */
   effectsPixelRatio: number;
   entities: PerformanceEntities;
+  /** Average per-frame draw composition for the effects layer. */
+  render: PerformanceRenderCounts;
+  /** Destructible-surface texture upload counters for this window. */
+  surface: PerformanceSurfaceStats;
+  /** Opacity-map query counters for this window. */
+  opacity: PerformanceOpacityStats;
+  /** Asynchronous GPU pass timing, when the driver exposes timer queries. */
+  gpu: PerformanceGpuStats;
+  /** Live-mode recompose counters for this window. */
+  capture: PerformanceCaptureStats;
   /** Most recent page-capture duration, or null before capture. */
   captureMs: number | null;
   /** Chrome exposes this; other browsers report null. */

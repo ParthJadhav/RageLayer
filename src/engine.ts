@@ -28,7 +28,7 @@ import {
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
 import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
 import { Overlay } from "./overlay";
-import { ParticleSystem, type ParticleWorld } from "./particles";
+import { ParticleSystem, type ParticleWorld, scratchParticle } from "./particles";
 import {
   detectInitialQuality,
   PerformanceMonitor,
@@ -78,6 +78,13 @@ const HEAT_SCALE = 8;
  * land further out (paint splashes, lightning channels) call `markSurface`.
  */
 const TOOL_DECAL_REACH = 96;
+/**
+ * Pointermove positions remembered between frames. Real pointers deliver a
+ * handful of moves per frame at most; past this many the oldest geometry is
+ * already sub-pixel noise and the newest slot is overwritten instead, keeping
+ * the total displacement (and so every `dx`/`dy` sum) exact.
+ */
+const POINTER_RING_CAP = 32;
 
 interface EngineHistoryEntry extends DestructionHistoryEntry {
   content: ContentCheckpoint | null;
@@ -170,6 +177,15 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private pointer: Vec2 = { x: -1000, y: -1000 };
   private lastPointer: Vec2 = { x: -1000, y: -1000 };
   private pointerDown = false;
+  /**
+   * Pointermove ring, filled cheaply by `onPointerMove` and replayed through
+   * the active tool once per frame by `flushPointerMoves`. Slots are reused
+   * frame to frame, so a coalesced-event storm allocates nothing.
+   */
+  private readonly pendingMoves: { x: number; y: number; buttons: number }[] = [];
+  private pendingMoveCount = 0;
+  /** Reused `onMove` event object; tools read it synchronously during a flush. */
+  private readonly moveScratch = { x: 0, y: 0, dx: 0, dy: 0, buttons: 0 };
   // ── Tool-art pose state ────────────────────────────────────────────────────
   // Everything the drawn-tool renderings derive their animation from: press/
   // release timestamps (seconds, on the rAF clock) and a smoothed read of
@@ -236,11 +252,23 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private postfxTried = false;
   /** Post-FX slice of the most recent render, for the performance breakdown. */
   private postFXFrameMs = 0;
+  /**
+   * What the most recent render pass drew, for telemetry. One reused object:
+   * the monitor copies the values into its ring buffers synchronously, so the
+   * frame loop never allocates for it.
+   */
+  private readonly frameRender = { wet: 0, puffs: 0, solids: 0, hot: 0, flames: 0, bodies: 0 };
   /** Low-res heat field sampled by the shimmer shader. */
   private heatCanvas: HTMLCanvasElement | null = null;
   private heatCtx: CanvasRenderingContext2D | null = null;
   /** Whether the heat field has anything in it (skips an upload when cold). */
   private heatLevel = 0;
+  /**
+   * Whether anything has stamped the heat canvas since it was last cleared.
+   * Starts true so a freshly (re)allocated, transparent canvas gets its first
+   * opaque-black fill; a cold field skips the per-frame `fillRect` entirely.
+   */
+  private heatDirty = true;
   private _singularity: Singularity | null = null;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
@@ -329,6 +357,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       textMask: this.opts.textMask,
       filter: options.captureFilter ?? defaultCaptureFilter,
       surface: options.surface,
+      perfCounters: this.monitor,
     });
     this.resize();
     this.onScroll();
@@ -594,6 +623,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // while the registry points at the new one makes `tool`, `getTools()` and
     // `unregisterTool()` disagree, and a held old tool can keep ticking after
     // its replacement has apparently landed.
+    if (replacingActive) this.flushPointerMoves();
     if (replacingActive && this.pointerDown) this.endPointer();
     if (previous && previous !== tool) previous.reset?.(this);
 
@@ -635,6 +665,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   setTool(id: string | null) {
     const next = id ? (this.tools.get(id) ?? null) : null;
     if (next === this.activeTool) return;
+    // Pending hover moves were aimed at the outgoing tool.
+    this.flushPointerMoves();
     if (this.pointerDown) this.endPointer();
     this.activeTool = next;
     this.syncToolPresentation();
@@ -1133,6 +1165,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const tool = this.activeTool;
     if (!tool || this.paused || this.disposed) return false;
 
+    // Recorded pointer moves precede the synthetic gesture, as they would a real one.
+    this.flushPointerMoves();
     this.checkpoint(tool.id);
     const event = { x, y, dx: 0, dy: 0, buttons: 1 };
     this.pointer.x = x;
@@ -1572,6 +1606,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     ctx.globalCompositeOperation = "lighter";
     blit(ctx, sprites().glow, hx, hy, hr, Math.min(1, amount));
     ctx.globalAlpha = 1;
+    this.heatDirty = true;
     if (amount > this.heatLevel) this.heatLevel = Math.min(1, amount);
   }
 
@@ -1583,19 +1618,19 @@ export class DestroyerEngine implements DestroyerEngineApi {
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * TAU;
         const speed = 60 + Math.random() * 180;
-        this.spawnParticle({
+        const p = scratchParticle(
           kind,
           x,
           y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 60,
-          life: 0,
-          maxLife: 0.45 + Math.random() * 0.65,
-          size: 2 + Math.random() * 5,
-          color,
-          gravity: kind === "steam" ? -35 : 260,
-          phase: Math.random() * TAU,
-        });
+          Math.cos(angle) * speed,
+          Math.sin(angle) * speed - 60,
+          0.45 + Math.random() * 0.65,
+          2 + Math.random() * 5,
+        );
+        p.color = color;
+        p.gravity = kind === "steam" ? -35 : 260;
+        p.phase = Math.random() * TAU;
+        this.spawnParticle(p);
       }
     };
 
@@ -1692,6 +1727,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       return;
     }
     this.postfx = postfx;
+    postfx.counters = this.monitor;
     this.heatCanvas = document.createElement("canvas");
     this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
     postfx.resize(
@@ -1702,6 +1738,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     );
     this.heatCanvas.width = Math.max(1, Math.round(this.overlay.fxWidth / HEAT_SCALE));
     this.heatCanvas.height = Math.max(1, Math.round(this.overlay.fxHeight / HEAT_SCALE));
+    // A resized canvas is transparent again; the next `resetHeat` must fill it.
+    this.heatDirty = true;
   }
 
   private setPostFXEnabled(enabled: boolean) {
@@ -1761,6 +1799,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
     if (this.heatCanvas) {
       this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
       this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
+      // A resized canvas is transparent again; the next `resetHeat` must fill it.
+      this.heatDirty = true;
     }
   }
 
@@ -1807,9 +1847,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   private toolEvent(e: PointerEvent) {
     // Equivalent to `clientX - container.getBoundingClientRect().left`, but
-    // without forcing a layout on every pointermove.
-    const x = e.clientX + window.scrollX - this.overlay.originX;
-    const y = e.clientY + window.scrollY - this.overlay.originY;
+    // without forcing a layout on every pointermove. The scroll offset comes
+    // from the same passive-listener cache the render loop trusts — two fewer
+    // browser-boundary reads per event.
+    const x = e.clientX + this.scrollX - this.overlay.originX;
+    const y = e.clientY + this.scrollY - this.overlay.originY;
     const ev = {
       x,
       y,
@@ -1827,6 +1869,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private onPointerDown = (e: PointerEvent) => {
     if (!this.activeTool || e.button !== 0 || !e.isPrimary || this.paused) return;
     e.preventDefault();
+    // Hover moves recorded before the press belong before it.
+    this.flushPointerMoves();
     this.checkpoint(this.activeTool.id);
     this.pointerDown = true;
     this.activePointerId = e.pointerId;
@@ -1847,10 +1891,55 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private onPointerMove = (e: PointerEvent) => {
     if (!this.activeTool || !e.isPrimary) return;
     if (this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
-    const ev = this.toolEvent(e);
-    this.activeTool.onMove?.(this, ev);
+    // Record-only: pointermove can outrun the frame rate by an order of
+    // magnitude, so the event does the cheap coordinate conversion and defers
+    // the tool's response to `flushPointerMoves`, which replays the whole path
+    // in the frame this wakes — same-frame, so no added input latency.
+    const x = e.clientX + this.scrollX - this.overlay.originX;
+    const y = e.clientY + this.scrollY - this.overlay.originY;
+    this.pointer.x = x;
+    this.pointer.y = y;
+    const at =
+      this.pendingMoveCount < POINTER_RING_CAP ? this.pendingMoveCount++ : POINTER_RING_CAP - 1;
+    let slot = this.pendingMoves[at];
+    if (!slot) {
+      slot = { x: 0, y: 0, buttons: 0 };
+      this.pendingMoves[at] = slot;
+    }
+    slot.x = x;
+    slot.y = y;
+    slot.buttons = e.buttons;
     this.requestFrame();
+    // Paused engines schedule no frame, but tools always saw moves (a broom
+    // can still sweep a paused page). Keep that by flushing in the event.
+    if (this.paused) this.flushPointerMoves();
   };
+
+  /**
+   * Replay every pointer position recorded since the last flush through the
+   * active tool's `onMove`, in order. Path-integrating tools (chainsaw, laser,
+   * broom, demolition) still see every intermediate position; the per-event
+   * cost is just the ring write above.
+   */
+  private flushPointerMoves() {
+    const count = this.pendingMoveCount;
+    if (count === 0) return;
+    this.pendingMoveCount = 0;
+    const tool = this.activeTool;
+    const ev = this.moveScratch;
+    const last = this.lastPointer;
+    for (let i = 0; i < count; i++) {
+      const move = this.pendingMoves[i];
+      ev.x = move.x;
+      ev.y = move.y;
+      ev.dx = last.x < -100 ? 0 : move.x - last.x;
+      ev.dy = last.y < -100 ? 0 : move.y - last.y;
+      ev.buttons = move.buttons;
+      last.x = move.x;
+      last.y = move.y;
+      tool?.onMove?.(this, ev);
+    }
+  }
 
   private onPointerUp = (e: PointerEvent) => {
     this.endPointer(e);
@@ -1863,6 +1952,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private endPointer(e?: PointerEvent) {
     if (!this.pointerDown) return;
     if (e && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
+    // Moves recorded before the release belong before it.
+    this.flushPointerMoves();
     this.pointerDown = false;
     this.artUpAt = this.lastTime / 1000;
     const ev = e ? this.toolEvent(e) : { ...this.pointer, dx: 0, dy: 0, buttons: 0 };
@@ -1894,6 +1985,8 @@ export class DestroyerEngine implements DestroyerEngineApi {
   }
 
   private onPointerLeave = () => {
+    // Deliver anything recorded on the way out before parking the sentinel.
+    this.flushPointerMoves();
     if (this.pointerDown) return;
     this.pointer.x = this.pointer.y = -1000;
     this.lastPointer.x = this.lastPointer.y = -1000;
@@ -1909,7 +2002,12 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.raf = 0;
     this.frameClockSleeping = false;
     this.monitor.observeRaf(now);
-    const minFrameInterval = this.qualityProfile.minFrameIntervalMs;
+    // The 60 fps rate cap borrows the balanced tier's frame-skip interval:
+    // full visual quality, half the cadence on >90 Hz displays.
+    const minFrameInterval =
+      this.qualityTier === "high" && this.monitor.rateCap60
+        ? QUALITY_PROFILES.balanced.minFrameIntervalMs
+        : this.qualityProfile.minFrameIntervalMs;
     if (minFrameInterval > 0 && now - this.lastRenderedAt < minFrameInterval) {
       this.requestFrame();
       return;
@@ -1921,6 +2019,11 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // reverse.
     const dt = Math.min(0.05, Math.max(0, (now - this.lastTime) / 1000));
     this.lastTime = now;
+
+    // Coalesced pointer input lands first — exactly where the events used to
+    // run — so everything below (the post-FX demand check, heat reset, tool
+    // ticks, rendering) sees the same state it did when moves were per-event.
+    this.flushPointerMoves();
 
     // Direct API users can spawn entities without selecting a tool. Lazily
     // bring up post-FX on the first frame that can actually use it as well.
@@ -1940,16 +2043,26 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // The heat field is rebuilt from scratch every frame: it describes where
     // the air is hot *now*, and anything that accumulated would smear.
     this.resetHeat();
+    // One timestamp between consecutive steps: each subsystem's slice is the
+    // difference of adjacent stamps, so the whole breakdown costs eight
+    // `performance.now()` calls regardless of how much work ran.
     const updateStartedAt = performance.now();
     const toolWorkPending = this.stepTools(dt);
     this.stepToolArt(dt);
+    const toolsDoneAt = performance.now();
     this.stepCollapse(dt);
+    const collapseDoneAt = performance.now();
     this.fire.step(this, dt, this.lastTime);
+    const flamesDoneAt = performance.now();
     this.destruction = Math.min(1, this.destruction + this.bugs.step(this, dt));
+    const bugsDoneAt = performance.now();
     this.stepSingularity(dt);
+    const singularityDoneAt = performance.now();
     this.particles.step(dt, this.lastTime, this.particleWorld);
+    const particlesDoneAt = performance.now();
     this.stepPhysics(dt);
-    const updateMs = performance.now() - updateStartedAt;
+    const updateEndedAt = performance.now();
+    const updateMs = updateEndedAt - updateStartedAt;
     // Safety net for decals painted straight into `surfaceCtx` by a tool, which
     // the content layer cannot observe. Every built-in decal lands within this
     // reach of the cursor; anything further out marks itself via `markSurface`.
@@ -1962,8 +2075,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
     // while a held tool is actively animating; its local dirty region is still
     // uploaded every frame, and the one full sweep runs immediately on release.
     this.contentLayer?.present(!this.pointerDown);
-    const surfaceMs = performance.now() - surfaceStartedAt;
+    // One stamp is both the surface slice's end and the render slice's start.
     const renderStartedAt = performance.now();
+    const surfaceMs = renderStartedAt - surfaceStartedAt;
     this.render();
     const renderTotalMs = performance.now() - renderStartedAt;
     this.overlay.stepShake(dt, this.scrollY);
@@ -1972,7 +2086,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     const frameMs = performance.now() - frameStartedAt;
     const nativeTarget = this.monitor.nativeTargetFps;
-    const targetFps = this.qualityTier === "high" ? nativeTarget : Math.min(60, nativeTarget);
+    const targetFps =
+      this.qualityTier === "high" && !this.monitor.rateCap60
+        ? nativeTarget
+        : Math.min(60, nativeTarget);
     const recommendation = this.monitor.record({
       cadenceMs: dt * 1_000,
       frameMs,
@@ -1980,6 +2097,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
       surfaceMs,
       renderMs: Math.max(0, renderTotalMs - this.postFXFrameMs),
       postFXMs: this.postFXFrameMs,
+      toolsMs: toolsDoneAt - updateStartedAt,
+      collapseMs: collapseDoneAt - toolsDoneAt,
+      flamesMs: flamesDoneAt - collapseDoneAt,
+      bugsMs: bugsDoneAt - flamesDoneAt,
+      singularityMs: singularityDoneAt - bugsDoneAt,
+      particlesMs: particlesDoneAt - singularityDoneAt,
+      physicsMs: updateEndedAt - particlesDoneAt,
+      render: this.frameRender,
       entities: {
         particles: this.particles.count,
         flames: this.fire.count,
@@ -2071,6 +2196,10 @@ export class DestroyerEngine implements DestroyerEngineApi {
     const canvas = this.heatCanvas;
     if (!ctx || !canvas) return;
     this.heatLevel = 0;
+    // A field nothing stamped since the last clear is still opaque black; the
+    // full-canvas fill would repaint what is already there.
+    if (!this.heatDirty) return;
+    this.heatDirty = false;
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
     // Opaque black, so `lighter` stamps accumulate against a known floor and
@@ -2330,7 +2459,9 @@ export class DestroyerEngine implements DestroyerEngineApi {
       !this._singularity &&
       !this.aimCursor &&
       !artVisible;
+    const drew = this.frameRender;
     if (idle) {
+      drew.wet = drew.puffs = drew.solids = drew.hot = drew.flames = drew.bodies = 0;
       // Nothing to draw: clear once after the last active frame, then leave the
       // canvas (and the compositor) completely alone while idle.
       if (this.fxPainted) {
@@ -2348,19 +2479,28 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
     // One classification pass up front; the four passes below draw from it.
     this.fx.classify(this.particles.particles, view);
+    drew.wet = this.fx.wetCount;
+    drew.puffs = this.fx.puffCount;
+    drew.solids = this.fx.solidCount;
+    drew.hot = this.fx.hotCount;
     this.fx.drawWet(ctx);
 
     // Flames render here — with the other *surface-bound* effects, before the
     // mask below — not in the airborne additive pass at the end.
+    let flamesDrawn = 0;
     ctx.globalCompositeOperation = "lighter";
     for (const f of this.fire.list) {
       if (f.y < view.top - 300 || f.y > view.bottom + 300) continue;
       if (f.x < view.left - 300 || f.x > view.right + 300) continue;
+      flamesDrawn++;
       drawFlame(ctx, f, time, this.qualityProfile.flameLayers);
       // Air above a fire is what the shimmer shader distorts.
       this.heat(f.x, f.y - f.radius, f.radius * 3.2, 0.5 * f.intensity);
     }
     ctx.globalCompositeOperation = "source-over";
+    drew.flames = flamesDrawn;
+    // Submitted bodies; the debris renderer culls to the view internally.
+    drew.bodies = this.physics.count;
 
     // ── The void line ──────────────────────────────────────────────────────
     // Everything drawn so far lives ON the page: crawling bugs, water sheeting
@@ -2414,10 +2554,14 @@ export class DestroyerEngine implements DestroyerEngineApi {
 
   /** Clear every backing-store pixel regardless of the document-space transform. */
   private clearFxCanvas(ctx: CanvasRenderingContext2D) {
-    ctx.save();
+    // Re-apply `positionFx`'s document-space transform directly instead of
+    // paying a save/restore state push per frame. Callers only run after
+    // `positionFx`, so the overlay's parked offsets are always current.
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    ctx.restore();
+    const overlay = this.overlay;
+    const dpr = overlay.fxDpr;
+    ctx.setTransform(dpr, 0, 0, dpr, -overlay.fxOffsetX * dpr, -overlay.fxOffsetY * dpr);
   }
 
   /**
@@ -2489,7 +2633,16 @@ export class DestroyerEngine implements DestroyerEngineApi {
     }
 
     this.setPostFXOutput(true);
-    postfx.render(this.overlay.fxCanvas, this.heatCanvas, { bloom, heat, aberration, time });
+    // heatDirty doubles as "the heat canvas has content this frame": resetHeat
+    // clears it at frame start and every heat() stamp re-arms it, so a cold
+    // frame lets post-FX skip the heat texture upload entirely.
+    postfx.render(this.overlay.fxCanvas, this.heatCanvas, {
+      bloom,
+      heat,
+      aberration,
+      time,
+      heatDrawn: this.heatDirty,
+    });
     return performance.now() - startedAt;
   }
 

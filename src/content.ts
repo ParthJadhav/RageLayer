@@ -27,6 +27,7 @@ import { type PageBackdrop, pickPixelRatio, pinFixedDescendants } from "./captur
 import { teeContexts } from "./ctx-proxy";
 import { rand, TAU } from "./math";
 import { type OpacityBounds, OpacityMap } from "./opacity-map";
+import type { PerfCounterSink } from "./performance";
 import { blit, sprites } from "./sprites";
 import { type SurfaceParams, SurfaceRenderer } from "./surface";
 import { findDetachedPolygons, polygonMaterialArea, type TopologyBounds } from "./topology";
@@ -38,8 +39,28 @@ export interface ContentCheckpoint {
   surface: HTMLCanvasElement;
   wounds: HTMLCanvasElement | null;
   decals: HTMLCanvasElement | null;
+  /**
+   * Where the wound/decal clones sit in the document, in device px. The live
+   * buffers cover the damage rect rather than the whole page, so a checkpoint
+   * has to remember its placement — by restore time the buffers may have grown
+   * and moved.
+   */
+  layersOrigin: { x: number; y: number } | null;
   pixelCost: number;
   dispose(): void;
+}
+
+/** Padding (device px) around the damage rect when sizing the live buffers. */
+const LAYER_PAD = 64;
+/** Pending tee ops beyond this force a flush, bounding the log's memory. */
+const DECAL_LOG_CAP = 4096;
+
+/** One recorded call or property write against the tee's decals side. */
+interface DecalOp {
+  set: boolean;
+  prop: string | symbol;
+  args: unknown[];
+  value: unknown;
 }
 
 export interface CaptureOptions {
@@ -68,6 +89,8 @@ export class ContentLayer {
   readonly ctx: CanvasRenderingContext2D;
   private readonly renderer = new SurfaceRenderer();
   private readonly opacity = new OpacityMap();
+  /** Telemetry sink for recompose cost; also fanned out to the sub-parts. */
+  private counters: PerfCounterSink | null = null;
   /**
    * Pristine copy: the repair source, and — in live mode — the thing a refresh
    * swaps out for freshly captured page pixels.
@@ -80,17 +103,47 @@ export class ContentLayer {
    * marks. `recompose` rebuilds the visible canvas from base + these two.
    *
    * Both stay null in snapshot mode — there is nothing to refresh, so the
-   * visible canvas *is* the state and the extra document-sized buffers would
-   * be pure cost.
+   * visible canvas *is* the state and the extra buffers would be pure cost.
+   *
+   * Sized to the damage rect (padded), not the document: `recompose` only ever
+   * reads them through `damage`, so on a tall page two document-sized layers
+   * were ~160 MB of mostly untouched pixels for a screenful of destruction.
+   * `layersRect` is their placement, baked into both contexts' transforms so
+   * every CSS-px draw site stays untouched; see `ensureLayers`.
    */
   private wounds: HTMLCanvasElement | null = null;
   private woundsCtx: CanvasRenderingContext2D | null = null;
   private decals: HTMLCanvasElement | null = null;
   private decalsCtx: CanvasRenderingContext2D | null = null;
-  /** Tee of visible + decals contexts, built alongside the buffers. */
+  /** Placement (device px) of the wound/decal buffers inside the document. */
+  private readonly layersRect = { x: 0, y: 0, w: 0, h: 0 };
+  /** Tee of visible + decals contexts; the decals side records (see below). */
   private teeCtx: CanvasRenderingContext2D | null = null;
-  /** Reused scratch for `restore` stamps (device px, grows to the largest brush). */
+  /**
+   * Tee decal ops recorded but not yet landed in the decals buffer, with the
+   * recording context that captures them. Tools draw first and report bounds
+   * after (`drawSplat(engine.surfaceCtx, …)` then `markSurface(…)`), so at
+   * draw time the buffer may not cover the mark yet; applying immediately
+   * would clip those pixels forever. The ops replay — in order, so state
+   * writes interleave exactly as they would have live — once the mark lands
+   * and grows the buffer, which happens in the same task (see `noteDamage`).
+   * Entries are pooled; the hot path allocates nothing beyond what the tee
+   * itself already does.
+   */
+  private readonly decalLog: DecalOp[] = [];
+  private decalLogLength = 0;
+  private decalRecorder: CanvasRenderingContext2D | null = null;
+  /** Reused scratch for `restore`/`wash` stamps (device px, grows to the largest brush). */
   private stampCtx: CanvasRenderingContext2D | null = null;
+  /**
+   * Union of every region damage has ever touched, in device px. The wound and
+   * decal buffers can only hold pixels inside it — every mutation reports its
+   * bounds through `touch` (the same contract the dirty-rect uploads rely on)
+   * — so `recompose` bounds its two damage passes to this rect instead of
+   * compositing two document-wide, mostly transparent draws per refresh.
+   */
+  private readonly damage = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  private hasDamage = false;
   /** Whether this layer keeps a refreshable base (see `wounds`). */
   live = false;
   dpr = 1;
@@ -125,8 +178,13 @@ export class ContentLayer {
    */
   get toolCtx(): CanvasRenderingContext2D {
     if (!this.live) return this.ctx;
-    this.ensureLayers();
-    return (this.teeCtx ??= teeContexts(this.ctx, this.decalsCtx!));
+    // The decals side is a recorder rather than the buffer context itself, so
+    // the buffers can stay unallocated (and damage-rect sized) until a mark
+    // reports where the pixels actually landed.
+    return (this.teeCtx ??= teeContexts(
+      this.ctx,
+      (this.decalRecorder ??= this.makeDecalRecorder()),
+    ));
   }
 
   /** True when the page is being presented through the shader. */
@@ -159,6 +217,17 @@ export class ContentLayer {
    */
   setTextMask(mask: HTMLCanvasElement | null) {
     this.renderer.setTextMask(mask);
+  }
+
+  /**
+   * Attach the engine's performance counters, fanning the sink out to the
+   * surface renderer (uploads, GPU timing) and the opacity map (query counts).
+   * Null detaches; instrumentation is a no-op without a sink.
+   */
+  setPerfCounters(sink: PerfCounterSink | null) {
+    this.counters = sink;
+    this.renderer.counters = sink;
+    this.opacity.counters = sink;
   }
 
   /**
@@ -206,9 +275,40 @@ export class ContentLayer {
 
   /** Flag a damaged region, in CSS px, for re-upload and re-shading. */
   private touch(x0: number, y0: number, x1: number, y1: number, reconcile = false) {
-    if (!this.renderer.available) return;
     const d = this.dpr;
+    this.noteDamage(x0 * d, y0 * d, x1 * d, y1 * d);
+    if (!this.renderer.available) return;
     this.renderer.markDirty(x0 * d, y0 * d, x1 * d, y1 * d, reconcile);
+  }
+
+  /** Grow the accumulated damage bounds (device px) — see `damage`. */
+  private noteDamage(x0: number, y0: number, x1: number, y1: number) {
+    const nx0 = Math.max(0, Math.floor(x0));
+    const ny0 = Math.max(0, Math.floor(y0));
+    const nx1 = Math.min(this.surface.width, Math.ceil(x1));
+    const ny1 = Math.min(this.surface.height, Math.ceil(y1));
+    if (nx1 <= nx0 || ny1 <= ny0) return;
+    const dmg = this.damage;
+    if (!this.hasDamage) {
+      this.hasDamage = true;
+      dmg.x0 = nx0;
+      dmg.y0 = ny0;
+      dmg.x1 = nx1;
+      dmg.y1 = ny1;
+    } else {
+      dmg.x0 = Math.min(dmg.x0, nx0);
+      dmg.y0 = Math.min(dmg.y0, ny0);
+      dmg.x1 = Math.max(dmg.x1, nx1);
+      dmg.y1 = Math.max(dmg.y1, ny1);
+    }
+    // The live buffers must always cover the damage rect — `recompose` reads
+    // them through it — and a mark arrives in the same task as the draws it
+    // reports: grow first, then land any recorded tee decals inside the new
+    // extent. Both are cheap no-ops on the per-frame path.
+    if (this.live && (this.wounds || this.decalLogLength > 0)) {
+      this.ensureLayers();
+      this.flushDecalLog();
+    }
   }
 
   /** Flag a circular region, in CSS px. */
@@ -322,9 +422,9 @@ export class ContentLayer {
     if (this.disposed) return;
     // A full re-capture (first run, or a reflow) starts from an intact page, so
     // any accumulated wounds are stale — and possibly the wrong size.
-    this.wounds = this.decals = null;
-    this.woundsCtx = this.decalsCtx = null;
+    this.releaseLayers();
     this.teeCtx = null;
+    this.hasDamage = false;
     this.base = raster;
     this.width = width;
     this.height = height;
@@ -368,6 +468,9 @@ export class ContentLayer {
     const y0 = Math.max(0, Math.floor((band?.y0 ?? 0) * d));
     const y1 = Math.min(this.surface.height, Math.ceil((band?.y1 ?? this.height) * d));
     if (y1 <= y0) return;
+    // Timed as one unit (base copy + recompose): the whole band refresh is what
+    // a live page pays per refresh tick, and telemetry reports it that way.
+    const startedAt = performance.now();
     // Copied into the layer's own base rather than adopted by reference. The
     // repaint path hands over its *live* host canvas, which it clears and
     // redraws on the next refresh — and `base` outlives any single refresh: it
@@ -380,6 +483,7 @@ export class ContentLayer {
       ctx.drawImage(raster, 0, y0, raster.width, y1 - y0, 0, y0, raster.width, y1 - y0);
     }
     this.recompose(y0, y1);
+    this.counters?.count("recomposeMs", performance.now() - startedAt);
   }
 
   /**
@@ -387,45 +491,239 @@ export class ContentLayer {
    * wounds (live mode only).
    */
   private recompose(y0: number, y1: number) {
+    // Recorded tee decals land first, so the rebuild sees every mark.
+    this.flushDecalLog();
     const ctx = this.ctx;
     const w = this.surface.width;
     const h = y1 - y0;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, y0, w, h);
     ctx.drawImage(this.base!, 0, y0, w, h, 0, y0, w, h);
-    // Char marks first, clipped to surviving pixels; then remove the holes.
-    // The other order would let a hole's rim char paint over the void.
-    if (this.decals) {
-      ctx.globalCompositeOperation = "source-atop";
-      ctx.drawImage(this.decals, 0, y0, w, h, 0, y0, w, h);
+    // The two damage passes are bounded to where damage has ever landed: both
+    // buffers are fully transparent outside `damage`, and `source-atop` /
+    // `destination-out` with a transparent source are no-ops, so skipping the
+    // rest of the band draws the same pixels for a fraction of the blit work.
+    const dmg = this.damage;
+    const dy0 = Math.max(y0, dmg.y0);
+    const dy1 = Math.min(y1, dmg.y1);
+    if (this.hasDamage && dy1 > dy0) {
+      const dx0 = dmg.x0;
+      const dw = dmg.x1 - dmg.x0;
+      const dh = dy1 - dy0;
+      // Char marks first, clipped to surviving pixels; then remove the holes.
+      // The other order would let a hole's rim char paint over the void.
+      // Source coordinates shift by the buffers' placement: they cover the
+      // damage rect, not the document, and damage never escapes them.
+      const rect = this.layersRect;
+      if (this.decals) {
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.drawImage(this.decals, dx0 - rect.x, dy0 - rect.y, dw, dh, dx0, dy0, dw, dh);
+      }
+      if (this.wounds) {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.drawImage(this.wounds, dx0 - rect.x, dy0 - rect.y, dw, dh, dx0, dy0, dw, dh);
+      }
+      ctx.globalCompositeOperation = "source-over";
     }
-    if (this.wounds) {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.drawImage(this.wounds, 0, y0, w, h, 0, y0, w, h);
-    }
-    ctx.globalCompositeOperation = "source-over";
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     // Every pixel in the band was replaced; upload exactly that band.
     this.renderer.markDirty(0, y0, w, y1);
   }
 
   /**
-   * Allocate a wound/decal buffer on first damage. Live mode only, and lazy for
-   * the same reason the engine's damage canvas is: an untouched document-sized
-   * layer still costs a full set of tiles.
+   * Allocate or grow the wound/decal buffers. Live mode only, lazy for the
+   * same reason the engine's damage canvas is, and sized to the damage rect
+   * rather than the document — the only region `recompose` ever reads.
+   *
+   * `bounds` (CSS px) is what a caller is about to draw, so the pixels land
+   * inside the buffer before the damage rect catches up. Growth unions the
+   * requirement with the current placement, pads by 25% of the diagonal
+   * (`LAYER_PAD` minimum) so steady outward damage does not reallocate per
+   * hit, and re-blits the old contents 1:1 at the same dpr — a grow must not
+   * change a single existing pixel. The buffer origin is baked into both
+   * contexts' transforms, which keeps every CSS-px draw site untouched.
    */
-  private ensureLayers() {
-    if (!this.live || this.wounds) return;
-    const make = () => {
+  private ensureLayers(bounds?: OpacityBounds) {
+    if (!this.live) return;
+    const dmg = this.damage;
+    let nx0 = this.hasDamage ? dmg.x0 : Infinity;
+    let ny0 = this.hasDamage ? dmg.y0 : Infinity;
+    let nx1 = this.hasDamage ? dmg.x1 : -Infinity;
+    let ny1 = this.hasDamage ? dmg.y1 : -Infinity;
+    if (bounds) {
+      const d = this.dpr;
+      nx0 = Math.min(nx0, Math.floor(bounds.x0 * d));
+      ny0 = Math.min(ny0, Math.floor(bounds.y0 * d));
+      nx1 = Math.max(nx1, Math.ceil(bounds.x1 * d));
+      ny1 = Math.max(ny1, Math.ceil(bounds.y1 * d));
+    }
+    nx0 = Math.max(0, nx0);
+    ny0 = Math.max(0, ny0);
+    nx1 = Math.min(this.surface.width, nx1);
+    ny1 = Math.min(this.surface.height, ny1);
+    if (nx1 <= nx0 || ny1 <= ny0) return;
+    const rect = this.layersRect;
+    if (
+      this.wounds &&
+      nx0 >= rect.x &&
+      ny0 >= rect.y &&
+      nx1 <= rect.x + rect.w &&
+      ny1 <= rect.y + rect.h
+    ) {
+      return;
+    }
+    if (this.wounds) {
+      nx0 = Math.min(nx0, rect.x);
+      ny0 = Math.min(ny0, rect.y);
+      nx1 = Math.max(nx1, rect.x + rect.w);
+      ny1 = Math.max(ny1, rect.y + rect.h);
+    }
+    const pad = Math.max(LAYER_PAD, Math.ceil(Math.hypot(nx1 - nx0, ny1 - ny0) * 0.25));
+    const x = Math.max(0, nx0 - pad);
+    const y = Math.max(0, ny0 - pad);
+    const w = Math.min(this.surface.width, nx1 + pad) - x;
+    const h = Math.min(this.surface.height, ny1 + pad) - y;
+    const make = (previous: HTMLCanvasElement | null) => {
       const c = document.createElement("canvas");
-      c.width = this.surface.width;
-      c.height = this.surface.height;
+      c.width = w;
+      c.height = h;
       const cx = c.getContext("2d")!;
-      cx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      if (previous) {
+        cx.drawImage(previous, rect.x - x, rect.y - y);
+        // Release the old backing store now, not at the GC's leisure.
+        previous.width = 0;
+        previous.height = 0;
+      }
+      cx.setTransform(this.dpr, 0, 0, this.dpr, -x, -y);
       return [c, cx] as const;
     };
-    [this.wounds, this.woundsCtx] = make();
-    [this.decals, this.decalsCtx] = make();
+    [this.wounds, this.woundsCtx] = make(this.wounds);
+    [this.decals, this.decalsCtx] = make(this.decals);
+    rect.x = x;
+    rect.y = y;
+    rect.w = w;
+    rect.h = h;
+  }
+
+  /** Drop the live buffers, releasing their backing stores immediately. */
+  private releaseLayers() {
+    for (const canvas of [this.wounds, this.decals]) {
+      if (!canvas) continue;
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+    this.wounds = this.decals = null;
+    this.woundsCtx = this.decalsCtx = null;
+    this.layersRect.x = this.layersRect.y = this.layersRect.w = this.layersRect.h = 0;
+    this.discardDecalLog();
+  }
+
+  /**
+   * The decals side handed to the tee: records every mirrored call and
+   * property write instead of applying it — see `decalLog` for why. The proxy
+   * borrows the visible context purely as a shape reference, so it mirrors
+   * whatever the platform's context exposes.
+   */
+  private makeDecalRecorder(): CanvasRenderingContext2D {
+    const methods = new Map<string | symbol, unknown>();
+    return new Proxy(this.ctx, {
+      get: (target, prop) => {
+        let method = methods.get(prop);
+        if (method === undefined) {
+          const value = Reflect.get(target, prop);
+          if (typeof value !== "function") return value;
+          method = (...args: unknown[]) => this.recordDecalOp(false, prop, args, null);
+          methods.set(prop, method);
+        }
+        return method;
+      },
+      set: (_target, prop, value) => {
+        this.recordDecalOp(true, prop, null, value);
+        return true;
+      },
+    });
+  }
+
+  private recordDecalOp(
+    set: boolean,
+    prop: string | symbol,
+    args: unknown[] | null,
+    value: unknown,
+  ) {
+    const log = this.decalLog;
+    let op = log[this.decalLogLength];
+    if (!op) log[this.decalLogLength] = op = { set: false, prop: "", args: [], value: null };
+    this.decalLogLength++;
+    op.set = set;
+    op.prop = prop;
+    op.value = value;
+    op.args.length = 0;
+    if (args) for (const arg of args) op.args.push(arg);
+    // A tool that draws forever without reporting bounds must not grow the
+    // log without limit; landing what fits in the current buffers is exactly
+    // what `recompose` would have kept of it anyway.
+    if (this.decalLogLength >= DECAL_LOG_CAP) {
+      this.ensureLayers();
+      this.flushDecalLog();
+    }
+  }
+
+  /** Replay recorded tee ops into the decals buffer; see `decalLog`. */
+  private flushDecalLog() {
+    const count = this.decalLogLength;
+    if (count === 0) return;
+    this.decalLogLength = 0;
+    if (!this.decalsCtx) this.ensureLayers();
+    const ctx = this.decalsCtx;
+    for (let i = 0; i < count; i++) {
+      const op = this.decalLog[i];
+      if (ctx) {
+        try {
+          if (op.set) {
+            Reflect.set(ctx, op.prop, op.value);
+          } else if (op.prop === "setTransform" || op.prop === "resetTransform") {
+            this.replayDecalTransform(ctx, op.args);
+          } else {
+            const method = (ctx as unknown as Record<string | symbol, unknown>)[op.prop];
+            if (typeof method === "function") method.apply(ctx, op.args);
+          }
+        } catch {
+          // A decals-side failure must never break the visible draw, which
+          // already happened (see ctx-proxy).
+        }
+      }
+      // Drop references (sprite canvases, gradients) as soon as they land.
+      op.args.length = 0;
+      op.value = null;
+    }
+  }
+
+  /** Forget recorded tee ops without applying them (rewinds and teardown). */
+  private discardDecalLog() {
+    const count = this.decalLogLength;
+    this.decalLogLength = 0;
+    for (let i = 0; i < count; i++) {
+      const op = this.decalLog[i];
+      op.args.length = 0;
+      op.value = null;
+    }
+  }
+
+  /**
+   * An absolute transform through the tee would discard the buffer-origin
+   * mapping the decals context bakes into its own; re-express it relative to
+   * the origin so the pixels land where they would on the visible canvas.
+   */
+  private replayDecalTransform(ctx: CanvasRenderingContext2D, args: unknown[]) {
+    const rect = this.layersRect;
+    ctx.setTransform(1, 0, 0, 1, -rect.x, -rect.y);
+    if (args.length >= 6) {
+      const [a, b, c, d, e, f] = args as number[];
+      ctx.transform(a, b, c, d, e, f);
+    } else if (args.length === 1 && args[0]) {
+      const m = args[0] as DOMMatrix2DInit;
+      ctx.transform(m.a ?? 1, m.b ?? 0, m.c ?? 0, m.d ?? 1, m.e ?? 0, m.f ?? 0);
+    }
   }
 
   /** The pristine raster, for tools that want undamaged pixels. */
@@ -444,6 +742,8 @@ export class ContentLayer {
   /** Capture the persistent page state. Transient particles and debris are intentionally excluded. */
   createCheckpoint(): ContentCheckpoint | null {
     if (!this.ready) return null;
+    // Recorded tee decals are part of the state being captured.
+    this.flushDecalLog();
     const clone = (source: HTMLCanvasElement | null) => {
       if (!source) return null;
       const canvas = document.createElement("canvas");
@@ -462,6 +762,7 @@ export class ContentLayer {
       surface,
       wounds,
       decals,
+      layersOrigin: wounds || decals ? { x: this.layersRect.x, y: this.layersRect.y } : null,
       pixelCost: canvases.reduce((total, canvas) => total + canvas.width * canvas.height, 0),
       dispose() {
         for (const canvas of canvases) {
@@ -481,17 +782,31 @@ export class ContentLayer {
     this.ctx.drawImage(checkpoint.surface, 0, 0);
     this.ctx.restore();
     if (this.live) {
-      if (checkpoint.wounds || checkpoint.decals) this.ensureLayers();
+      // Recorded-but-unlanded tee decals belong to the state being rewound.
+      this.discardDecalLog();
       this.clearLayers();
-      for (const [source, target] of [
-        [checkpoint.wounds, this.woundsCtx],
-        [checkpoint.decals, this.decalsCtx],
-      ] as const) {
-        if (!source || !target) continue;
-        target.save();
-        target.setTransform(1, 0, 0, 1, 0, 0);
-        target.drawImage(source, 0, 0);
-        target.restore();
+      const extent = checkpoint.wounds ?? checkpoint.decals;
+      if (extent) {
+        // The checkpoint's buffer rect bounds everything it holds, so it
+        // becomes the damage extent: the buffers grow to cover it and
+        // `recompose` sweeps exactly that far.
+        const origin = checkpoint.layersOrigin ?? { x: 0, y: 0 };
+        this.hasDamage = false;
+        this.noteDamage(origin.x, origin.y, origin.x + extent.width, origin.y + extent.height);
+        this.ensureLayers();
+        const rect = this.layersRect;
+        for (const [source, target] of [
+          [checkpoint.wounds, this.woundsCtx],
+          [checkpoint.decals, this.decalsCtx],
+        ] as const) {
+          if (!source || !target) continue;
+          target.save();
+          target.setTransform(1, 0, 0, 1, 0, 0);
+          target.drawImage(source, origin.x - rect.x, origin.y - rect.y);
+          target.restore();
+        }
+      } else {
+        this.hasDamage = false;
       }
     }
     this.opacity.restoreState(checkpoint.surface);
@@ -519,8 +834,12 @@ export class ContentLayer {
     );
     // `Path2D` exposes no bounds, so the caller supplies them. Without them the
     // whole page has to be re-shaded, which is correct but costs a full upload.
-    if (bounds) this.touch(bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h);
-    else this.renderer.markAllDirty();
+    if (bounds) {
+      this.touch(bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h);
+    } else {
+      this.noteDamage(0, 0, this.surface.width, this.surface.height);
+      this.renderer.markAllDirty();
+    }
   }
 
   /**
@@ -540,8 +859,9 @@ export class ContentLayer {
     ctx.globalCompositeOperation = "source-over";
     this.opacity.remove(path, bounds, topologyPolygons);
     if (!this.live) return;
-    this.ensureLayers();
-    const wctx = this.woundsCtx!;
+    this.ensureLayers(bounds);
+    const wctx = this.woundsCtx;
+    if (!wctx) return;
     wctx.fillStyle = "#000";
     wctx.fill(path);
   }
@@ -566,10 +886,12 @@ export class ContentLayer {
     ctx.globalCompositeOperation = "source-over";
     this.opacity.removeDisc(path, bounds, x, y, r);
     if (this.live) {
-      this.ensureLayers();
-      const wctx = this.woundsCtx!;
-      wctx.fillStyle = "#000";
-      wctx.fill(path);
+      this.ensureLayers(bounds);
+      const wctx = this.woundsCtx;
+      if (wctx) {
+        wctx.fillStyle = "#000";
+        wctx.fill(path);
+      }
     }
     // Rim bites reach ~1.65r; the char below reaches 1.9r and marks its own.
     this.touchDisc(x, y, r * 1.7);
@@ -615,9 +937,13 @@ export class ContentLayer {
     this.touchDisc(x, y, r);
     if (!this.live) return;
     // Accumulated plainly here; `recompose` re-applies the source-atop clip.
+    // `touchDisc` above already grew the buffers over this disc; the call
+    // here only covers the very first damage being a char.
     this.ensureLayers();
-    blit(this.decalsCtx!, sprites().char, x, y, r, alpha);
-    this.decalsCtx!.globalAlpha = 1;
+    const dctx = this.decalsCtx;
+    if (!dctx) return;
+    blit(dctx, sprites().char, x, y, r, alpha);
+    dctx.globalAlpha = 1;
   }
 
   /**
@@ -693,34 +1019,32 @@ export class ContentLayer {
     // Torn cuts include the widest nick plus jitter; a precise kerf needs only
     // enough room for its narrow heat rim.
     const reach = clean ? lineWidth / 2 + 3 : lineWidth / 2 + 7;
-    this.opacity.removeCut(kerf, nicks, lineWidth, {
+    const box = {
       x0: Math.min(x1, x2) - reach,
       y0: Math.min(y1, y2) - reach,
       x1: Math.max(x1, x2) + reach,
       y1: Math.max(y1, y2) + reach,
-    });
+    };
+    this.opacity.removeCut(kerf, nicks, lineWidth, box);
     if (this.live) {
-      this.ensureLayers();
-      const wctx = this.woundsCtx!;
-      wctx.fillStyle = "#000";
-      wctx.strokeStyle = "#000";
-      stroke(wctx);
-      if (!clean) wctx.fill(nicks);
-      if (clean) {
-        const dctx = this.decalsCtx!;
-        dctx.strokeStyle = "rgba(64, 12, 5, 0.72)";
-        stroke(dctx, lineWidth + 5);
-        dctx.strokeStyle = "rgba(232, 70, 20, 0.62)";
-        stroke(dctx, lineWidth + 2);
+      this.ensureLayers(box);
+      const wctx = this.woundsCtx;
+      if (wctx) {
+        wctx.fillStyle = "#000";
+        wctx.strokeStyle = "#000";
+        stroke(wctx);
+        if (!clean) wctx.fill(nicks);
+        if (clean) {
+          const dctx = this.decalsCtx!;
+          dctx.strokeStyle = "rgba(64, 12, 5, 0.72)";
+          stroke(dctx, lineWidth + 5);
+          dctx.strokeStyle = "rgba(232, 70, 20, 0.62)";
+          stroke(dctx, lineWidth + 2);
+        }
       }
     }
 
-    this.touch(
-      Math.min(x1, x2) - reach,
-      Math.min(y1, y2) - reach,
-      Math.max(x1, x2) + reach,
-      Math.max(y1, y2) + reach,
-    );
+    this.touch(box.x0, box.y0, box.x1, box.y1);
 
     if (!clean) {
       const mx = (x1 + x2) / 2;
@@ -764,13 +1088,7 @@ export class ContentLayer {
     // sweep of the broom with a trail of phantom torn edges.
     const sw = Math.ceil(w * d);
     const sh = Math.ceil(h * d);
-    let stamp = this.stampCtx;
-    if (!stamp || stamp.canvas.width < sw || stamp.canvas.height < sh) {
-      const canvas = stamp?.canvas ?? document.createElement("canvas");
-      canvas.width = Math.max(sw, canvas.width);
-      canvas.height = Math.max(sh, canvas.height);
-      stamp = this.stampCtx = canvas.getContext("2d")!;
-    }
+    const stamp = this.stamp(sw, sh);
     stamp.clearRect(0, 0, stamp.canvas.width, stamp.canvas.height);
     stamp.drawImage(this.base, x0 * d, y0 * d, w * d, h * d, 0, 0, sw, sh);
     stamp.globalCompositeOperation = "destination-in";
@@ -783,15 +1101,30 @@ export class ContentLayer {
     this.touch(x0, y0, x1, y1);
 
     // Live mode: forget the wound too, or the next base refresh reopens it.
+    // An opaque `destination-out` disc leaves dest·(1−coverage), exactly what
+    // the old clip + clearRect pair produced — without the clip, and without
+    // the `restore` that dominated broom-drag profiles popping it.
     if (!this.wounds) return;
     for (const cx of [this.woundsCtx!, this.decalsCtx!]) {
-      cx.save();
+      cx.globalCompositeOperation = "destination-out";
+      cx.fillStyle = "#000";
       cx.beginPath();
       cx.arc(x, y, r, 0, TAU);
-      cx.clip();
-      cx.clearRect(x0, y0, w, h);
-      cx.restore();
+      cx.fill();
+      cx.globalCompositeOperation = "source-over";
     }
+  }
+
+  /** Grow-and-reuse scratch context for pristine-base stamps (device px). */
+  private stamp(sw: number, sh: number): CanvasRenderingContext2D {
+    let stamp = this.stampCtx;
+    if (!stamp || stamp.canvas.width < sw || stamp.canvas.height < sh) {
+      const canvas = stamp?.canvas ?? document.createElement("canvas");
+      canvas.width = Math.max(sw, canvas.width);
+      canvas.height = Math.max(sh, canvas.height);
+      stamp = this.stampCtx = canvas.getContext("2d")!;
+    }
+    return stamp;
   }
 
   /**
@@ -814,6 +1147,10 @@ export class ContentLayer {
     const d = this.dpr;
     const alpha = Math.min(1, strength);
 
+    // Clip + one blit of the pristine base. A scratch-canvas mask (compose the
+    // disc off-screen, lay it down with `source-atop`) was tried here and lost:
+    // the extra clearRect + two blits per call cost ~2.5x what the clip pop
+    // does in the flood stress profile.
     const ctx = this.ctx;
     ctx.save();
     ctx.beginPath();
@@ -827,18 +1164,18 @@ export class ContentLayer {
 
     // Live mode: fade the recorded decals too, or the next base refresh
     // re-applies exactly the stains that were just washed off. The wound mask
-    // is left alone — holes are not wash-away damage.
+    // is left alone — holes are not wash-away damage. A `destination-out` disc
+    // is the old clip + fillRect pair without the clip.
     if (!this.decals) return;
     const cx = this.decalsCtx!;
-    cx.save();
-    cx.beginPath();
-    cx.arc(x, y, r, 0, TAU);
-    cx.clip();
     cx.globalAlpha = alpha;
     cx.globalCompositeOperation = "destination-out";
     cx.fillStyle = "#000";
-    cx.fillRect(x0, y0, w, h);
-    cx.restore();
+    cx.beginPath();
+    cx.arc(x, y, r, 0, TAU);
+    cx.fill();
+    cx.globalAlpha = 1;
+    cx.globalCompositeOperation = "source-over";
   }
 
   /** Repair everything. */
@@ -851,7 +1188,10 @@ export class ContentLayer {
     ctx.restore();
     ctx.drawImage(this.base, 0, 0, this.width, this.height);
     this.opacity.restoreAll();
-    this.clearLayers();
+    // A fully repaired page has no damage for the buffers to hold — release
+    // them (and any recorded tee decals) instead of merely wiping them.
+    this.releaseLayers();
+    this.hasDamage = false;
     this.renderer.markAllDirty();
   }
 
@@ -870,16 +1210,15 @@ export class ContentLayer {
     if (this.disposed) return;
     this.disposed = true;
     this.ready = false;
-    for (const canvas of [this.base, this.wounds, this.decals]) {
-      if (!canvas) continue;
-      canvas.width = 0;
-      canvas.height = 0;
-      canvas.remove();
+    this.releaseLayers();
+    if (this.base) {
+      this.base.width = 0;
+      this.base.height = 0;
+      this.base.remove();
+      this.base = null;
     }
-    this.base = null;
-    this.wounds = this.decals = null;
-    this.woundsCtx = this.decalsCtx = null;
     this.teeCtx = null;
+    this.decalRecorder = null;
     if (this.stampCtx) {
       this.stampCtx.canvas.width = 0;
       this.stampCtx.canvas.height = 0;

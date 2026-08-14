@@ -290,9 +290,22 @@ export function voronoiCells(cx: number, cy: number, radius: number, count: numb
       const len = Math.hypot(nx, ny);
       if (len < 1e-6) continue;
       // Perpendicular bisector: keep the side nearer to site i.
-      const mx = (sx + ox) / 2;
-      const my = (sy + oy) / 2;
-      cell = clipHalfPlane(cell, nx / len, ny / len, (nx / len) * mx + (ny / len) * my);
+      const ux = nx / len;
+      const uy = ny / len;
+      const c = ux * ((sx + ox) / 2) + uy * ((sy + oy) / 2);
+      // Most bisectors never reach the current cell. If every vertex is
+      // already on the kept side the clip is the identity, so skip it — these
+      // are the same `d0` dot products `clipHalfPlane` would compute, so the
+      // surviving geometry is bit-identical, just without copying the cell
+      // O(count) times per shard.
+      let cut = false;
+      for (let k = 0; k < cell.length; k += 2) {
+        if (ux * cell[k] + uy * cell[k + 1] - c > 0) {
+          cut = true;
+          break;
+        }
+      }
+      if (cut) cell = clipHalfPlane(cell, ux, uy, c);
     }
     if (cell.length >= 6) cells.push(cell);
   }

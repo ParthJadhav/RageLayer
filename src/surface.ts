@@ -43,7 +43,15 @@
  * before this file existed.
  */
 
-import { createProgram, createQuad, createTexture, type GLProgram, maxTextureSize } from "./gl";
+import {
+  createProgram,
+  createQuad,
+  createTexture,
+  type GLProgram,
+  GpuTimer,
+  maxTextureSize,
+} from "./gl";
+import type { PerfCounterSink } from "./performance";
 
 const FRAG = `#version 300 es
 precision highp float;
@@ -226,8 +234,36 @@ export interface SurfaceParams {
  * indistinguishable from "the tool is broken", so damage also schedules a whole-
  * surface reconcile at this interval: the fast path stays fast, and the worst a
  * mis-reported bound can cost is a few frames of latency instead of the mark.
+ *
+ * The reconcile itself is banded: one document-sized `texImage2D` mid-combat is
+ * a guaranteed hitch, so the sweep uploads `RECONCILE_BAND_PIXELS` at a time,
+ * one band per presented frame, until the whole surface has been covered. Every
+ * texel is still re-uploaded — the safety net loses no correctness, only its
+ * spike — at the cost of the sweep taking a handful of frames to finish.
  */
 const RECONCILE_MS = 900;
+
+/** Target upload size of one reconcile band (device px). ~1M px per frame. */
+const RECONCILE_BAND_PIXELS = 1 << 20;
+
+/** Never sweep in slivers, even on very wide pages. */
+const RECONCILE_MIN_BAND_ROWS = 128;
+
+/**
+ * Most damage rects tracked per frame. Small on purpose: each rect costs one
+ * `texSubImage2D` and one scissored draw, and past a handful the merge policy
+ * below approximates the old single union anyway.
+ */
+const MAX_DIRTY_RECTS = 8;
+
+/**
+ * Merge a new rect into an existing one when the union's wasted area — texels
+ * covered by the union but by neither input — is at most this fraction of the
+ * new rect. Clustered damage (a dragged tool, spreading fire) overlaps its
+ * previous rect and merges for free; two distant wounds stay separate instead
+ * of unioning into a near-page-sized upload.
+ */
+const MERGE_WASTE_RATIO = 0.5;
 
 export const DEFAULT_SURFACE_PARAMS: SurfaceParams = {
   edge: 2.5,
@@ -246,17 +282,6 @@ interface Rect {
   y1: number;
 }
 
-function unionRect(a: Rect | null, b: Rect | null): Rect | null {
-  if (!a) return b;
-  if (!b) return a;
-  return {
-    x0: Math.min(a.x0, b.x0),
-    y0: Math.min(a.y0, b.y0),
-    x1: Math.max(a.x1, b.x1),
-    y1: Math.max(a.y1, b.y1),
-  };
-}
-
 export class SurfaceRenderer {
   readonly canvas: HTMLCanvasElement;
   /** False when WebGL2 is missing, refuses, or the page is too big to texture. */
@@ -264,8 +289,12 @@ export class SurfaceRenderer {
   /** Set false to skip shaded presentation entirely (`surface: false`). */
   enabled = true;
   params: SurfaceParams = { ...DEFAULT_SURFACE_PARAMS };
+  /** Upload/GPU telemetry sink. Null (the default) records nothing. */
+  counters: PerfCounterSink | null = null;
 
   private gl: WebGL2RenderingContext | null = null;
+  /** GPU pass timing; created with the context, no-op without the extension. */
+  private timer: GpuTimer | null = null;
   private program: GLProgram | null = null;
   private quad: WebGLBuffer | null = null;
   private contentTex: WebGLTexture | null = null;
@@ -275,16 +304,35 @@ export class SurfaceRenderer {
   private height = 0;
   /** Device pixels per CSS px in the source canvas, for CSS-px params. */
   pixelScale = 1;
-  /** Pending upload/redraw region in device px, or null when nothing changed. */
-  private dirty: Rect | null = null;
-  /** `performance.now()` of the last whole-surface upload. */
+  /**
+   * Pending upload/redraw regions in device px; the first `dirtyCount` entries
+   * are live. Preallocated — `markDirty` runs many times per frame under fire.
+   */
+  private readonly dirtyRects: Rect[] = Array.from({ length: MAX_DIRTY_RECTS }, () => ({
+    x0: 0,
+    y0: 0,
+    x1: 0,
+    y1: 0,
+  }));
+  private dirtyCount = 0;
+  /** `performance.now()` of the last whole-surface upload or completed sweep. */
   private lastFull = 0;
   /** Damage has been marked since then, so a reconcile is still owed. */
   private owesFull = false;
+  /** A banded reconcile sweep is in flight; `reconcileRow` is its next row. */
+  private reconcileActive = false;
+  private reconcileRow = 0;
+  /** Set by `needsRender` when this frame should upload one reconcile band. */
+  private reconcileStep = false;
+  /** Scratch rect for the reconcile band of the current frame. */
+  private readonly bandRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Active singularity warp, in device px, or null. */
   private warp: { x: number; y: number; r: number; strength: number } | null = null;
+  /** Scratch rect for the region the warp influences this frame. */
+  private readonly warpNowRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Where the warp painted last frame — must be redrawn once after it moves or ends. */
-  private prevWarpRect: Rect | null = null;
+  private readonly prevWarpRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  private hasPrevWarp = false;
   /** `performance.now()` when the current warp activated, for the swirl wind-up. */
   private warpStart = 0;
 
@@ -321,6 +369,7 @@ export class SurfaceRenderer {
       }) as WebGL2RenderingContext | null);
     if (!gl || gl.isContextLost()) return false;
     this.gl = gl;
+    this.timer ??= new GpuTimer(gl);
 
     const limit = maxTextureSize(gl);
     if (width > limit || height > limit || width < 1 || height < 1) return false;
@@ -344,7 +393,9 @@ export class SurfaceRenderer {
 
     this.available = true;
     this.warp = null;
-    this.prevWarpRect = null;
+    this.hasPrevWarp = false;
+    this.reconcileActive = false;
+    this.reconcileStep = false;
     this.markAllDirty();
     return true;
   }
@@ -388,22 +439,82 @@ export class SurfaceRenderer {
     // making every one of those schedule a document-sized upload caused a
     // periodic texImage2D stall even for a tiny paint splat.
     if (reconcile) this.owesFull = true;
-    const d = this.dirty;
-    if (!d) {
-      this.dirty = { x0: nx0, y0: ny0, x1: nx1, y1: ny1 };
+    this.pushDirty(nx0, ny0, nx1, ny1);
+  }
+
+  /**
+   * Track damage as a small list of rects rather than one union. Destruction
+   * clusters around the cursor, but not exclusively — a paint splash landing
+   * across the page, fire eating two corners at once — and a single union of
+   * two distant wounds is a near-page-sized upload for a few percent of real
+   * damage. A new rect merges into whichever existing rect wastes the least
+   * area absorbing it, when that waste is small (or the list is full);
+   * otherwise it starts its own rect and its own scissored re-shade pass.
+   */
+  private pushDirty(x0: number, y0: number, x1: number, y1: number) {
+    const rects = this.dirtyRects;
+    const area = (x1 - x0) * (y1 - y0);
+    let best = -1;
+    let bestWaste = Infinity;
+    for (let i = 0; i < this.dirtyCount; i++) {
+      const r = rects[i];
+      const union =
+        (Math.max(r.x1, x1) - Math.min(r.x0, x0)) * (Math.max(r.y1, y1) - Math.min(r.y0, y0));
+      const waste = union - (r.x1 - r.x0) * (r.y1 - r.y0) - area;
+      if (waste < bestWaste) {
+        bestWaste = waste;
+        best = i;
+      }
+    }
+    if (
+      best >= 0 &&
+      (bestWaste <= MERGE_WASTE_RATIO * area || this.dirtyCount >= MAX_DIRTY_RECTS)
+    ) {
+      const r = rects[best];
+      r.x0 = Math.min(r.x0, x0);
+      r.y0 = Math.min(r.y0, y0);
+      r.x1 = Math.max(r.x1, x1);
+      r.y1 = Math.max(r.y1, y1);
+      this.coalesce(r);
       return;
     }
-    // One union rather than a list: destruction clusters around the cursor, so
-    // the union stays tight, and a single scissored pass beats N state changes.
-    d.x0 = Math.min(d.x0, nx0);
-    d.y0 = Math.min(d.y0, ny0);
-    d.x1 = Math.max(d.x1, nx1);
-    d.y1 = Math.max(d.y1, ny1);
+    const r = rects[this.dirtyCount++];
+    r.x0 = x0;
+    r.y0 = y0;
+    r.x1 = x1;
+    r.y1 = y1;
+  }
+
+  /**
+   * Fold any rect overlapping the freshly grown `grown` into it. Overlap would
+   * only upload and re-shade the same texels twice; growing can bridge rects,
+   * so the scan restarts after each merge.
+   */
+  private coalesce(grown: Rect) {
+    const rects = this.dirtyRects;
+    for (let j = this.dirtyCount - 1; j >= 0; j--) {
+      const b = rects[j];
+      if (b === grown) continue;
+      if (b.x0 >= grown.x1 || b.x1 <= grown.x0 || b.y0 >= grown.y1 || b.y1 <= grown.y0) continue;
+      grown.x0 = Math.min(grown.x0, b.x0);
+      grown.y0 = Math.min(grown.y0, b.y0);
+      grown.x1 = Math.max(grown.x1, b.x1);
+      grown.y1 = Math.max(grown.y1, b.y1);
+      const last = --this.dirtyCount;
+      rects[j] = rects[last];
+      rects[last] = b;
+      j = this.dirtyCount;
+    }
   }
 
   markAllDirty() {
     if (!this.available) return;
-    this.dirty = { x0: 0, y0: 0, x1: this.width, y1: this.height };
+    this.dirtyCount = 1;
+    const r = this.dirtyRects[0];
+    r.x0 = 0;
+    r.y0 = 0;
+    r.x1 = this.width;
+    r.y1 = this.height;
   }
 
   /**
@@ -425,29 +536,39 @@ export class SurfaceRenderer {
     this.warp = { x, y, r, strength };
   }
 
-  /** The rectangle the current warp visually influences, in device px. */
-  private warpRect(): Rect | null {
+  /** Fill `warpNowRect` with the region the current warp influences, in device px. */
+  private computeWarpRect(): boolean {
     const w = this.warp;
-    if (!w) return null;
+    if (!w) return false;
     // Deflection is ~1/r; by 10 horizon radii the shift is sub-pixel.
     const reach = Math.min(Math.max(w.r * 10, 160), 2400);
-    return {
-      x0: Math.max(0, Math.floor(w.x - reach)),
-      y0: Math.max(0, Math.floor(w.y - reach)),
-      x1: Math.min(this.width, Math.ceil(w.x + reach)),
-      y1: Math.min(this.height, Math.ceil(w.y + reach)),
-    };
+    const r = this.warpNowRect;
+    r.x0 = Math.max(0, Math.floor(w.x - reach));
+    r.y0 = Math.max(0, Math.floor(w.y - reach));
+    r.x1 = Math.min(this.width, Math.ceil(w.x + reach));
+    r.y1 = Math.min(this.height, Math.ceil(w.y + reach));
+    return r.x1 > r.x0 && r.y1 > r.y0;
   }
 
   needsRender(allowReconcile = true): boolean {
     if (!this.available) return false;
-    // A reconcile is owed and due: widen to the whole surface so anything a
-    // caller under-reported gets picked up. Cheap in practice — it only fires
-    // while damage is actually happening, and at most every RECONCILE_MS.
-    if (allowReconcile && this.owesFull && performance.now() - this.lastFull >= RECONCILE_MS) {
-      this.markAllDirty();
+    // A reconcile is owed and due: start a banded sweep so anything a caller
+    // under-reported gets picked up. It only fires while damage is actually
+    // happening, at most every RECONCILE_MS, and never as one full-page upload.
+    if (
+      allowReconcile &&
+      this.owesFull &&
+      !this.reconcileActive &&
+      performance.now() - this.lastFull >= RECONCILE_MS
+    ) {
+      this.owesFull = false;
+      this.reconcileActive = true;
+      this.reconcileRow = 0;
     }
-    return this.dirty !== null || this.warp !== null || this.prevWarpRect !== null;
+    // While reconciles are deferred (a held tool is animating), an in-flight
+    // sweep pauses rather than cancels; it resumes on the next allowed frame.
+    this.reconcileStep = this.reconcileActive && allowReconcile;
+    return this.dirtyCount > 0 || this.reconcileStep || this.warp !== null || this.hasPrevWarp;
   }
 
   /**
@@ -462,48 +583,52 @@ export class SurfaceRenderer {
       this.available = false;
       return;
     }
+    // Resolve GPU timings from earlier frames before starting this one; the
+    // results are read asynchronously so the pipeline is never stalled.
+    this.timer?.poll(this.counters, "gpuSurfaceMs");
 
     // Upload and re-render are separate concerns: damage needs both, the warp
-    // needs only a re-render (the texture under it is unchanged). The drawn
-    // region is the union of everything that changed on screen — including
-    // wherever the warp painted last frame, which must be drawn once more
-    // after it moves or ends so the page straightens back out.
-    const upload = this.dirty;
-    this.dirty = null;
-    const warpNow = this.warpRect();
-    const region = unionRect(unionRect(upload, warpNow), this.prevWarpRect);
-    this.prevWarpRect = warpNow;
-    if (!region) return;
-
-    if (upload) {
-      const w = upload.x1 - upload.x0;
-      const h = upload.y1 - upload.y0;
-      gl.bindTexture(gl.TEXTURE_2D, this.contentTex);
-      if (w === this.width && h === this.height) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    // needs only a re-render (the texture under it is unchanged). Each dirty
+    // rect is uploaded and re-shaded on its own — the shader is deterministic
+    // and unblended, so overlapping passes cannot change a pixel — plus one
+    // reconcile band if a sweep is in flight, plus wherever the warp painted
+    // last frame, which must be drawn once more after it moves or ends so the
+    // page straightens back out.
+    const rects = this.dirtyRects;
+    const uploadCount = this.dirtyCount;
+    this.dirtyCount = 0;
+    const hasWarp = this.computeWarpRect();
+    let hasBand = false;
+    if (this.reconcileStep) {
+      this.reconcileStep = false;
+      const rows = Math.max(RECONCILE_MIN_BAND_ROWS, Math.ceil(RECONCILE_BAND_PIXELS / this.width));
+      const band = this.bandRect;
+      band.x0 = 0;
+      band.x1 = this.width;
+      band.y0 = this.reconcileRow;
+      band.y1 = Math.min(this.height, band.y0 + rows);
+      this.reconcileRow = band.y1;
+      hasBand = band.y1 > band.y0;
+      if (band.y1 >= this.height) {
+        this.reconcileActive = false;
         this.lastFull = performance.now();
-        this.owesFull = false;
-      } else {
-        // WebGL2 sub-rect addressing of a canvas source: without these the
-        // whole page-sized canvas would be re-read for a hammer-sized wound.
-        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, source.width);
-        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, upload.x0);
-        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, upload.y0);
-        gl.texSubImage2D(
-          gl.TEXTURE_2D,
-          0,
-          upload.x0,
-          upload.y0,
-          w,
-          h,
-          gl.RGBA,
-          gl.UNSIGNED_BYTE,
-          source,
-        );
-        gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
-        gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
-        gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+        this.counters?.count("surfaceReconciles");
       }
+    }
+    if (uploadCount === 0 && !hasBand && !hasWarp && !this.hasPrevWarp) return;
+    this.timer?.begin();
+
+    if (uploadCount > 0 || hasBand) {
+      gl.bindTexture(gl.TEXTURE_2D, this.contentTex);
+      // WebGL2 sub-rect addressing of a canvas source: without ROW_LENGTH and
+      // the per-rect SKIP offsets the whole page-sized canvas would be re-read
+      // for a hammer-sized wound.
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, source.width);
+      for (let i = 0; i < uploadCount; i++) this.upload(gl, source, rects[i]);
+      if (hasBand) this.upload(gl, source, this.bandRect);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     }
 
     gl.useProgram(program.program);
@@ -538,21 +663,84 @@ export class SurfaceRenderer {
     }
 
     gl.viewport(0, 0, this.width, this.height);
-    // GL's y axis runs up from the bottom of the drawing buffer; the region
-    // was measured against a top-left origin.
     gl.enable(gl.SCISSOR_TEST);
-    gl.scissor(region.x0, this.height - region.y1, region.x1 - region.x0, region.y1 - region.y0);
     gl.disable(gl.BLEND);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    for (let i = 0; i < uploadCount; i++) this.scissorDraw(gl, rects[i]);
+    if (hasBand) this.scissorDraw(gl, this.bandRect);
+    if (hasWarp) this.scissorDraw(gl, this.warpNowRect);
+    // A steady warp paints the same rect it painted last frame — already drawn.
+    const now = this.warpNowRect;
+    const prev = this.prevWarpRect;
+    if (
+      this.hasPrevWarp &&
+      !(
+        hasWarp &&
+        prev.x0 === now.x0 &&
+        prev.y0 === now.y0 &&
+        prev.x1 === now.x1 &&
+        prev.y1 === now.y1
+      )
+    ) {
+      this.scissorDraw(gl, prev);
+    }
     gl.disable(gl.SCISSOR_TEST);
+    if (hasWarp) {
+      prev.x0 = now.x0;
+      prev.y0 = now.y0;
+      prev.x1 = now.x1;
+      prev.y1 = now.y1;
+    }
+    this.hasPrevWarp = hasWarp;
+    this.timer?.end();
+  }
+
+  /** Push one dirty rect from `source` into the content texture. */
+  private upload(gl: WebGL2RenderingContext, source: HTMLCanvasElement, rect: Rect) {
+    const w = rect.x1 - rect.x0;
+    const h = rect.y1 - rect.y0;
+    if (w <= 0 || h <= 0) return;
+    if (w === this.width && h === this.height) {
+      // Whole surface (a capture, a repair-all, a merge that spilled to full):
+      // this is also a reconcile — every texel is now fresh, so any owed or
+      // in-flight sweep is satisfied.
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+      this.lastFull = performance.now();
+      this.owesFull = false;
+      this.reconcileActive = false;
+      this.counters?.count("surfaceReconciles");
+      this.counters?.count("surfaceCoverage", 1);
+      return;
+    }
+    gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, rect.x0);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, rect.y0);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, rect.x0, rect.y0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    const sink = this.counters;
+    if (sink) {
+      sink.count("surfaceUploads");
+      sink.count("surfaceUploadPixels", w * h);
+      sink.count("surfaceCoverage", (w * h) / (this.width * this.height));
+    }
+  }
+
+  /** Re-shade one region. GL's y axis runs up; the rect's origin is top-left. */
+  private scissorDraw(gl: WebGL2RenderingContext, rect: Rect) {
+    gl.scissor(rect.x0, this.height - rect.y1, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
   dispose() {
     const gl = this.gl;
     this.available = false;
-    this.dirty = null;
+    this.timer?.dispose();
+    this.timer = null;
+    this.dirtyCount = 0;
+    this.reconcileActive = false;
+    this.reconcileStep = false;
+    this.owesFull = false;
     this.warp = null;
-    this.prevWarpRect = null;
+    this.hasPrevWarp = false;
     if (gl) {
       if (this.program) gl.deleteProgram(this.program.program);
       if (this.quad) gl.deleteBuffer(this.quad);

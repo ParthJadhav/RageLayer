@@ -19,6 +19,10 @@ import type { ComboEvent, InteractionKind } from "./combos";
 import { drawScorch } from "./decals";
 import { type FieldSnapshot, ScalarField } from "./fields";
 import { TAU } from "./math";
+// Fire is the highest-rate particle spawner in the engine, so every spawn
+// site here fills the shared scratch (which `ParticleSystem.spawn` copies out
+// of, synchronously) instead of allocating a literal per ember and puff.
+import { scratchParticle } from "./particles";
 import type { ContentApi, Flame, Particle, SoundApi } from "./types";
 import { WOOD } from "./wood.js";
 
@@ -59,6 +63,13 @@ export class FlameField {
   /** Rate gates so repeated hits don't stack into a buzz. */
   private nextHiss = 0;
   private nextPop = 0;
+  /**
+   * Cache for `totalIntensity`. The engine asks at least twice per frame
+   * (bloom, fire-loop volume); every site that changes an intensity marks
+   * this dirty, so the sum is walked at most once per frame and stays exact.
+   */
+  private cachedIntensity = 0;
+  private intensityDirty = true;
 
   get count(): number {
     return this.list.length;
@@ -66,19 +77,27 @@ export class FlameField {
 
   /** Combined intensity — what the looping fire sound is scaled by. */
   get totalIntensity(): number {
-    let total = 0;
-    for (const f of this.list) total += f.intensity;
-    return total;
+    if (this.intensityDirty) {
+      let total = 0;
+      for (const f of this.list) total += f.intensity;
+      this.cachedIntensity = total;
+      this.intensityDirty = false;
+    }
+    return this.cachedIntensity;
   }
 
   setLimit(limit: number) {
     this.limit = Math.max(MIN_LIMIT, Math.round(limit));
-    if (this.list.length > this.limit) this.list.length = this.limit;
+    if (this.list.length > this.limit) {
+      this.list.length = this.limit;
+      this.intensityDirty = true;
+    }
   }
 
   /** Put every fire out. The fuel grid is untouched — burnt wood stays burnt. */
   clear() {
     this.list.length = 0;
+    this.intensityDirty = true;
   }
 
   /** Repaired page, fresh wood: the fuel comes back with the pixels. */
@@ -89,6 +108,7 @@ export class FlameField {
   /** Drop everything, including the fuel grid. */
   dispose() {
     this.list.length = 0;
+    this.intensityDirty = true;
     this.fuel.release();
   }
 
@@ -131,15 +151,23 @@ export class FlameField {
     // ground barely holds a flame's footprint, and the render mask would clip
     // most of it away anyway.
     if (host.content?.ready && host.pageOpacityAt(x, y) < 0.35) return false;
-    // Merge into a nearby flame instead of stacking duplicates.
+    // Merge into a nearby flame instead of stacking duplicates. Same shape as
+    // the dowse scan: axis reject, then squared distance — no square root.
     for (const f of this.list) {
-      if (Math.hypot(f.x - x, f.y - y) < f.radius * 0.6) {
+      const reach = f.radius * 0.6;
+      const dx = f.x - x;
+      if (dx > reach || dx < -reach) continue;
+      const dy = f.y - y;
+      if (dy > reach || dy < -reach) continue;
+      if (dx * dx + dy * dy < reach * reach) {
         f.intensity = Math.min(1, f.intensity + intensity * 0.5);
+        this.intensityDirty = true;
         host.signalInteraction("fire", x, y);
         return false;
       }
     }
     if (this.list.length >= this.limit) return false;
+    this.intensityDirty = true;
     this.list.push({
       x,
       y,
@@ -175,21 +203,22 @@ export class FlameField {
       if (dy > reach || dy < -reach) continue;
       if (dx * dx + dy * dy < reach * reach) {
         f.intensity -= amount;
+        this.intensityDirty = true;
         hits++;
         if (Math.random() < 0.4) {
           // Quenching steam boils *upward and outward* off the flame, so it gets
           // real lateral spread rather than the near-vertical wisp it had.
-          host.spawnParticle({
-            kind: "steam",
-            x: f.x + (Math.random() - 0.5) * f.radius * 1.4,
-            y: f.y - Math.random() * 10,
-            vx: (Math.random() - 0.5) * 90,
-            vy: -70 - Math.random() * 90,
-            life: 0,
-            maxLife: 1 + Math.random() * 1.1,
-            size: 10 + Math.random() * 18,
-            drag: 1.4,
-          });
+          const p = scratchParticle(
+            "steam",
+            f.x + (Math.random() - 0.5) * f.radius * 1.4,
+            f.y - Math.random() * 10,
+            (Math.random() - 0.5) * 90,
+            -70 - Math.random() * 90,
+            1 + Math.random() * 1.1,
+            10 + Math.random() * 18,
+          );
+          p.drag = 1.4;
+          host.spawnParticle(p);
         }
       }
     }
@@ -203,6 +232,8 @@ export class FlameField {
   }
 
   step(host: FlameHost, dt: number, now: number) {
+    // Every live flame's intensity relaxes below, so one mark covers the step.
+    if (this.list.length > 0) this.intensityDirty = true;
     for (let i = this.list.length - 1; i >= 0; i--) {
       const f = this.list[i];
       f.age += dt;
@@ -236,31 +267,31 @@ export class FlameField {
             layer.punch(f.x, f.y, f.radius * 0.55);
             for (let s = 0; s < 6; s++) {
               const a = Math.random() * TAU;
-              host.spawnParticle({
-                kind: "ember",
-                x: f.x + Math.cos(a) * f.radius * 0.5,
-                y: f.y + Math.sin(a) * f.radius * 0.4,
-                vx: Math.cos(a) * (30 + Math.random() * 60),
-                vy: -40 - Math.random() * 80,
-                life: 0,
-                maxLife: 0.8 + Math.random() * 1,
-                size: 1.5 + Math.random() * 2,
-                gravity: 40,
-                drag: 1.2,
-              });
+              const p = scratchParticle(
+                "ember",
+                f.x + Math.cos(a) * f.radius * 0.5,
+                f.y + Math.sin(a) * f.radius * 0.4,
+                Math.cos(a) * (30 + Math.random() * 60),
+                -40 - Math.random() * 80,
+                0.8 + Math.random() * 1,
+                1.5 + Math.random() * 2,
+              );
+              p.gravity = 40;
+              p.drag = 1.2;
+              host.spawnParticle(p);
             }
             for (let s = 0; s < 3; s++) {
-              host.spawnParticle({
-                kind: "smoke",
-                x: f.x + (Math.random() - 0.5) * f.radius,
-                y: f.y - Math.random() * 8,
-                vx: (Math.random() - 0.5) * 20,
-                vy: -50 - Math.random() * 40,
-                life: 0,
-                maxLife: 1.4 + Math.random(),
-                size: 8 + Math.random() * 8,
-                drag: 1.3,
-              });
+              const p = scratchParticle(
+                "smoke",
+                f.x + (Math.random() - 0.5) * f.radius,
+                f.y - Math.random() * 8,
+                (Math.random() - 0.5) * 20,
+                -50 - Math.random() * 40,
+                1.4 + Math.random(),
+                8 + Math.random() * 8,
+              );
+              p.drag = 1.3;
+              host.spawnParticle(p);
             }
             this.list.splice(i, 1);
             continue;
@@ -280,18 +311,18 @@ export class FlameField {
             this.consumeFuel(host, f.x, f.y, (13 + 16 * f.intensity) * WOOD.burnRate);
             if (Math.random() < 0.5) {
               const a = Math.random() * TAU;
-              host.spawnParticle({
-                kind: "ember",
-                x: f.x + Math.cos(a) * f.radius * 0.6,
-                y: f.y + Math.sin(a) * f.radius * 0.4,
-                vx: (Math.random() - 0.5) * 30,
-                vy: -20 - Math.random() * 40,
-                life: 0,
-                maxLife: 1 + Math.random(),
-                size: 1.4 + Math.random() * 1.8,
-                gravity: -6,
-                drag: 1.6,
-              });
+              const p = scratchParticle(
+                "ember",
+                f.x + Math.cos(a) * f.radius * 0.6,
+                f.y + Math.sin(a) * f.radius * 0.4,
+                (Math.random() - 0.5) * 30,
+                -20 - Math.random() * 40,
+                1 + Math.random(),
+                1.4 + Math.random() * 1.8,
+              );
+              p.gravity = -6;
+              p.drag = 1.6;
+              host.spawnParticle(p);
             }
           }
         } else {
@@ -319,9 +350,17 @@ export class FlameField {
         let localHeat = f.intensity * (0.55 + fuel * 0.45);
         for (const neighbour of this.list) {
           if (neighbour === f) continue;
-          const distance = Math.hypot(neighbour.x - f.x, neighbour.y - f.y);
-          const contact = 1 - distance / (f.radius + neighbour.radius * 1.4);
-          if (contact > 0) localHeat += neighbour.intensity * contact * 0.22;
+          // Only flames actually in contact contribute, so reject the rest
+          // before the square root: axis test first, then squared distance.
+          const reach = f.radius + neighbour.radius * 1.4;
+          const dx = neighbour.x - f.x;
+          if (dx > reach || dx < -reach) continue;
+          const dy = neighbour.y - f.y;
+          if (dy > reach || dy < -reach) continue;
+          const d2 = dx * dx + dy * dy;
+          if (d2 >= reach * reach) continue;
+          const contact = 1 - Math.sqrt(d2) / reach;
+          localHeat += neighbour.intensity * contact * 0.22;
         }
         if (localHeat < 0.5) continue;
 
@@ -334,10 +373,10 @@ export class FlameField {
         // The upward heat bias can shorten some vectors enough that `spawn()`
         // merges them straight back into the parent. Push those candidates to
         // the rim so every eligible spread opportunity advances the front.
-        const offsetLength = Math.hypot(offsetX, offsetY);
+        const offsetLength2 = offsetX * offsetX + offsetY * offsetY;
         const minimumStep = f.radius * 0.68;
-        if (offsetLength < minimumStep) {
-          const scale = minimumStep / Math.max(0.001, offsetLength);
+        if (offsetLength2 < minimumStep * minimumStep) {
+          const scale = minimumStep / Math.max(0.001, Math.sqrt(offsetLength2));
           offsetX *= scale;
           offsetY *= scale;
         }
@@ -358,18 +397,18 @@ export class FlameField {
         for (let s = 0; s < 5 + Math.floor(Math.random() * 5); s++) {
           const a = -Math.PI / 2 + (Math.random() - 0.5) * 2.4;
           const speed = 110 + Math.random() * 220;
-          host.spawnParticle({
-            kind: "ember",
-            x: f.x,
-            y: f.y - f.radius * 0.4,
-            vx: Math.cos(a) * speed,
-            vy: Math.sin(a) * speed,
-            life: 0,
-            maxLife: 0.7 + Math.random() * 0.8,
-            size: 1.8 + Math.random() * 2.6,
-            gravity: 130,
-            drag: 1.1,
-          });
+          const p = scratchParticle(
+            "ember",
+            f.x,
+            f.y - f.radius * 0.4,
+            Math.cos(a) * speed,
+            Math.sin(a) * speed,
+            0.7 + Math.random() * 0.8,
+            1.8 + Math.random() * 2.6,
+          );
+          p.gravity = 130;
+          p.drag = 1.1;
+          host.spawnParticle(p);
         }
         if (now > this.nextPop) {
           this.nextPop = now + 280;
@@ -389,21 +428,21 @@ export class FlameField {
         if (Math.random() < f.intensity * SMOKE_PUFFS_PER_SECOND * dt) {
           // Rolling column: puffs are launched hard, then dragged to a crawl, so
           // they bunch up and billow overhead instead of streaming away as dots.
-          host.spawnParticle({
-            kind: "smoke",
-            x: f.x + (Math.random() - 0.5) * f.radius,
-            y: f.y - f.radius * 0.9,
-            vx: (Math.random() - 0.5) * 55,
-            vy: -70 - Math.random() * 90 * f.intensity,
-            life: 0,
-            maxLife: 1.4 + Math.random() * 1.3,
-            size: 12 + Math.random() * 18 * f.intensity,
-            gravity: -18,
-            drag: 1.5,
-            spin: (Math.random() - 0.5) * 1.2,
-            angle: Math.random() * TAU,
-            phase: Math.random() * TAU,
-          });
+          const p = scratchParticle(
+            "smoke",
+            f.x + (Math.random() - 0.5) * f.radius,
+            f.y - f.radius * 0.9,
+            (Math.random() - 0.5) * 55,
+            -70 - Math.random() * 90 * f.intensity,
+            1.4 + Math.random() * 1.3,
+            12 + Math.random() * 18 * f.intensity,
+          );
+          p.gravity = -18;
+          p.drag = 1.5;
+          p.spin = (Math.random() - 0.5) * 1.2;
+          p.angle = Math.random() * TAU;
+          p.phase = Math.random() * TAU;
+          host.spawnParticle(p);
         }
         if (Math.random() < f.intensity * 6 * dt) {
           // A third of the shed embers are *drifters*: caught in the thermal
@@ -412,19 +451,19 @@ export class FlameField {
           // (the render pass keys the sprite and sway off `phase`/age). The
           // rest stay the quick, heavy pops that arc down and wink out.
           const drifter = Math.random() < 0.35;
-          host.spawnParticle({
-            kind: "ember",
-            x: f.x + (Math.random() - 0.5) * f.radius * 0.8,
-            y: f.y - f.radius * 0.5,
-            vx: (Math.random() - 0.5) * (drifter ? 34 : 50),
-            vy: drifter ? -40 - Math.random() * 55 : -60 - Math.random() * 80,
-            life: 0,
-            maxLife: drifter ? 1.7 + Math.random() * 1.1 : 0.7 + Math.random() * 0.9,
-            size: 1.5 + Math.random() * 2,
-            gravity: drifter ? -22 : 60,
-            drag: drifter ? 0.7 : undefined,
-            phase: drifter ? Math.random() * TAU : undefined,
-          });
+          const p = scratchParticle(
+            "ember",
+            f.x + (Math.random() - 0.5) * f.radius * 0.8,
+            f.y - f.radius * 0.5,
+            (Math.random() - 0.5) * (drifter ? 34 : 50),
+            drifter ? -40 - Math.random() * 55 : -60 - Math.random() * 80,
+            drifter ? 1.7 + Math.random() * 1.1 : 0.7 + Math.random() * 0.9,
+            1.5 + Math.random() * 2,
+          );
+          p.gravity = drifter ? -22 : 60;
+          p.drag = drifter ? 0.7 : undefined;
+          p.phase = drifter ? Math.random() * TAU : undefined;
+          host.spawnParticle(p);
         }
       }
 
@@ -439,51 +478,51 @@ export class FlameField {
         // glow and die in place — instead of the fire just switching off.
         if (starved) {
           for (let s = 0; s < 3; s++) {
-            host.spawnParticle({
-              kind: "ember",
-              x: f.x + (Math.random() - 0.5) * f.radius,
-              y: f.y + (Math.random() - 0.5) * 6,
-              vx: (Math.random() - 0.5) * 6,
-              vy: -4 - Math.random() * 8,
-              life: 0,
-              maxLife: 2.5 + Math.random() * 2.5,
-              size: 1.2 + Math.random() * 1.6,
-              gravity: -2,
-              drag: 2.2,
-              phase: Math.random() * TAU,
-            });
+            const p = scratchParticle(
+              "ember",
+              f.x + (Math.random() - 0.5) * f.radius,
+              f.y + (Math.random() - 0.5) * 6,
+              (Math.random() - 0.5) * 6,
+              -4 - Math.random() * 8,
+              2.5 + Math.random() * 2.5,
+              1.2 + Math.random() * 1.6,
+            );
+            p.gravity = -2;
+            p.drag = 2.2;
+            p.phase = Math.random() * TAU;
+            host.spawnParticle(p);
           }
         }
         for (let s = 0; s < 4; s++) {
-          host.spawnParticle({
-            kind: "smoke",
-            x: f.x + (Math.random() - 0.5) * f.radius,
-            y: f.y - Math.random() * 8,
-            vx: (Math.random() - 0.5) * 15,
-            vy: -30 - Math.random() * 25,
-            life: 0,
-            maxLife: 1.5 + Math.random(),
-            size: 7 + Math.random() * 8,
-            drag: 1.2,
-          });
+          const p = scratchParticle(
+            "smoke",
+            f.x + (Math.random() - 0.5) * f.radius,
+            f.y - Math.random() * 8,
+            (Math.random() - 0.5) * 15,
+            -30 - Math.random() * 25,
+            1.5 + Math.random(),
+            7 + Math.random() * 8,
+          );
+          p.drag = 1.2;
+          host.spawnParticle(p);
         }
         // Cooling rim: the char edge keeps glowing for a moment after the flame
         // itself is out, which is what makes the burn look hot rather than drawn.
         for (let s = 0; s < 7; s++) {
           const a = Math.random() * TAU;
           const d = f.radius * (0.55 + Math.random() * 0.45);
-          host.spawnParticle({
-            kind: "ember",
-            x: f.x + Math.cos(a) * d,
-            y: f.y + Math.sin(a) * d * 0.6,
-            vx: (Math.random() - 0.5) * 12,
-            vy: -6 - Math.random() * 14,
-            life: 0,
-            maxLife: 1.1 + Math.random() * 1.4,
-            size: 1.6 + Math.random() * 2.2,
-            gravity: -4,
-            phase: Math.random() * TAU,
-          });
+          const p = scratchParticle(
+            "ember",
+            f.x + Math.cos(a) * d,
+            f.y + Math.sin(a) * d * 0.6,
+            (Math.random() - 0.5) * 12,
+            -6 - Math.random() * 14,
+            1.1 + Math.random() * 1.4,
+            1.6 + Math.random() * 2.2,
+          );
+          p.gravity = -4;
+          p.phase = Math.random() * TAU;
+          host.spawnParticle(p);
         }
         this.list.splice(i, 1);
       }

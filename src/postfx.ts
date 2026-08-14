@@ -27,6 +27,9 @@
  * in the DOM. Nothing else in the engine knows the difference.
  */
 
+import { GpuTimer } from "./gl";
+import type { PerfCounterSink } from "./performance";
+
 const VERT = `
 attribute vec2 aPos;
 varying vec2 vUv;
@@ -170,17 +173,38 @@ export interface PostFXParams {
   aberration: number;
   /** Seconds, for the shimmer animation. */
   time: number;
+  /**
+   * Optional hint: false asserts nothing has been stamped into the heat canvas
+   * since its last clear — it is uniformly black. The heat texture then only
+   * needs one upload to go black itself, after which the per-frame upload is
+   * skipped entirely. Omitted or true preserves the old always-upload path.
+   */
+  heatDrawn?: boolean;
 }
 
 /** How much smaller the bloom buffers are than the screen. */
 const BLOOM_SCALE = 4;
 
+/** Bright-pass luminance floor; constant, latched once at link time. */
+const BLOOM_THRESHOLD = 0.34;
+
+/**
+ * A source dirty rect covering at least this fraction of the fx canvas is
+ * uploaded as a plain full frame — the staging copy would cost more than the
+ * texels it saves.
+ */
+const FX_FULL_UPLOAD_FRACTION = 0.6;
+
 export class PostFX {
   readonly canvas: HTMLCanvasElement;
   /** False if WebGL is unavailable — the engine then uses the 2D canvas. */
   available = false;
+  /** GPU-timing telemetry sink. Null (the default) records nothing. */
+  counters: PerfCounterSink | null = null;
 
   private gl: WebGLRenderingContext | null = null;
+  /** GPU chain timing; no-op when the timer-query extension is missing. */
+  private timer: GpuTimer | null = null;
   private quad: WebGLBuffer | null = null;
   private progBright: WebGLProgram | null = null;
   private progBlur: WebGLProgram | null = null;
@@ -194,6 +218,15 @@ export class PostFX {
   private h = 0;
   private heatW = 0;
   private heatH = 0;
+  /** The heat texture is known to hold an all-black (cleared) frame. */
+  private heatBlank = false;
+  /** One-shot fx dirty rect from `setSourceDirtyRect`, in device px. */
+  private readonly fxDirty = { x: 0, y: 0, w: 0, h: 0 };
+  private fxDirtySet = false;
+  /** The fx texture does not hold a full frame yet (fresh storage). */
+  private fxNeedsFull = true;
+  /** Staging canvas for sub-rect fx uploads (WebGL1 has no UNPACK_SKIP_*). */
+  private fxScratch: CanvasRenderingContext2D | null = null;
 
   constructor() {
     this.canvas = document.createElement("canvas");
@@ -235,6 +268,18 @@ export class PostFX {
       compositeAberration: gl.getUniformLocation(this.progComposite, "uAberration"),
     };
 
+    // Sampler bindings and the bright threshold never change; latch them once
+    // per program here instead of re-setting them on every frame of the chain.
+    gl.useProgram(this.progBright);
+    gl.uniform1i(this.uniforms.brightSource, 0);
+    gl.uniform1f(this.uniforms.brightThreshold, BLOOM_THRESHOLD);
+    gl.useProgram(this.progBlur);
+    gl.uniform1i(this.uniforms.blurSource, 0);
+    gl.useProgram(this.progComposite);
+    gl.uniform1i(this.uniforms.compositeFx, 0);
+    gl.uniform1i(this.uniforms.compositeBloom, 1);
+    gl.uniform1i(this.uniforms.compositeHeat, 2);
+
     this.quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     // One oversized triangle covering the viewport: fewer vertices than a quad
@@ -266,6 +311,7 @@ export class PostFX {
     // canvas and which from a render target.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
     this.gl = gl;
+    this.timer = new GpuTimer(gl);
     this.available = true;
   }
 
@@ -306,6 +352,11 @@ export class PostFX {
     this.canvas.style.width = `${cssWidth}px`;
     this.canvas.style.height = `${cssHeight}px`;
 
+    // Fresh storage holds no frame; the next render must upload the full fx
+    // canvas whatever hint may be pending.
+    this.fxNeedsFull = true;
+    this.fxDirtySet = false;
+
     // Allocate source storage once per resize. `texImage2D(canvas)` redefines
     // the texture and may allocate backing memory every frame; subsequent
     // frames only replace the pixels with `texSubImage2D`.
@@ -343,22 +394,86 @@ export class PostFX {
   }
 
   /**
+   * Optional upload hint: only this rect of the fx canvas (device px, top-left
+   * origin) has changed since the previous `render`. One-shot — it applies to
+   * the next `render` only, and *every* change since the frame that stage last
+   * saw must lie inside it, including pixels that were cleared back to
+   * transparent. A zero-area rect declares the canvas unchanged and skips the
+   * upload outright. Never calling this preserves the old full-frame upload,
+   * which is always safe.
+   */
+  setSourceDirtyRect(x: number, y: number, w: number, h: number) {
+    this.fxDirty.x = x;
+    this.fxDirty.y = y;
+    this.fxDirty.w = w;
+    this.fxDirty.h = h;
+    this.fxDirtySet = true;
+  }
+
+  /**
+   * Upload the fx canvas — in full, or just the hinted dirty rect. The fx
+   * layer is viewport-sized, which made its unconditional full-frame upload
+   * the biggest steady-state transfer in the whole pipeline.
+   */
+  private uploadFx(gl: WebGLRenderingContext, fx: HTMLCanvasElement) {
+    const hinted = this.fxDirtySet && !this.fxNeedsFull;
+    this.fxDirtySet = false;
+    if (hinted) {
+      const x0 = Math.max(0, Math.floor(this.fxDirty.x));
+      const y0 = Math.max(0, Math.floor(this.fxDirty.y));
+      const x1 = Math.min(this.w, Math.ceil(this.fxDirty.x + this.fxDirty.w));
+      const y1 = Math.min(this.h, Math.ceil(this.fxDirty.y + this.fxDirty.h));
+      const w = x1 - x0;
+      const h = y1 - y0;
+      // Nothing changed: the texture already holds this exact frame.
+      if (w <= 0 || h <= 0) return;
+      if (w * h < this.w * this.h * FX_FULL_UPLOAD_FRACTION) {
+        // WebGL1 cannot sub-rect address a canvas source (no UNPACK_SKIP_*),
+        // so stage the rect on a small scratch canvas first. `copy` replaces
+        // the whole scratch, transparent pixels included, so no clear needed.
+        const scratch = (this.fxScratch ??= document.createElement("canvas").getContext("2d")!);
+        const c = scratch.canvas;
+        if (c.width !== w || c.height !== h) {
+          c.width = w;
+          c.height = h;
+        }
+        scratch.globalCompositeOperation = "copy";
+        scratch.drawImage(fx, x0, y0, w, h, 0, 0, w, h);
+        // UNPACK_FLIP_Y flips the scratch during unpack; anchoring it at
+        // `this.h - y1` lands each row exactly where a full flipped upload
+        // would have put it.
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, this.h - y1, gl.RGBA, gl.UNSIGNED_BYTE, c);
+        return;
+      }
+    }
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, fx);
+    this.fxNeedsFull = false;
+  }
+
+  /**
    * Run the chain. `fx` is the offscreen 2D effects canvas, `heat` the low-res
-   * heat field. Both are uploaded fresh — they change every frame by design.
+   * heat field. Both change every frame by design and are uploaded fresh —
+   * unless `setSourceDirtyRect` / `params.heatDrawn` prove part of that upload
+   * redundant.
    */
   render(fx: HTMLCanvasElement, heat: HTMLCanvasElement, params: PostFXParams) {
     const gl = this.gl;
     const uniforms = this.uniforms;
     if (!gl || !uniforms || !this.available || !this.ping || !this.pong) return;
+    // Resolve GPU timings from earlier frames before opening this one; results
+    // are polled, never waited for, so the chain is never stalled.
+    this.timer?.poll(this.counters, "gpuPostFXMs");
+    this.timer?.begin();
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fxTex);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, fx);
+    this.uploadFx(gl, fx);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.heatTex);
     if (heat.width !== this.heatW || heat.height !== this.heatH) {
       this.heatW = heat.width;
       this.heatH = heat.height;
+      this.heatBlank = false;
       gl.texImage2D(
         gl.TEXTURE_2D,
         0,
@@ -371,19 +486,22 @@ export class PostFX {
         null,
       );
     }
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, heat);
+    // A cleared heat field needs exactly one upload to blacken the texture;
+    // after that, skipping the transfer is pixel-identical.
+    const heatDrawn = params.heatDrawn !== false;
+    if (heatDrawn || !this.heatBlank) {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, heat);
+      this.heatBlank = !heatDrawn;
+    }
 
     const bloomOn = params.bloom > 0.01;
     if (bloomOn) {
       gl.useProgram(this.progBright);
-      gl.uniform1i(uniforms.brightSource, 0);
-      gl.uniform1f(uniforms.brightThreshold, 0.34);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, this.fxTex);
       this.draw(this.ping);
 
       gl.useProgram(this.progBlur);
-      gl.uniform1i(uniforms.blurSource, 0);
       // Horizontal, then vertical: a separable Gaussian is 2×5 taps instead of
       // the 25 a 2D kernel of the same radius would need.
       gl.bindTexture(gl.TEXTURE_2D, this.ping.tex);
@@ -398,19 +516,17 @@ export class PostFX {
     gl.useProgram(prog);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fxTex);
-    gl.uniform1i(uniforms.compositeFx, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, bloomOn ? this.ping.tex : this.pong.tex);
-    gl.uniform1i(uniforms.compositeBloom, 1);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.heatTex);
-    gl.uniform1i(uniforms.compositeHeat, 2);
     gl.uniform1f(uniforms.compositeTime, params.time);
     gl.uniform1f(uniforms.compositeBloomStrength, bloomOn ? params.bloom : 0);
     gl.uniform1f(uniforms.compositeHeatStrength, params.heat);
     gl.uniform1f(uniforms.compositeAberration, params.aberration);
     gl.activeTexture(gl.TEXTURE0);
     this.draw(null);
+    this.timer?.end();
   }
 
   /** Blank the output without running the chain (nothing to show this frame). */
@@ -425,6 +541,8 @@ export class PostFX {
 
   dispose() {
     const gl = this.gl;
+    this.timer?.dispose();
+    this.timer = null;
     if (gl) {
       for (const t of [this.ping, this.pong]) {
         if (!t) continue;
@@ -438,6 +556,11 @@ export class PostFX {
         if (p) gl.deleteProgram(p);
       }
       gl.getExtension("WEBGL_lose_context")?.loseContext();
+    }
+    if (this.fxScratch) {
+      this.fxScratch.canvas.width = 0;
+      this.fxScratch.canvas.height = 0;
+      this.fxScratch = null;
     }
     this.gl = null;
     this.uniforms = null;

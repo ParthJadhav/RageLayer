@@ -270,6 +270,10 @@ export class Body {
 
   /** Release backing stores as soon as a chunk leaves the world. */
   dispose() {
+    // Every removal path (retirement, trim, cap eviction, clear) funnels
+    // through here, so the flag doubles as the world's tombstone: the
+    // persistent broadphase list drops flagged bodies on its next sync.
+    this.dead = true;
     if (this.sprite) {
       this.sprite.width = 0;
       this.sprite.height = 0;
@@ -301,8 +305,16 @@ export class PhysicsWorld {
   private iterations: number;
   /** Contact storage is pooled so a tumbling heap does not allocate every frame. */
   private manifolds: Manifold[] = [];
-  /** Reused x-sorted candidate list for the sweep-and-prune broadphase. */
+  /**
+   * Persistent x-sorted candidate list for the sweep-and-prune broadphase.
+   * Membership is maintained incrementally (`add` appends, disposed bodies are
+   * dropped during `step`), so it keeps last step's near-sorted order and the
+   * per-step re-sort is a handful of insertion-sort swaps instead of a full
+   * comparator-callback sort.
+   */
   private broadphase: Body[] = [];
+  /** Scratch list returned by `attract`; valid until the next call. */
+  private eaten: Body[] = [];
   /**
    * Cached answer for `active`, recomputed by the loop `step` already runs over
    * every body. External mutations that can wake or add bodies set it `true`
@@ -403,6 +415,7 @@ export class PhysicsWorld {
       this.bodies.splice(victim, 1)[0]?.dispose();
     }
     this.bodies.push(body);
+    this.broadphase.push(body);
     this.activeCache = true;
     return body;
   }
@@ -410,6 +423,7 @@ export class PhysicsWorld {
   clear() {
     for (const body of this.bodies) body.dispose();
     this.bodies.length = 0;
+    this.broadphase.length = 0;
     this.activeCache = false;
   }
 
@@ -500,10 +514,16 @@ export class PhysicsWorld {
    * Inside `eatRadius * 3` a capture funnel takes over: velocity is blended
    * straight toward the hole, so a chunk that has crossed the point of no
    * return spirals in and dies instead of slingshotting past forever.
+   *
+   * The returned list is scratch reused across calls — read it before calling
+   * `attract` again. It is called every frame a singularity is open, and the
+   * usual answer is "nothing was eaten"; allocating a fresh array per frame
+   * for that is pure GC noise.
    */
   attract(x: number, y: number, strength: number, dt: number, eatRadius: number): Body[] {
     if (this.bodies.length > 0) this.activeCache = true;
-    const eaten: Body[] = [];
+    const eaten = this.eaten;
+    eaten.length = 0;
     for (const b of this.bodies) {
       if (b.fixed) continue;
       const dx = x - b.x;
@@ -591,10 +611,33 @@ export class PhysicsWorld {
     // without visiting thousands of impossible pairs in a wide debris field.
     const manifolds = this.manifolds;
     let manifoldCount = 0;
+    // The candidate list persists across steps (`add` appended any newcomers);
+    // drop bodies retired above, then restore x-order with a stable insertion
+    // sort. Bodies move a fraction of their extent per step, so the list is
+    // near-sorted and the sort is O(n) plus a few swaps — versus rebuilding
+    // and `.sort()`ing with a fresh comparator closure every frame. The order
+    // matches the old stable `.sort((a, b) => a.minX - b.minX)` exactly: minX
+    // keys only tie for chunks spawned along the same column edge, those enter
+    // both lists in creation order, and insertion sort (strict `>`) never
+    // reorders ties — so the narrowphase visits pairs identically and the
+    // solver sees the same contacts in the same order.
     const broadphase = this.broadphase;
-    broadphase.length = 0;
-    for (const body of bodies) broadphase.push(body);
-    broadphase.sort((a, b) => a.minX - b.minX);
+    let alive = 0;
+    for (let i = 0; i < broadphase.length; i++) {
+      const b = broadphase[i];
+      if (!b.dead) broadphase[alive++] = b;
+    }
+    broadphase.length = alive;
+    for (let i = 1; i < alive; i++) {
+      const body = broadphase[i];
+      const key = body.minX;
+      let j = i - 1;
+      while (j >= 0 && broadphase[j].minX > key) {
+        broadphase[j + 1] = broadphase[j];
+        j--;
+      }
+      broadphase[j + 1] = body;
+    }
     for (let i = 0; i < broadphase.length; i++) {
       const a = broadphase[i];
       // Ghosts are mid-swallow: they collide with nothing on the way down.
@@ -746,43 +789,50 @@ export class PhysicsWorld {
    * particle, for something that behaves like an object.
    */
   render(ctx: CanvasRenderingContext2D, left: number, top: number, right: number, bottom: number) {
+    // One matrix write per blit instead of save/translate/rotate/restore per
+    // body: the caller's document-space transform is captured once and each
+    // body's translate·rotate is composed against it by hand, so the canvas
+    // state stack is never touched. `globalAlpha` is only written when it
+    // changes — for a heap of fully opaque chunks that is a single write.
+    const base = ctx.getTransform();
+    const ba = base.a;
+    const bb = base.b;
+    const bc = base.c;
+    const bd = base.d;
+    const be = base.e;
+    const bf = base.f;
+    let alpha = -1;
     for (const b of this.bodies) {
       if (b.fixed || !b.sprite) continue;
       if (b.x + b.radius < left || b.x - b.radius > right) continue;
       if (b.y + b.radius < top || b.y - b.radius > bottom) continue;
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(1, b.alpha));
+      const a = Math.max(0, Math.min(1, b.alpha));
+      if (a !== alpha) {
+        ctx.globalAlpha = a;
+        alpha = a;
+      }
+      const cos = Math.cos(b.angle);
+      const sin = Math.sin(b.angle);
+      const ma = ba * cos + bc * sin;
+      const mb = bb * cos + bd * sin;
+      const mc = bc * cos - ba * sin;
+      const md = bd * cos - bb * sin;
+      const dx = b.spriteX - b.spriteW / 2;
+      const dy = b.spriteY - b.spriteH / 2;
       // Thickness: the underside drawn at a small *world-space* downward
       // offset, so the sliver that peeks past the face's silhouette always
       // hangs below regardless of how the chunk has rotated — which is where a
-      // board's edge sits when seen from slightly above.
+      // board's edge sits when seen from slightly above. Same rotation as the
+      // face, so only the translation column differs between the two blits.
       if (b.sideSprite) {
-        ctx.translate(b.x, b.y + 3);
-        ctx.rotate(b.angle);
-        ctx.drawImage(
-          b.sideSprite,
-          b.spriteX - b.spriteW / 2,
-          b.spriteY - b.spriteH / 2,
-          b.spriteW,
-          b.spriteH,
-        );
-        // Move from the underside's world-space offset back to the face while
-        // retaining the current rotation. This avoids a second save/restore
-        // pair per chunk without changing either transform.
-        ctx.translate(-3 * Math.sin(b.angle), -3 * Math.cos(b.angle));
-      } else {
-        ctx.translate(b.x, b.y);
-        ctx.rotate(b.angle);
+        const sy = b.y + 3;
+        ctx.setTransform(ma, mb, mc, md, ba * b.x + bc * sy + be, bb * b.x + bd * sy + bf);
+        ctx.drawImage(b.sideSprite, dx, dy, b.spriteW, b.spriteH);
       }
-      ctx.drawImage(
-        b.sprite,
-        b.spriteX - b.spriteW / 2,
-        b.spriteY - b.spriteH / 2,
-        b.spriteW,
-        b.spriteH,
-      );
-      ctx.restore();
+      ctx.setTransform(ma, mb, mc, md, ba * b.x + bc * b.y + be, bb * b.x + bd * b.y + bf);
+      ctx.drawImage(b.sprite, dx, dy, b.spriteW, b.spriteH);
     }
+    ctx.setTransform(ba, bb, bc, bd, be, bf);
     ctx.globalAlpha = 1;
   }
 }

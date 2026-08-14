@@ -15,6 +15,7 @@
  */
 
 import { TAU } from "./math";
+import type { PerfCounterSink } from "./performance";
 import { pointInPolygon } from "./topology";
 
 /** Coarse enough to resolve the chainsaw's 4–7px kerf, compact enough for tall pages. */
@@ -63,6 +64,8 @@ interface OpacityOperation {
  * resolution (the same resolution the pristine alpha itself is stored at).
  */
 export class OpacityMap {
+  /** Query telemetry sink. Null (the default) records nothing. */
+  counters: PerfCounterSink | null = null;
   private readonly raster = document.createElement("canvas");
   private readonly rasterCtx = this.raster.getContext("2d", { willReadFrequently: true })!;
   private readonly testCtx = document.createElement("canvas").getContext("2d")!;
@@ -228,6 +231,7 @@ export class OpacityMap {
   }
 
   sample(x: number, y: number): number {
+    this.counters?.count("opacitySamples");
     const base = this.baseAlpha;
     if (!base || x < 0 || y < 0 || x >= this.width || y >= this.height) return 0;
     const px = Math.min(this.mapWidth - 1, Math.floor(x * this.scaleX));
@@ -235,18 +239,25 @@ export class OpacityMap {
     const pristine = base[py * this.mapWidth + px] / 255;
     const cell = this.cells.get(Math.floor(y / 128) * this.cols + Math.floor(x / 128));
     if (cell) {
+      let tests = 0;
       for (let i = cell.length - 1; i >= 0; i--) {
         const operation = this.operations[cell[i]]!;
         const b = operation.bounds;
         if (x < b.x0 || y < b.y0 || x > b.x1 || y > b.y1) continue;
+        tests++;
         let hit = this.testCtx.isPointInPath(operation.fill, x, y);
         if (!hit && operation.stroke) {
+          tests++;
           this.testCtx.lineCap = "round";
           this.testCtx.lineWidth = operation.lineWidth ?? 1;
           hit = this.testCtx.isPointInStroke(operation.stroke, x, y);
         }
-        if (hit) return operation.restores ? pristine : 0;
+        if (hit) {
+          this.counters?.count("opacityPathTests", tests);
+          return operation.restores ? pristine : 0;
+        }
       }
+      if (tests > 0) this.counters?.count("opacityPathTests", tests);
     }
     // No live op decides this point; older, flattened history might.
     if (this.removed?.[py * this.mapWidth + px]) return 0;
@@ -315,6 +326,7 @@ export class OpacityMap {
    * once per `FLATTEN_THRESHOLD` wounds landing in one 128px cell.
    */
   private flattenCell(key: number, list: number[]) {
+    this.counters?.count("opacityFlattens");
     if (!this.removedCanvas) {
       this.removedCanvas = document.createElement("canvas");
       this.removedCanvas.width = this.mapWidth;

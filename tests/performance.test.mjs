@@ -20,6 +20,14 @@ function measurement(overrides = {}) {
     surfaceMs: 0.3,
     renderMs: 0.5,
     postFXMs: 0.2,
+    toolsMs: 0.2,
+    collapseMs: 0.05,
+    flamesMs: 0.15,
+    bugsMs: 0.1,
+    singularityMs: 0.05,
+    particlesMs: 0.25,
+    physicsMs: 0.2,
+    render: { wet: 2, puffs: 4, solids: 6, hot: 8, flames: 3, bodies: 5 },
     entities: { particles: 0, flames: 0, bodies: 0, bugs: 0 },
     quality: "high",
     pixelRatio: 1,
@@ -96,6 +104,187 @@ describe("PerformanceMonitor percentiles", () => {
     expect(snap.longFrames).toBe(10);
     expect(snap.longFrameRate).toBeCloseTo(10 / 40, 6);
     expect(snap.estimatedDroppedFrames).toBe(20);
+  });
+});
+
+describe("PerformanceMonitor extended telemetry", () => {
+  test("subsystem breakdown and render composition average over the window", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    run(
+      monitor,
+      Array.from({ length: 20 }, () => measurement()),
+    );
+    const snap = monitor.snapshot;
+    for (const key of [
+      "toolsMs",
+      "collapseMs",
+      "flamesMs",
+      "bugsMs",
+      "singularityMs",
+      "particlesMs",
+      "physicsMs",
+    ]) {
+      expect(typeof snap.breakdown[key]).toBe("number");
+    }
+    expect(snap.breakdown.toolsMs).toBeCloseTo(0.2, 5);
+    expect(snap.breakdown.physicsMs).toBeCloseTo(0.2, 5);
+    expect(snap.render).toEqual({ wet: 2, puffs: 4, solids: 6, hot: 8, flames: 3, bodies: 5 });
+  });
+
+  test("pushed counters land in the snapshot and reset per window", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    monitor.count("surfaceUploads");
+    monitor.count("surfaceUploadPixels", 10_000);
+    monitor.count("surfaceCoverage", 0.5);
+    monitor.count("surfaceReconciles");
+    monitor.count("surfaceCoverage", 1);
+    monitor.count("opacitySamples", 40);
+    monitor.count("opacityPathTests", 120);
+    monitor.count("opacityFlattens");
+    monitor.count("recomposeMs", 3);
+    monitor.count("recomposeMs", 5);
+    monitor.count("gpuSurfaceMs", 1.5);
+    monitor.count("gpuPostFXMs", 0.5);
+    run(
+      monitor,
+      Array.from({ length: 10 }, () => measurement()),
+    );
+    const snap = monitor.snapshot;
+    expect(snap.surface).toEqual({
+      uploads: 1,
+      uploadPixels: 10_000,
+      reconciles: 1,
+      coverage: 0.75,
+    });
+    expect(snap.opacity).toEqual({ samples: 40, pathTests: 120, flattens: 1 });
+    expect(snap.capture).toEqual({ recomposes: 2, recomposeMs: 4 });
+    expect(snap.gpu.surfaceMs).toBe(1.5);
+    expect(snap.gpu.postFXMs).toBe(0.5);
+    // No timer extension ever reported in, so gpu stays unavailable.
+    expect(snap.gpu.available).toBe(false);
+
+    // The next window starts from zero for every pushed counter.
+    run(
+      monitor,
+      Array.from({ length: 10 }, () => measurement()),
+      2100,
+    );
+    const next = monitor.snapshot;
+    expect(next.surface).toEqual({ uploads: 0, uploadPixels: 0, reconciles: 0, coverage: 0 });
+    expect(next.opacity).toEqual({ samples: 0, pathTests: 0, flattens: 0 });
+    expect(next.capture).toEqual({ recomposes: 0, recomposeMs: 0 });
+    expect(next.gpu).toEqual({ surfaceMs: 0, postFXMs: 0, available: false });
+  });
+
+  test("gpu availability is sticky once a timer extension reports in", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    monitor.count("gpuTimerAvailable", 0);
+    run(
+      monitor,
+      Array.from({ length: 10 }, () => measurement()),
+    );
+    expect(monitor.snapshot.gpu.available).toBe(true);
+    run(
+      monitor,
+      Array.from({ length: 10 }, () => measurement()),
+      2100,
+    );
+    expect(monitor.snapshot.gpu.available).toBe(true);
+  });
+
+  test("new snapshot sections exist with numeric zeros before any sample", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    const snap = monitor.snapshot;
+    for (const section of ["render", "surface", "opacity", "capture"]) {
+      for (const value of Object.values(snap[section])) {
+        expect(typeof value).toBe("number");
+      }
+    }
+    expect(snap.gpu.surfaceMs).toBe(0);
+    expect(snap.gpu.postFXMs).toBe(0);
+    expect(snap.gpu.available).toBe(false);
+    expect(typeof snap.breakdown.toolsMs).toBe("number");
+  });
+
+  test("disabled monitors ignore pushed counters", () => {
+    const off = new PerformanceMonitor(false, "high");
+    off.count("surfaceUploads", 5);
+    expect(off.snapshot.surface.uploads).toBe(0);
+  });
+});
+
+describe("PerformanceMonitor rate-vs-quality ladder", () => {
+  test("outgrowing a fast display's budget caps the rate before quality", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    // 120fps native → 8.33ms budget; 8ms p95 fails its 72% share but fits the
+    // 60fps budget comfortably, so the tier holds and only the rate caps.
+    const rec = run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
+    );
+    expect(rec).toBeNull();
+    expect(monitor.rateCap60).toBe(true);
+    run(
+      monitor,
+      Array.from({ length: 15 }, () => measurement({ frameMs: 2, targetFps: 60 })),
+      2100,
+    );
+    expect(monitor.snapshot.qualityReason).toContain("holding full quality at 60fps");
+  });
+
+  test("a capped tier that fails even the 60fps budget drops to balanced", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
+    );
+    expect(monitor.rateCap60).toBe(true);
+    // While capped the engine reports targetFps 60; 14ms breaks that too.
+    clock = 1002;
+    let rec = null;
+    for (let i = 0; i < 30; i++) {
+      if (i === 29) clock = 2100;
+      else clock += 1;
+      rec = monitor.record(measurement({ frameMs: 14, targetFps: 60 }));
+    }
+    expect(rec).toBe("balanced");
+  });
+
+  test("the cap releases only with headroom against the native cadence", () => {
+    const monitor = new PerformanceMonitor(undefined, "high");
+    // Teach the monitor it is on a ~120Hz display (uncapping requires it).
+    monitor.observeRaf(1);
+    monitor.observeRaf(9.4);
+    run(
+      monitor,
+      Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
+    );
+    expect(monitor.rateCap60).toBe(true);
+    // Cool against 60fps but NOT against 8.4ms native (p95 5 > 8.4 * 0.45):
+    // five cool windows must leave the cap in place.
+    for (let window = 0; window < 5; window++) {
+      run(
+        monitor,
+        Array.from({ length: 30 }, () => measurement({ frameMs: 5, targetFps: 60 })),
+        1000 * (window + 2) + 100,
+      );
+    }
+    expect(monitor.rateCap60).toBe(true);
+    // Deep headroom (2ms against an 8.4ms native budget) releases it.
+    for (let window = 0; window < 5; window++) {
+      run(
+        monitor,
+        Array.from({ length: 30 }, () => measurement({ frameMs: 2, targetFps: 60 })),
+        1000 * (window + 8) + 100,
+      );
+    }
+    expect(monitor.rateCap60).toBe(false);
+    run(
+      monitor,
+      Array.from({ length: 15 }, () => measurement({ frameMs: 2, targetFps: 120 })),
+      1000 * 14,
+    );
+    expect(monitor.snapshot.qualityReason).toContain("restored the native refresh cadence");
   });
 });
 

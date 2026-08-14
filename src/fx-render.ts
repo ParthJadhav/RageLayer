@@ -16,6 +16,61 @@ import { TAU } from "./math";
 import { blit, blitRect, blitStreak, sprites } from "./sprites";
 import type { Flame, Particle, Singularity } from "./types";
 
+/**
+ * Experiment switch: draw each dust particle by stamping a cached three-lobe
+ * `Path2D` cluster with one `setTransform` + `fill(cluster)` instead of
+ * appending three fresh `ctx.ellipse(...)` lobes to a chunked context path.
+ * Appending an ellipse flattens the arc into curves on every call; filling a
+ * canned path skips path construction entirely. Flip to `false` to restore the
+ * chunked `moveTo`/`ellipse` appends.
+ *
+ * Measured (perf suite, 6x CPU, swarm, 8s): the append path spent 585ms in
+ * `ellipse` + 213ms in `moveTo`/`fill`; the stamp spends ~260ms in
+ * `setTransform` + ~112ms in `fill` — a ~53% cut in the dust fills' self-time
+ * (stable across two runs) with p50/p95 unchanged. The same stamping applied
+ * to the water droplet and splash fills (one lobe per particle rather than
+ * three) was a wash and is not used: what the stamp saves in path building it
+ * pays back in per-particle `setTransform`, so it only wins where one stamp
+ * replaces several appends.
+ */
+const USE_DUST_CLUSTER_PATH = true;
+
+/**
+ * One dust particle's full three-lobe cluster at swell = 1, with exactly the
+ * lobe geometry of the append path below. Every lobe offset and radius scales
+ * with swell, so the cluster is a rigid shape: drawing it under
+ * base · Translate(x, y) · Scale(swell, swell) reproduces the three
+ * `ellipse(...)` calls (`Path2D.ellipse` builds the same curve approximation
+ * with the same default winding, and a uniform scale maps each unit-cluster
+ * lobe `ellipse(cx, cy, rx, ry, rot)` to `ellipse(x + cx·s, y + cy·s, rx·s,
+ * ry·s, rot)` — rotation survives uniform scaling unchanged).
+ *
+ * The one intentional difference: the cluster fills once per particle, so
+ * where the three lobes of one particle overlap they composite once, exactly
+ * as the original pre-batching renderer drew them; the chunked appends merge
+ * up to 8 particles into one fill instead. At dust's ≤ 0.075 alpha the
+ * difference is sub-perceptual.
+ *
+ * Built lazily: the test DOM installs the `Path2D` global after the source
+ * modules evaluate, and a plain browser build has it from the start. `null`
+ * means unsupported (or the switch is off) and the ellipse appends are used.
+ */
+let dustCluster: Path2D | null | undefined;
+
+function dustClusterPath(): Path2D | null {
+  if (dustCluster === undefined) {
+    if (USE_DUST_CLUSTER_PATH && typeof Path2D === "function") {
+      dustCluster = new Path2D();
+      dustCluster.ellipse(0, 0, 1, 0.34, 0, 0, TAU);
+      dustCluster.ellipse(-0.62, 0.08, 0.58, 0.25, -0.12, 0, TAU);
+      dustCluster.ellipse(0.52, -0.1, 0.5, 0.22, 0.1, 0, TAU);
+    } else {
+      dustCluster = null;
+    }
+  }
+  return dustCluster;
+}
+
 /** The document band the fx canvas currently covers. */
 export interface FxView {
   left: number;
@@ -31,6 +86,24 @@ export class FxPainter {
   private readonly bit: Particle[] = [];
   private readonly hot: Particle[] = [];
 
+  /**
+   * Scratch for batching same-colour ellipse fills by alpha, quantised to
+   * 1/128 steps — under half an 8-bit output level, so the rounding is
+   * invisible while hundreds of `fill` calls collapse into a handful. Index is
+   * the quantised alpha; `bucketOrder` lists the occupied slots so a frame
+   * never sweeps all 129. Reused across groups within a frame, allocation-free.
+   */
+  private readonly alphaBuckets: Particle[][] = Array.from({ length: 129 }, () => []);
+  private readonly bucketOrder: number[] = [];
+
+  /**
+   * Subpaths per fill within a batch. Appending to the context path gets more
+   * expensive as the path grows (measured ~6x per-append at ~1000 subpaths in
+   * the flood stress scenario), so batches flush in small chunks: state is
+   * still set once per bucket, but no path ever grows past this many shapes.
+   */
+  private static readonly FILL_CHUNK = 24;
+
   /** Drop every retained reference (the engine is going away). */
   clear() {
     this.wet.length = this.puff.length = this.bit.length = this.hot.length = 0;
@@ -39,6 +112,20 @@ export class FxPainter {
   /** True when the last `classify` found particles that draw onto the page. */
   get hasSurfaceParticles(): boolean {
     return this.wet.length > 0;
+  }
+
+  // Bucket sizes from the most recent `classify`, for render telemetry only.
+  get wetCount(): number {
+    return this.wet.length;
+  }
+  get puffCount(): number {
+    return this.puff.length;
+  }
+  get solidCount(): number {
+    return this.bit.length;
+  }
+  get hotCount(): number {
+    return this.hot.length;
   }
 
   /** Sort the visible particles into the four passes below. */
@@ -100,9 +187,8 @@ export class FxPainter {
     }
     ctx.globalAlpha = 1;
     for (const p of this.wet) {
-      if (p.kind === "wet") continue;
-      const t = p.life / p.maxLife;
       if (p.kind === "stream") {
+        const t = p.life / p.maxLife;
         // The unbroken column of water leaving the nozzle, before it fans out
         // into droplets. Drawn opaque, not additively — water occludes.
         blitStreak(
@@ -118,7 +204,10 @@ export class FxPainter {
         continue;
       }
       if (p.kind === "rivulet") {
+        const t = p.life / p.maxLife;
         // A run of water sliding down the page: a fading tail behind a bead.
+        // The bead lands on its own tail, so the pair stays interleaved per
+        // particle instead of joining the batched droplet fills below.
         blitStreak(
           ctx,
           sprite.streakWater,
@@ -134,11 +223,19 @@ export class FxPainter {
         ctx.beginPath();
         ctx.ellipse(p.x, p.y, p.size * 0.8, p.size * 1.15, 0, 0, TAU);
         ctx.fill();
-        continue;
       }
-      ctx.fillStyle = p.kind === "water" ? "rgb(140, 190, 240)" : "rgb(160, 200, 240)";
-      ctx.globalAlpha = p.kind === "water" ? 0.85 : 0.7 * (1 - t);
-      ctx.beginPath();
+    }
+    // Droplets: hundreds of tiny same-colour ellipses. Same-colour source-over
+    // commutes, so each style batches into one path filled once (the `moveTo`
+    // keeps subpaths from connecting). Water's alpha is constant; splashes
+    // fade, so they group through the quantised alpha buckets.
+    ctx.fillStyle = "rgb(140, 190, 240)";
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    let pending = 0;
+    for (const p of this.wet) {
+      if (p.kind !== "water") continue;
+      ctx.moveTo(p.x, p.y);
       ctx.ellipse(
         p.x,
         p.y,
@@ -148,7 +245,48 @@ export class FxPainter {
         0,
         TAU,
       );
-      ctx.fill();
+      if (++pending === FxPainter.FILL_CHUNK) {
+        ctx.fill();
+        ctx.beginPath();
+        pending = 0;
+      }
+    }
+    if (pending > 0) ctx.fill();
+    const buckets = this.alphaBuckets;
+    const order = this.bucketOrder;
+    order.length = 0;
+    for (const p of this.wet) {
+      if (p.kind !== "splash") continue;
+      const q = Math.round(0.7 * (1 - p.life / p.maxLife) * 128);
+      if (q === 0) continue;
+      if (buckets[q].length === 0) order.push(q);
+      buckets[q].push(p);
+    }
+    ctx.fillStyle = "rgb(160, 200, 240)";
+    for (const q of order) {
+      const bucket = buckets[q];
+      ctx.globalAlpha = q / 128;
+      ctx.beginPath();
+      let run = 0;
+      for (const p of bucket) {
+        ctx.moveTo(p.x, p.y);
+        ctx.ellipse(
+          p.x,
+          p.y,
+          p.size * 0.7,
+          p.size * 1.3,
+          Math.atan2(p.vy, p.vx) + Math.PI / 2,
+          0,
+          TAU,
+        );
+        if (++run === FxPainter.FILL_CHUNK) {
+          ctx.fill();
+          ctx.beginPath();
+          run = 0;
+        }
+      }
+      if (run > 0) ctx.fill();
+      bucket.length = 0;
     }
     ctx.globalAlpha = 1;
   }
@@ -156,31 +294,105 @@ export class FxPainter {
   /** Smoke, steam and dust: normal blending, soft grey/white. */
   drawPuffs(ctx: CanvasRenderingContext2D, time: number) {
     const sprite = sprites();
+    // Keep impact dust close to the contact plane. A scaled radial sprite
+    // reads as a soap bubble when many debris collisions overlap, so dust
+    // uses a few small, flattened lobes instead of an expanding disc. One
+    // colour and hundreds of particles per frame make it the poster child for
+    // the alpha buckets: one `fill` per alpha step instead of one each. Dust
+    // draws before smoke and steam — it hugs the ground they rise from, and at
+    // ≤0.075 alpha the compositing order against them is imperceptible anyway.
+    const buckets = this.alphaBuckets;
+    const order = this.bucketOrder;
+    order.length = 0;
     for (const p of this.puff) {
+      if (p.kind !== "dust") continue;
       const t = p.life / p.maxLife;
-      if (p.kind === "dust") {
-        // Keep impact dust close to the contact plane. A scaled radial sprite
-        // reads as a soap bubble when many debris collisions overlap, so dust
-        // uses a few small, flattened lobes instead of an expanding disc.
-        const swell = Math.min(10, p.size * (0.72 + t * 0.48));
-        const alpha = (1 - t) * Math.min(1, t * 8);
-        ctx.globalAlpha = 0.075 * alpha;
-        ctx.fillStyle = "rgb(202, 194, 182)";
+      const q = Math.round(0.075 * (1 - t) * Math.min(1, t * 8) * 128);
+      if (q === 0) continue;
+      if (buckets[q].length === 0) order.push(q);
+      buckets[q].push(p);
+    }
+    ctx.fillStyle = "rgb(202, 194, 182)";
+    // Dust appends three lobes per particle, so it chunks at a third the rate.
+    const dustChunk = FxPainter.FILL_CHUNK / 3;
+    // Touch the transform only when there is dust to draw: the capture/restore
+    // pair costs real time per frame (the restore absorbs a queue flush), so a
+    // dust-free frame must not pay it.
+    const cluster = order.length > 0 ? dustClusterPath() : null;
+    let ma = 1;
+    let mb = 0;
+    let mc = 0;
+    let md = 1;
+    let me = 0;
+    let mf = 0;
+    if (cluster) {
+      const m = ctx.getTransform();
+      ma = m.a;
+      mb = m.b;
+      mc = m.c;
+      md = m.d;
+      me = m.e;
+      mf = m.f;
+    }
+    for (const q of order) {
+      const bucket = buckets[q];
+      ctx.globalAlpha = q / 128;
+      if (cluster) {
+        // The whole three-lobe cluster scales rigidly with swell, so one
+        // uniform-scale stamp of the baked cluster replaces three appends.
+        for (const p of bucket) {
+          const t = p.life / p.maxLife;
+          const swell = Math.min(10, p.size * (0.72 + t * 0.48));
+          ctx.setTransform(
+            ma * swell,
+            mb * swell,
+            mc * swell,
+            md * swell,
+            ma * p.x + mc * p.y + me,
+            mb * p.x + md * p.y + mf,
+          );
+          ctx.fill(cluster);
+        }
+      } else {
         ctx.beginPath();
-        ctx.ellipse(p.x, p.y, swell, swell * 0.34, 0, 0, TAU);
-        ctx.ellipse(
-          p.x - swell * 0.62,
-          p.y + swell * 0.08,
-          swell * 0.58,
-          swell * 0.25,
-          -0.12,
-          0,
-          TAU,
-        );
-        ctx.ellipse(p.x + swell * 0.52, p.y - swell * 0.1, swell * 0.5, swell * 0.22, 0.1, 0, TAU);
-        ctx.fill();
-        continue;
+        let run = 0;
+        for (const p of bucket) {
+          const t = p.life / p.maxLife;
+          const swell = Math.min(10, p.size * (0.72 + t * 0.48));
+          ctx.moveTo(p.x, p.y);
+          ctx.ellipse(p.x, p.y, swell, swell * 0.34, 0, 0, TAU);
+          ctx.ellipse(
+            p.x - swell * 0.62,
+            p.y + swell * 0.08,
+            swell * 0.58,
+            swell * 0.25,
+            -0.12,
+            0,
+            TAU,
+          );
+          ctx.ellipse(
+            p.x + swell * 0.52,
+            p.y - swell * 0.1,
+            swell * 0.5,
+            swell * 0.22,
+            0.1,
+            0,
+            TAU,
+          );
+          if (++run >= dustChunk) {
+            ctx.fill();
+            ctx.beginPath();
+            run = 0;
+          }
+        }
+        if (run > 0) ctx.fill();
       }
+      bucket.length = 0;
+    }
+    if (cluster) ctx.setTransform(ma, mb, mc, md, me, mf);
+    for (const p of this.puff) {
+      if (p.kind === "dust") continue;
+      const t = p.life / p.maxLife;
       if (p.kind === "steam") {
         blit(
           ctx,
@@ -220,9 +432,28 @@ export class FxPainter {
 
   /** Debris, casings, sawdust, paint drips, and flying page shards. */
   drawSolids(ctx: CanvasRenderingContext2D) {
+    if (this.bit.length === 0) return;
+    // One matrix read per frame; each tumbling solid then costs a single
+    // `setTransform` (the base composed with its own translate·rotate) instead
+    // of a save/translate/rotate/restore quartet, and the base goes back once
+    // at the end. Paint drips draw in document space, so the base transform is
+    // restored before each of those.
+    const m = ctx.getTransform();
+    const ma = m.a;
+    const mb = m.b;
+    const mc = m.c;
+    const md = m.d;
+    const me = m.e;
+    const mf = m.f;
+    let placed = false;
+    ctx.lineWidth = 1;
     for (const p of this.bit) {
       const t = p.life / p.maxLife;
       if (p.kind === "paint") {
+        if (placed) {
+          ctx.setTransform(ma, mb, mc, md, me, mf);
+          placed = false;
+        }
         // The wet head of a drip; the run it leaves behind is stamped on death.
         ctx.globalAlpha = 0.92;
         ctx.fillStyle = p.color ?? "#e63946";
@@ -242,9 +473,22 @@ export class FxPainter {
         ctx.fill();
         continue;
       }
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.angle ?? 0);
+      const angle = p.angle ?? 0;
+      let cos = 1;
+      let sin = 0;
+      if (angle !== 0) {
+        cos = Math.cos(angle);
+        sin = Math.sin(angle);
+      }
+      ctx.setTransform(
+        ma * cos + mc * sin,
+        mb * cos + md * sin,
+        mc * cos - ma * sin,
+        md * cos - mb * sin,
+        ma * p.x + mc * p.y + me,
+        mb * p.x + md * p.y + mf,
+      );
+      placed = true;
       ctx.globalAlpha = 1 - t * t;
       if (p.kind === "shard" && p.img) {
         // A torn-off chunk of the real page tumbling through the air. The ghost
@@ -267,7 +511,6 @@ export class FxPainter {
         }
         ctx.drawImage(p.img, p.sx!, p.sy!, p.sw!, p.sh!, -p.size / 2, -p.size / 2, p.size, p.size);
         ctx.strokeStyle = "rgba(10, 8, 6, 0.55)";
-        ctx.lineWidth = 1;
         ctx.strokeRect(-p.size / 2, -p.size / 2, p.size, p.size);
         // Lit top edge, so a tumbling shard catches the light as it spins.
         ctx.strokeStyle = "rgba(255, 252, 245, 0.4)";
@@ -284,8 +527,9 @@ export class FxPainter {
         ctx.fillStyle = p.color ?? (p.kind === "sawdust" ? "#a8865a" : "#55504b");
         ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
       }
-      ctx.restore();
     }
+    ctx.setTransform(ma, mb, mc, md, me, mf);
+    ctx.globalAlpha = 1;
   }
 
   /** The additive pass: embers, sparks, flashes, shockwaves, infalling matter. */

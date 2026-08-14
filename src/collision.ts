@@ -65,35 +65,42 @@ export function createManifold(a: Body, b: Body): Manifold {
   };
 }
 
-/** Support point of `b` furthest along (dx, dy). */
-function support(b: Body, dx: number, dy: number): number {
-  let best = 0;
-  let bestDot = -Infinity;
-  for (let i = 0; i < b.count; i++) {
-    const d = b.wv[i * 2] * dx + b.wv[i * 2 + 1] * dy;
-    if (d > bestDot) {
-      bestDot = d;
-      best = i;
-    }
-  }
-  return best;
-}
-
 /**
  * Deepest penetration of `b` into any face of `a`. A positive result means the
  * bodies are separated along that face's normal, which is an early-out.
+ *
+ * The support scan (furthest vertex of `b` along the face's inward normal) is
+ * inlined into the face loop: it is the profiler's hottest leaf, and hoisting
+ * the vertex arrays into locals with flat indices keeps it free of repeated
+ * property loads and call overhead. Same dot products, same strict-`>`
+ * tie-breaks, so the chosen face and separation are bit-identical.
  */
 function leastPenetration(a: Body, b: Body, out: Penetration) {
+  const an = a.wn;
+  const av = a.wv;
+  const bv = b.wv;
+  const aEnd = a.count * 2;
+  const bEnd = b.count * 2;
   let bestSep = -Infinity;
   let bestFace = 0;
-  for (let i = 0; i < a.count; i++) {
-    const nx = a.wn[i * 2];
-    const ny = a.wn[i * 2 + 1];
-    const s = support(b, -nx, -ny);
-    const sep = nx * (b.wv[s * 2] - a.wv[i * 2]) + ny * (b.wv[s * 2 + 1] - a.wv[i * 2 + 1]);
+  for (let k = 0; k < aEnd; k += 2) {
+    const nx = an[k];
+    const ny = an[k + 1];
+    const dx = -nx;
+    const dy = -ny;
+    let s = 0;
+    let bestDot = bv[0] * dx + bv[1] * dy;
+    for (let j = 2; j < bEnd; j += 2) {
+      const d = bv[j] * dx + bv[j + 1] * dy;
+      if (d > bestDot) {
+        bestDot = d;
+        s = j;
+      }
+    }
+    const sep = nx * (bv[s] - av[k]) + ny * (bv[s + 1] - av[k + 1]);
     if (sep > bestSep) {
       bestSep = sep;
-      bestFace = i;
+      bestFace = k >> 1;
     }
     if (sep > 0) break;
   }
@@ -158,13 +165,15 @@ export function collide(a: Body, b: Body, out: Manifold): boolean {
   const ny = ref.wn[refFace * 2 + 1];
 
   // Incident face: the one on `inc` most opposed to the reference normal.
+  const inw = inc.wn;
+  const incEnd = inc.count * 2;
   let incFace = 0;
   let minDot = Infinity;
-  for (let i = 0; i < inc.count; i++) {
-    const d = inc.wn[i * 2] * nx + inc.wn[i * 2 + 1] * ny;
+  for (let k = 0; k < incEnd; k += 2) {
+    const d = inw[k] * nx + inw[k + 1] * ny;
     if (d < minDot) {
       minDot = d;
-      incFace = i;
+      incFace = k >> 1;
     }
   }
   const i0 = incFace;

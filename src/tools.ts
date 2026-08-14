@@ -1,6 +1,7 @@
 import { emojiCursor } from "./cursors";
 import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
 import { emit, TAU } from "./math";
+import { scratchParticle } from "./particles";
 import { createEngineState, debris, dustPuff } from "./tool-kit";
 import {
   broomArt,
@@ -694,20 +695,22 @@ export const chainsaw: Tool = {
       for (let i = 0; i < chips; i++) {
         const back = Math.atan2(-dy, -dx) + (Math.random() - 0.5) * 1.5;
         const speed = 120 + Math.random() * 320;
-        engine.spawnParticle({
-          kind: "sawdust",
-          x: mx + (Math.random() - 0.5) * 8,
-          y: my + (Math.random() - 0.5) * 8,
-          vx: Math.cos(back) * speed,
-          vy: Math.sin(back) * speed - 60,
-          life: 0,
-          maxLife: 0.5 + Math.random() * 0.6,
-          size: 1.5 + Math.random() * 2.5,
-          angle: Math.random() * TAU,
-          spin: (Math.random() - 0.5) * 25,
-          bounce: 0.3,
-          restY: my + 50 + Math.random() * 150,
-        });
+        // The blade's highest-rate spawner: fill the pool's scratch particle
+        // instead of allocating a literal per chip.
+        const p = scratchParticle(
+          "sawdust",
+          mx + (Math.random() - 0.5) * 8,
+          my + (Math.random() - 0.5) * 8,
+          Math.cos(back) * speed,
+          Math.sin(back) * speed - 60,
+          0.5 + Math.random() * 0.6,
+          1.5 + Math.random() * 2.5,
+        );
+        p.angle = Math.random() * TAU;
+        p.spin = (Math.random() - 0.5) * 25;
+        p.bounce = 0.3;
+        p.restY = my + 50 + Math.random() * 150;
+        engine.spawnParticle(p);
       }
       if (Math.random() < 0.7) {
         debris(
