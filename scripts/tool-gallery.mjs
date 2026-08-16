@@ -166,19 +166,46 @@ window.__gallery = {
     return samples ? difference / (samples * 255) : 0;
   },
   async water() {
-    await this.gesture('paintball', [[480, 325]], 2);
-    const bounds = { x0: 420, y0: 260, x1: 540, y1: 385 };
-    this.waterStainBefore = this.surfaceDifference(bounds);
-    this.engine.spawnFlame(480, 325, 0.9);
+    // Two separate passes. surfaceDifference measures deviation from the
+    // pristine baseline, which cannot tell a paint stain from a scorch mark —
+    // a flame burning inside the measured box permanently darkens the wood and
+    // reads as stain the hose failed to wash off. Wash the paint first with no
+    // fire anywhere, then light one and put it out.
+    // Paintball and the hose both leave the drawn tool along the same fixed
+    // rest pose, up and to the left of the pointer, so firing both from one
+    // spot puts the jet over exactly the stain the paint laid down. Aiming at
+    // the stain instead would spray past it.
+    const nozzle = [535, 395];
+    const bounds = { x0: 330, y0: 170, x1: 570, y1: 410 };
+
+    // Fire first, on bare wood. A panel that has already been painted and
+    // soaked will not take a flame, so lighting one at the end tests nothing.
+    // The spot is on the jet's centre line, where the extinguishing samples
+    // land.
+    await this.select('water');
+    this.engine.spawnFlame(494, 341, 0.9);
     await this.frames(2);
     this.waterFlamesBefore = this.engine.flames.length;
-    await this.select('water');
-    await this.down([480, 420]);
+    await this.down(nozzle);
     await this.frames(58);
     this.waterParticles = this.particleCount('water') + this.particleCount('stream');
-    await this.up([480, 420]);
+    await this.up(nozzle);
     await this.park();
     this.waterFlamesAfter = this.engine.flames.length;
+
+    // Then the paint pass. Whatever the fire scorched is present in both
+    // readings below, so it cancels out and only what the hose lifts moves the
+    // number.
+    await this.gesture('paintball', [nozzle], 2);
+    // Paint marks the surface where its droplets land, not where they are
+    // fired. Measuring before they arrive reads a clean panel.
+    await this.frames(45);
+    this.waterStainBefore = this.surfaceDifference(bounds);
+    await this.select('water');
+    await this.down(nozzle);
+    await this.frames(58);
+    await this.up(nozzle);
+    await this.park();
     this.waterStainAfter = this.surfaceDifference(bounds);
   },
   async chainsaw() {
@@ -254,7 +281,11 @@ window.__gallery = {
     );
     this.laserCenterOpacity = this.engine.pageOpacityAt(480, 350);
   },
-  async primeRightAim(toolId) {
+  // The drawn tool holds one fixed pose, so engine.toolAim is the constant
+  // REST_AIM_X/REST_AIM_Y and no amount of pointer travel turns it. This still
+  // approaches the firing point the way a visitor does, which is what keeps
+  // retained cursor velocity out of the measurement.
+  async primeApproach(toolId) {
     await this.select(toolId);
     // Pointer-leave is the production signal that clears retained cursor
     // velocity. Prime from a clean hover so this helper remains deterministic
@@ -297,7 +328,7 @@ window.__gallery = {
     };
   },
   async acid() {
-    await this.primeRightAim('acid-sprayer');
+    await this.primeApproach('acid-sprayer');
     const origin = { x: 440, y: 350 };
     this.acidAim = { ...this.engine.toolAim };
     await this.down([origin.x, origin.y]);
@@ -311,7 +342,7 @@ window.__gallery = {
     // The long settle above verifies the complete bounded creep. Add a short
     // final pulse so the evidence image also captures the visible fizz that
     // tells a person *why* the wood is dissolving.
-    await this.primeRightAim('acid-sprayer');
+    await this.primeApproach('acid-sprayer');
     const evidenceOrigin = [560, 400];
     await this.down(evidenceOrigin);
     await this.frames(16);
@@ -553,10 +584,16 @@ function checksFor(toolId, metrics) {
       ];
     case "acid-sprayer": {
       const damage = metrics.acidDamage;
+      // `forward` is projected onto the aim the engine reported, so a positive
+      // mean *is* the directional claim: the acid landed where the tool points.
+      // The aim itself is the fixed `REST_AIM_X`/`REST_AIM_Y` pose — assert it
+      // is a real unit vector rather than a particular compass direction, so
+      // repositioning the art does not silently turn this check off.
+      const aimLength = Math.hypot(metrics.acidAim.x, metrics.acidAim.y);
       return [
         check(
           "Acid lands in the visible aim direction",
-          metrics.acidAim.x > 0.75 && damage.count > 0 && damage.meanForward > 5,
+          Math.abs(aimLength - 1) < 0.01 && damage.count > 0 && damage.meanForward > 5,
           `aim (${metrics.acidAim.x.toFixed(2)}, ${metrics.acidAim.y.toFixed(2)}); mean forward ${damage.meanForward.toFixed(1)}px`,
         ),
         check(
