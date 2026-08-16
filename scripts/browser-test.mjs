@@ -27,6 +27,21 @@ function assert(condition, message) {
 }
 
 /**
+ * Poll a page-side expression until it is true. The equivalent of `waitFor`
+ * from lib/browser.mjs for checks that only receive `run`. Failing here as a
+ * timeout rather than as a wrong value keeps a slow machine distinguishable
+ * from a broken one.
+ */
+async function until(run, expression, label, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await run(expression)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`);
+}
+
+/**
  * Injected into the demo page once. Tools are driven through real
  * `PointerEvent`s on the engine's own container so the whole input path —
  * pointer capture, primary-pointer gating, coordinate translation — is
@@ -186,7 +201,13 @@ const checks = [
           pointerId: 1,
           isPrimary: true,
         }));
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        // Wait for the redraw the move should request instead of assuming it
+        // lands inside a fixed budget: the claim is that a move schedules a
+        // frame, not that a loaded machine services it within 80ms.
+        const moveDeadline = performance.now() + 2000;
+        while (engineFrames === beforeMove && performance.now() < moveDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 16));
+        }
         const moveFrames = engineFrames - beforeMove;
         const settledAt = engineFrames;
         await new Promise((resolve) => setTimeout(resolve, 300));
@@ -488,7 +509,15 @@ const exampleChecks = [
     name: "a host-built toolbar renders from the shared model",
     async run(run) {
       await run("document.getElementById('launch').click()");
-      await run("new Promise((resolve) => setTimeout(resolve, 1500))");
+      // Opening rasterizes the page before the engine — and therefore the
+      // toolbar — exists. That takes as long as the machine takes, so wait for
+      // the bar rather than for a duration; a fixed sleep is a coin flip on a
+      // shared CI runner and reports "0 buttons" when it loses.
+      await until(
+        run,
+        "document.querySelectorAll('#bar button').length > 0",
+        "the host toolbar to render",
+      );
 
       const count = await run("document.querySelectorAll('#bar button').length");
       assert(count > 10, `the host toolbar rendered ${count} buttons`);
@@ -527,6 +556,9 @@ const exampleChecks = [
         run(
           `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`,
         );
+
+      // Independent of whether the check above already opened the engine.
+      await until(run, "Boolean(window.__ddExampleEngine)", "the example engine to mount");
 
       // Pick a tool by digit, then enter aiming — no pointer involved at all.
       await press("2");
