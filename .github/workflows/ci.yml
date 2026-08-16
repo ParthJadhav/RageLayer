@@ -166,9 +166,20 @@ jobs:
       # means a regression surfaces on the pull request instead of halfway
       # through a publish, when the version bump has already been merged.
       - name: Fixed-wood tool gallery
+        id: gallery
         env:
           RAGELAYER_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node scripts/tool-gallery.mjs
+
+      # The PNG/JSON evidence is the whole point of this suite; without it a
+      # failure that does not reproduce locally is only a tool name in a log.
+      - name: Upload tool gallery evidence
+        if: failure() && steps.gallery.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: tool-gallery
+          path: artifacts/tool-gallery
+          retention-days: 7
 
       - name: Benchmark smoke (short run)
         env:

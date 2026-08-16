@@ -761,6 +761,13 @@ try {
     await capture(cdp, sessionId, join(OUTPUT_DIR, image));
     results.push({ tool: tool.id, passed, checks: scenarioChecks, metrics, image });
     console.log(`  ${passed ? "ok  " : "FAIL"} ${tool.id}`);
+    // On CI the JSON/PNG evidence is thrown away with the runner, so a bare
+    // "FAIL chainsaw" is undiagnosable from the log alone. Print what missed.
+    if (!passed) {
+      for (const item of scenarioChecks.filter((check) => !check.passed)) {
+        console.log(`       ✗ ${item.label} — ${item.detail}`);
+      }
+    }
   }
 
   if (results.length === 0) throw new Error(`No built-in tool matched --only ${FILTER}`);
