@@ -11,3 +11,6 @@ docs/public/screenshots/
 benchmark-results*.json
 coverage/
 artifacts/
+# `bunx @puppeteer/browsers install chrome@<major>` drops a browser here when
+# reproducing a version-specific runtime failure locally.
+chrome/

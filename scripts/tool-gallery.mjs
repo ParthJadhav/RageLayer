@@ -14,7 +14,7 @@ import { evaluate, launchChrome, packageRoot, startStaticServer, waitFor } from 
 const TOOLS = [
   { id: "hammer", gesture: "hammer", settleMs: 150 },
   { id: "gun", gesture: "gun", settleMs: 150 },
-  { id: "flamethrower", gesture: "flamethrower", settleMs: 0 },
+  { id: "flamethrower", gesture: "flamethrower", settleMs: 0, evidence: "flamethrowerEvidence" },
   { id: "water", gesture: "water", settleMs: 0 },
   {
     id: "chainsaw",
@@ -49,7 +49,7 @@ const TOOLS = [
   { id: "bugs", gesture: "bugs", settleMs: 300 },
   { id: "gravity-gun", gesture: "gravityGun", settleMs: 200 },
   { id: "laser-cutter", gesture: "laser", settleMs: 250 },
-  { id: "acid-sprayer", gesture: "acid", settleMs: 0 },
+  { id: "acid-sprayer", gesture: "acid", settleMs: 0, evidence: "acidEvidence" },
   {
     id: "sticky-bombs",
     gesture: "click",
@@ -104,6 +104,12 @@ window.__gallery = {
     await this.move([850, 575], 0);
     await this.frames(3);
   },
+  /** Start the clock and run the scenario, in that order and nothing between. */
+  async begin(gesture, arg) {
+    this.engine.resume();
+    await this.frames(1);
+    return arg === undefined ? this[gesture]() : this[gesture](arg);
+  },
   async gesture(toolId, points, holdFrames = 3) {
     await this.select(toolId);
     const first = points[0];
@@ -150,14 +156,68 @@ window.__gallery = {
     this.fireAfterSpread = this.engine.flames.length;
     this.fireRadiusAfterSpread = this.flameRadius();
     this.fireDamageAfterSpread = this.opacityDamage({ x: 480, y: 365 });
-    // The long spread observation above intentionally outlives the visible
-    // flames. Re-ignite a small patch so the evidence PNG documents both the
-    // persistent damage and the live effect a visitor actually sees.
+  },
+  // The spread observation above intentionally outlives the visible flames.
+  // Re-ignite a small patch so the evidence PNG documents both the persistent
+  // damage and the live effect a visitor actually sees. Runs after the damage
+  // is measured and immediately before the freeze, so nothing slow sits
+  // between lighting this and photographing it.
+  async flamethrowerEvidence() {
+    await this.select('flamethrower');
     await this.down([540, 350]);
     await this.frames(12);
     await this.up([540, 350]);
     await this.park();
     await this.frames(3);
+  },
+  particleKinds() {
+    const kinds = {};
+    for (const particle of this.engine.particles.particles) {
+      kinds[particle.kind] = (kinds[particle.kind] ?? 0) + 1;
+    }
+    return kinds;
+  },
+  /**
+   * True once the captured page has actually rasterized across the working
+   * area. \`engine.content\` exists before its pixels do, and a tool that
+   * strikes an unpainted region finds neither structure to demolish nor
+   * surface to fracture — it no-ops, and the scenario then reports damage the
+   * tool was never given the chance to do.
+   */
+  surfaceAlphaAt(x, y) {
+    const content = this.engine.content;
+    if (!content) return 0;
+    const d = content.dpr;
+    return content.surface.getContext('2d').getImageData(
+      Math.floor(x * d), Math.floor(y * d), 1, 1,
+    ).data[3];
+  },
+  pagePainted() {
+    // Opacity is the damage map, not the raster — an unpainted region still
+    // reads 1 there. Ask the captured surface for its actual pixels.
+    for (const point of [[270, 250], [480, 350], [660, 350], [270, 450], [660, 450]]) {
+      if (this.surfaceAlphaAt(point[0], point[1]) < 200) return false;
+    }
+    return true;
+  },
+  /** What an acid reaction looks like on screen: fizz, bead and smoke. */
+  reactionParticles() {
+    const kinds = this.particleKinds();
+    return (kinds.paint ?? 0) + (kinds.spark ?? 0) + (kinds.smoke ?? 0);
+  },
+  /**
+   * Transient counts only, read after the engine is frozen so they describe
+   * the frame that is about to be photographed rather than one from before the
+   * damage scan. Everything here decays on its own; nothing in it is a
+   * persistent property of the page.
+   */
+  liveMetrics() {
+    return {
+      flames: this.engine.flames.length,
+      particles: this.engine.particles.count,
+      particleKinds: this.particleKinds(),
+      bugs: this.engine.bugs.count,
+    };
   },
   surfaceDifference(bounds) {
     const content = this.engine.content;
@@ -247,7 +307,17 @@ window.__gallery = {
     // Strike the empty upper-left area of the wood panel. Hitting the centered
     // label would select a tiny text node and make a successful demolition
     // look like no visible surface was removed at the gallery's sample grid.
-    await this.gesture('demolition', [[270, 250]], 2);
+    const point = [270, 250];
+    this.preStrike = {
+      opacity: this.engine.pageOpacityAt(point[0], point[1]),
+      alpha: this.surfaceAlphaAt(point[0], point[1]),
+      // Age of the harvested structure: it falls away from the strike point
+      // once the clock runs, so a high value here means the page left before
+      // the tool arrived.
+      structureAge: this.engine.physics.bodies[0]?.age ?? -1,
+      structureY: this.engine.physics.bodies[0]?.y ?? -1,
+    };
+    await this.gesture('demolition', [point], 2);
   },
   async click(toolId) {
     await this.gesture(toolId, [[480, 350]], 2);
@@ -356,16 +426,26 @@ window.__gallery = {
     await this.park();
     await this.frames(80);
     this.acidDamage = this.projectedDamage(origin, this.acidAim);
-
-    // The long settle above verifies the complete bounded creep. Add a short
-    // final pulse so the evidence image also captures the visible fizz that
-    // tells a person *why* the wood is dissolving.
+  },
+  // The long settle above verifies the complete bounded creep. A short final
+  // pulse gives the evidence image the visible fizz that tells a person *why*
+  // the wood is dissolving. Sparks and smoke live for a fraction of a second,
+  // so this runs after the damage scan rather than before it.
+  async acidEvidence() {
     await this.primeApproach('acid-sprayer');
     const evidenceOrigin = [560, 400];
     await this.down(evidenceOrigin);
     await this.frames(16);
     await this.up(evidenceOrigin);
     await this.park();
+    // Acid does not fizz on contact. The reaction particles appear as the
+    // deposits age through creepAcid, so how many frames it takes for the fizz
+    // to show is a function of dt, not of a frame count — waiting a fixed 16
+    // frames left two sparks alive on one browser and none on the next. Run
+    // until the reaction is actually on screen, then stop the clock in the
+    // same turn, so the sample and the photograph are the same instant.
+    for (let i = 0; i < 240 && this.reactionParticles() < 3; i++) await this.frame();
+    this.engine.pause();
   },
   async broom() {
     this.engine.content?.punch(480, 350, 30);
@@ -402,10 +482,8 @@ window.__gallery = {
       }
     }
     const bodies = this.engine.physics.bodies;
-    const particleKinds = {};
-    for (const particle of this.engine.particles.particles) {
-      particleKinds[particle.kind] = (particleKinds[particle.kind] ?? 0) + 1;
-    }
+    const particleKinds = this.particleKinds();
+
     return {
       removedRatio: total ? removed / total : 0,
       centerOpacity: this.engine.pageOpacityAt(480, 350),
@@ -441,6 +519,7 @@ window.__gallery = {
       acidDamage: this.acidDamage ?? {
         count: 0, meanForward: 0, minForward: 0, maxForward: 0, maxSideways: 0,
       },
+      preStrike: this.preStrike ?? null,
       broomOpacityBefore: this.broomOpacityBefore ?? 1,
       broomOpacityAfter: this.broomOpacityAfter ?? 0,
     };
@@ -461,7 +540,7 @@ function check(label, passed, detail) {
   return { label, passed: Boolean(passed), detail };
 }
 
-function checksFor(toolId, metrics) {
+function checksFor(toolId, metrics, live) {
   const percent = (value) => `${(value * 100).toFixed(2)}%`;
   switch (toolId) {
     case "hammer":
@@ -495,8 +574,8 @@ function checksFor(toolId, metrics) {
         ),
         check(
           "The evidence image includes live fire",
-          metrics.flames > 0,
-          `${metrics.flames} visible flames at capture`,
+          live.flames > 0,
+          `${live.flames} visible flames at capture`,
         ),
       ];
     case "water":
@@ -624,11 +703,11 @@ function checksFor(toolId, metrics) {
         ),
         check(
           "The evidence image includes an active acid reaction",
-          (metrics.particleKinds.paint ?? 0) +
-            (metrics.particleKinds.spark ?? 0) +
-            (metrics.particleKinds.smoke ?? 0) >
+          (live.particleKinds.paint ?? 0) +
+            (live.particleKinds.spark ?? 0) +
+            (live.particleKinds.smoke ?? 0) >
             0,
-          `${metrics.particles} live reaction particles at capture`,
+          `${live.particles} live reaction particles at capture`,
         ),
       ];
     }
@@ -726,6 +805,9 @@ const browser = await launchChrome({
     "--enable-unsafe-swiftshader",
     `--window-size=${WIDTH},${HEIGHT}`,
   ],
+  // `--cpu 6` reproduces a CI runner locally. Scenarios that only fail on a
+  // slow machine are otherwise unreachable from a developer's desk.
+  cpuRate: Number(readFlag("--cpu", "1")),
 });
 const { cdp, sessionId } = browser;
 await cdp.send(
@@ -754,8 +836,23 @@ try {
       label: `${tool.id} capture`,
     });
     await run(HARNESS);
+    // Harvested page elements fall under gravity from the moment the capture
+    // completes, so the page starts leaving the coordinates every scenario
+    // aims at. Stop the clock until the scenario is ready to act: measured
+    // across runs, a strike 0.25s after capture lands on the structure and one
+    // 8.8s later hits bare floor, because the structure is asleep at the
+    // bottom of the viewport by then.
+    await run("__gallery.engine.pause()");
+    // Free now that nothing is moving: the capture object exists before its
+    // pixels do, and a tool that strikes an unpainted region no-ops. Not
+    // fatal — a scenario on a half painted page should report what it
+    // measured rather than abort the suite.
+    await waitFor(cdp, sessionId, "__gallery.pagePainted()", {
+      timeoutMs: 10_000,
+      label: `${tool.id} surface to finish painting`,
+    }).catch(() => {});
     await run(
-      `__gallery.${tool.gesture}(${tool.gesture === "click" ? JSON.stringify(tool.id) : ""})`,
+      `__gallery.begin(${JSON.stringify(tool.gesture)}${tool.gesture === "click" ? `, ${JSON.stringify(tool.id)}` : ""})`,
     );
     if (tool.waitFor) {
       // Not fatal. Surface damage is reconciled in bands across several
@@ -769,20 +866,32 @@ try {
       }).catch(() => {});
     }
     await wait(tool.settleMs);
+    // Persistent damage first: it has settled and only grows, so a slow
+    // machine cannot change the answer.
     const metrics = await run("__gallery.metrics()");
-    const scenarioChecks = checksFor(tool.id, metrics);
-    const passed = scenarioChecks.every((item) => item.passed);
-    await run(
-      `document.querySelector('#result').textContent = ${JSON.stringify(`${passed ? "PASS" : "FAIL"} · ${scenarioChecks.filter((item) => item.passed).length}/${scenarioChecks.length} checks`)}`,
-    );
+
+    // Then the transient evidence, deliberately last. Sparks, smoke and flames
+    // live for a fraction of a second, and `metrics()` above is a few thousand
+    // opacity samples plus a round trip — producing the effect before that scan
+    // meant photographing whatever survived it, which is why this suite passed
+    // on one machine and not another.
+    if (tool.evidence) await run(`__gallery.${tool.evidence}()`);
     if (tool.captureLive) await run("__gallery.frames(2)");
     else
       await run(
         "engine.pause(); new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
       );
+    // Frozen: this sample and the screenshot below are the same frame.
+    const live = await run("__gallery.liveMetrics()");
+
+    const scenarioChecks = checksFor(tool.id, metrics, live);
+    const passed = scenarioChecks.every((item) => item.passed);
+    await run(
+      `document.querySelector('#result').textContent = ${JSON.stringify(`${passed ? "PASS" : "FAIL"} · ${scenarioChecks.filter((item) => item.passed).length}/${scenarioChecks.length} checks`)}`,
+    );
     const image = `${tool.id}.png`;
     await capture(cdp, sessionId, join(OUTPUT_DIR, image));
-    results.push({ tool: tool.id, passed, checks: scenarioChecks, metrics, image });
+    results.push({ tool: tool.id, passed, checks: scenarioChecks, metrics, live, image });
     console.log(`  ${passed ? "ok  " : "FAIL"} ${tool.id}`);
     // On CI the JSON/PNG evidence is thrown away with the runner, so a bare
     // "FAIL chainsaw" is undiagnosable from the log alone. Print what missed.
