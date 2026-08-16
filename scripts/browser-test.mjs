@@ -8,7 +8,7 @@
  * the built `dist` through the actual demo page in headless Chrome and asserts
  * what a visitor would see.
  *
- *   node scripts/browser-test.mjs [--only <substring>]
+ *   node scripts/browser-test.mjs [--only <substring>] [--cpu <rate>]
  *
  * `RAGELAYER_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
  */
@@ -16,6 +16,14 @@
 import { evaluate, launchChrome, startStaticServer, waitFor } from "./lib/browser.mjs";
 
 const filter = readFlag("--only", "");
+
+/**
+ * Rasterizing a cold page is the slowest thing this suite does, and it is the
+ * one wait whose budget has to survive a loaded shared runner. Generous on
+ * purpose: a timeout here should mean the capture is broken, not that the
+ * machine was busy.
+ */
+const CAPTURE_TIMEOUT_MS = 60_000;
 
 function readFlag(name, fallback) {
   const index = process.argv.indexOf(name);
@@ -191,9 +199,24 @@ const checks = [
           engineFrames++;
           return original(now);
         };
-        // Let clear/capture and the first pointer presentation drain, then
-        // prove a later move still requests an on-demand redraw.
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        // Wait for the loop to genuinely sleep rather than draining for a
+        // fixed 250ms. The frame that clear/setTool/the first move requested
+        // captured the pre-patch engine.frame when it was scheduled; on a slow
+        // machine it can still be pending after any fixed budget, and the
+        // second move then coalesces into that callback — the engine presents
+        // the move correctly, but the counter never sees it and this check
+        // reports a wedge that does not exist. No scheduled frame and a parked
+        // frame clock mean the next wake must schedule the patched frame.
+        const settleDeadline = performance.now() + 10000;
+        while (
+          (__dd.engine.raf !== 0 || !__dd.engine.frameClockSleeping) &&
+          performance.now() < settleDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 16));
+        }
+        if (__dd.engine.raf !== 0 || !__dd.engine.frameClockSleeping) {
+          return { settled: false };
+        }
         const beforeMove = engineFrames;
         __dd.engine.container.dispatchEvent(new PointerEvent('pointermove', {
           clientX: 420,
@@ -212,6 +235,7 @@ const checks = [
         const settledAt = engineFrames;
         await new Promise((resolve) => setTimeout(resolve, 300));
         return {
+          settled: true,
           moveFrames,
           idleFrames: engineFrames - settledAt,
           pointerX: __dd.engine.pointer.x,
@@ -220,6 +244,7 @@ const checks = [
         };
       })()`);
 
+      assert(result.settled, "the frame loop never slept after clear and tool selection");
       assert(result.pointerX === 420, "the on-demand pointer update was lost");
       assert(
         result.moveFrames >= 1,
@@ -522,6 +547,7 @@ const exampleChecks = [
         run,
         "document.querySelectorAll('#bar button').length > 0",
         "the host toolbar to render",
+        CAPTURE_TIMEOUT_MS,
       );
 
       const count = await run("document.querySelectorAll('#bar button').length");
@@ -563,7 +589,12 @@ const exampleChecks = [
         );
 
       // Independent of whether the check above already opened the engine.
-      await until(run, "Boolean(window.__ddExampleEngine)", "the example engine to mount");
+      await until(
+        run,
+        "Boolean(window.__ddExampleEngine)",
+        "the example engine to mount",
+        CAPTURE_TIMEOUT_MS,
+      );
 
       // Pick a tool by digit, then enter aiming — no pointer involved at all.
       await press("2");
@@ -672,6 +703,9 @@ const browser = await launchChrome({
   // Software GL: CI runners have no GPU, and the surface shader must still
   // come up there or the fallback would silently become the only tested path.
   flags: ["--use-angle=swiftshader", "--use-gl=angle", "--enable-unsafe-swiftshader"],
+  // `--cpu 6` reproduces a CI runner locally; the load-dependent failures in
+  // this suite only surface once frames are slow enough to overlap real work.
+  cpuRate: Number(readFlag("--cpu", "1")),
 });
 
 // A runtime error the page swallowed is still a defect; surface it as one.
