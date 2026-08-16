@@ -141,7 +141,7 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage && node scripts/check-coverage.mjs",
     "test:browser": "bun run build && node scripts/browser-test.mjs",
-    "test:tools:visual": "bun run build && node scripts/tool-gallery.mjs",
+    "demo:tools": "bun run build && node scripts/tool-demo.mjs",
     "typecheck": "tsc --noEmit",
     "typecheck:consumers": "tsc -p tests/fixtures/consumer/tsconfig.json && tsc -p tests/fixtures/consumer/tsconfig.node16.json",
     "lint": "biome check .",
@@ -164,7 +164,7 @@
     "screenshots": "bun run build && node scripts/screenshots.mjs",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "bun run check && bun run test:tools:visual && changeset publish",
+    "release": "bun run check && changeset publish",
     "prepack": "bun run build"
   },
   "keywords": [

@@ -277,7 +277,7 @@ damage. See [capture and framework integration notes](./docs/integrations.md).
 bun install
 bun run check         # types, lint, unit tests + coverage floors, build, package validation
 bun run test:browser  # runtime suite in headless Chrome (real WebGL, real capture)
-bun run test:tools:visual # 16 isolated tool scenarios + PNG/JSON evidence
+bun run demo:tools    # record all 16 tools as a video reel for review
 bun run benchmark:low-end # fixed workloads with 6× CPU throttling
 bun run docs:dev      # local documentation site
 bun run docs:build    # production docs + live demo
@@ -286,8 +286,9 @@ bun run docs:build    # production docs + live demo
 `test:browser` needs a Chrome binary; point `RAGELAYER_CHROME_PATH` at one if it is not on the default
 path. It is the only place page capture, the WebGL2 surface shader and the post-processing chain
 actually execute, so run it before changing any of them.
-Visual evidence is written to `artifacts/tool-gallery/`; profiler flags and a controlled comparison
-workflow are documented in [Performance and benchmarks](./docs/performance.md).
+`demo:tools` writes clips, stills and an `index.html` to `artifacts/tool-demo/` for a person to
+review — it is a demo, not a gate. Profiler flags and a controlled comparison workflow are
+documented in [Performance and benchmarks](./docs/performance.md).
 
 Changes are released with Changesets. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a
 pull request.

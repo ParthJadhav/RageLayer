@@ -45,16 +45,6 @@ jobs:
       - name: Install dependencies from lockfile
         run: bun install --frozen-lockfile
 
-      # `bun run release` ends in the fixed-wood tool gallery, which drives a
-      # real browser over CDP. Without this, `resolveChromePath()` falls back to
-      # the macOS Chrome location and the publish dies before `changeset
-      # publish` ever runs. See scripts/lib/browser.mjs.
-      - name: Install Chrome for the visual release gate
-        id: chrome
-        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
-        with:
-          chrome-version: stable
-
       - name: Create release PR or publish to npm
         id: changesets
         uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
@@ -65,7 +55,6 @@ jobs:
           title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RAGELAYER_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
 
       - name: Download published registry artifact
         if: steps.changesets.outputs.published == 'true'

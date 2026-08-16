@@ -59,7 +59,7 @@ the default location.
 ```sh
 bun run check              # everything CI checks
 bun run test:browser       # if behavior depends on capture, WebGL, or real layout
-bun run test:tools:visual  # if a tool's gesture, effect, or art changed
+bun run demo:tools         # if a tool's gesture, effect, or art changed — then watch the reel
 bun run benchmark          # if you touched the runtime hot paths
 bun run profile:effects:low-end # if you touched rendering or particle emission
 bun run memory:check       # if you touched lifecycle/dispose paths

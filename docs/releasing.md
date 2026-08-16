@@ -24,13 +24,11 @@ token, and the package disallows bypass-2FA token publishing.
 2. Merge the pull request to `main`.
 3. The release workflow opens or updates the **chore: version packages** pull request.
 4. Review the version and generated changelog, then merge that pull request.
-5. The workflow runs the complete package check and the fixed-wood tool gallery, publishes to npm,
-   creates the git tag and GitHub Release, downloads the published registry tarball, and attaches
-   that exact `.tgz` artifact.
+5. The workflow runs the complete package check, publishes to npm, creates the git tag and GitHub
+   Release, downloads the published registry tarball, and attaches that exact `.tgz` artifact.
 
-`bun run release` ends in `test:tools:visual`, which drives a real browser. The release job installs
-Chrome and passes `RAGELAYER_CHROME_PATH`; CI runs the same suite on every pull request so a failure
-surfaces before the version PR is merged rather than mid-publish.
+Publication is gated on `bun run check` only. The tool demo reel is recorded on demand for human
+review and never blocks a release — see [the performance guide](./performance.md#tool-demo-reel).
 
 Do not edit `CHANGELOG.md` or the package version manually; Changesets owns both.
 

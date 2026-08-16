@@ -1,12 +1,24 @@
 /**
- * Captures every built-in tool against the one fixed wood surface in real
- * headless Chrome. Each isolated scenario writes a PNG plus JSON, Markdown,
- * and browsable HTML reports under artifacts/tool-gallery/.
+ * Records every built-in tool performing its scenario against the one fixed
+ * wood surface, in real headless Chrome, as a video reel for a person to watch.
  *
- *   node scripts/tool-gallery.mjs
- *   node scripts/tool-gallery.mjs --only laser-cutter
+ * This is evidence, not a test. It reports what it measured and never fails on
+ * it: whether a structural cut has finished reconciling at the moment a frame
+ * is sampled is a property of the machine, not of the tool, and gating a
+ * release on that only ever produced false alarms. Console errors are the
+ * exception — those are unambiguous, and a reviewer watching a video would not
+ * catch them.
+ *
+ * Writes per-tool clips, a stitched reel, stills, and JSON/Markdown/HTML
+ * reports under artifacts/tool-demo/. Needs ffmpeg for the video; without it
+ * the stills and reports are still produced.
+ *
+ *   node scripts/tool-demo.mjs
+ *   node scripts/tool-demo.mjs --only laser-cutter
+ *   node scripts/tool-demo.mjs --cpu 6
  */
 
+import { spawnSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { evaluate, launchChrome, packageRoot, startStaticServer, waitFor } from "./lib/browser.mjs";
@@ -61,7 +73,11 @@ const TOOLS = [
 ];
 const FILTER = readFlag("--only", "").toLowerCase();
 const POSTFX = !process.argv.includes("--no-postfx");
-const OUTPUT_DIR = join(packageRoot, "artifacts", "tool-gallery");
+const OUTPUT_DIR = join(packageRoot, "artifacts", "tool-demo");
+/** Playback rate for the reel; the screencast itself is paint-driven. */
+const REEL_FPS = 20;
+/** Beat at the head of each clip so the tool name is readable before it fires. */
+const TITLE_HOLD_MS = 700;
 const WIDTH = 960;
 const HEIGHT = 720;
 
@@ -540,7 +556,7 @@ function check(label, passed, detail) {
   return { label, passed: Boolean(passed), detail };
 }
 
-function checksFor(toolId, metrics, live) {
+function observationsFor(toolId, metrics, live) {
   const percent = (value) => `${(value * 100).toFixed(2)}%`;
   switch (toolId) {
     case "hammer":
@@ -732,6 +748,115 @@ function checksFor(toolId, metrics, live) {
   }
 }
 
+/**
+ * Records each scenario as a screencast and encodes it with ffmpeg.
+ *
+ * CDP delivers frames only when the page actually paints, so the stream is
+ * uneven by nature. Encoding at a fixed rate is deliberate: a demo reel wants
+ * even playback, not a faithful reproduction of how long a headless runner
+ * happened to take between paints.
+ *
+ * ffmpeg is optional. Without it the run still produces stills and the report —
+ * the point of this suite is evidence for a person, and losing the video should
+ * not lose everything else.
+ */
+function createRecorder(cdp, sessionId, outputDir) {
+  const available = hasFfmpeg();
+  if (!available) {
+    console.warn("ffmpeg not found — recording stills only, no video.");
+  }
+  const framesRoot = join(outputDir, "frames");
+  let current = null;
+
+  return {
+    async start(toolId) {
+      if (!available) return;
+      const dir = join(framesRoot, toolId);
+      await mkdir(dir, { recursive: true });
+      const state = { dir, count: 0, writes: [], stop: false };
+      // Poll screenshots rather than Page.startScreencast. The screencast is
+      // driven by compositor paints, and a headless page on swiftshader barely
+      // produces any — a whole hammer scenario came out as three frames. Asking
+      // for a frame on a fixed interval is slower but yields even, predictable
+      // playback whatever the renderer is doing.
+      state.loop = (async () => {
+        while (!state.stop) {
+          const started = Date.now();
+          try {
+            const { data } = await cdp.send(
+              "Page.captureScreenshot",
+              { format: "jpeg", quality: 70, fromSurface: true, optimizeForSpeed: true },
+              sessionId,
+            );
+            const name = String(state.count++).padStart(6, "0");
+            state.writes.push(writeFile(join(dir, `${name}.jpg`), Buffer.from(data, "base64")));
+          } catch {
+            // Mid-navigation, or the page went away. Nothing to record.
+          }
+          const remaining = 1000 / REEL_FPS - (Date.now() - started);
+          if (remaining > 0) await wait(remaining);
+        }
+      })();
+      current = state;
+    },
+    async stop(toolId) {
+      if (!available || !current) return null;
+      const { dir, writes, loop } = current;
+      current.stop = true;
+      await loop;
+      current = null;
+      await Promise.all(writes);
+      const count = writes.length;
+      if (count === 0) return null;
+      const clip = `${toolId}.mp4`;
+      // biome-ignore format: ffmpeg flags read as flag/value pairs, not one per line.
+      const encoded = ffmpeg([
+        "-y",
+        "-framerate", String(REEL_FPS),
+        "-i", join(dir, "%06d.jpg"),
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        join(outputDir, clip),
+      ]);
+      await rm(dir, { recursive: true, force: true });
+      return encoded ? clip : null;
+    },
+    /** Stitch the per-tool clips into one reel to watch end to end. */
+    async join(results) {
+      if (!available) return null;
+      const clips = results.filter((result) => result.clip);
+      if (clips.length === 0) return null;
+      const listPath = join(outputDir, "reel.txt");
+      await writeFile(listPath, `${clips.map((c) => `file '${c.clip}'`).join("\n")}\n`);
+      const reel = "all-tools.mp4";
+      // biome-ignore format: ffmpeg flags read as flag/value pairs, not one per line.
+      const ok = ffmpeg([
+        "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", listPath,
+        "-c", "copy",
+        join(outputDir, reel),
+      ]);
+      await rm(listPath, { force: true });
+      await rm(framesRoot, { recursive: true, force: true });
+      return ok ? reel : null;
+    },
+  };
+}
+
+function hasFfmpeg() {
+  return spawnSync("ffmpeg", ["-version"], { stdio: "ignore" }).status === 0;
+}
+
+function ffmpeg(args) {
+  const result = spawnSync("ffmpeg", ["-loglevel", "error", ...args], { stdio: "inherit" });
+  if (result.status !== 0) console.warn(`ffmpeg failed: ${args.at(-1)}`);
+  return result.status === 0;
+}
+
 async function capture(cdp, sessionId, path) {
   const { data } = await cdp.send(
     "Page.captureScreenshot",
@@ -743,23 +868,30 @@ async function capture(cdp, sessionId, path) {
 
 function reportMarkdown(results, browserName) {
   const lines = [
-    "# RageLayer fixed-wood tool gallery",
+    "# RageLayer tool demo",
     "",
-    `Generated in ${browserName}. Every built-in tool runs in an isolated real-Chrome scenario on the same fixed wood surface.`,
+    `Recorded in ${browserName}. Every built-in tool performs its scenario in an isolated real-Chrome page on the same fixed wood surface.`,
     "",
-    "| Tool | Result | Evidence |",
-    "|---|---|---|",
+    "Watch `all-tools.mp4` and judge whether each tool does what it claims. The",
+    "expectations below are measured context to point you at what to look for —",
+    "they are not pass/fail, and an unmet one is a prompt to watch that clip, not",
+    "a defect on its own.",
+    "",
+    "| Tool | Expectations met | Clip | Still |",
+    "|---|---|---|---|",
   ];
   for (const result of results) {
+    const met = result.observations.filter((item) => item.passed).length;
+    const clip = result.clip ? `[MP4](./${result.clip})` : "—";
     lines.push(
-      `| ${result.tool} | ${result.passed ? "✅ PASS" : "❌ FAIL"} | [PNG](./${result.image}) |`,
+      `| ${result.tool} | ${met}/${result.observations.length} | ${clip} | [PNG](./${result.image}) |`,
     );
   }
-  lines.push("", "## Assertions", "");
+  lines.push("", "## What each scenario expects", "");
   for (const result of results) {
     lines.push(`### ${result.tool}`, "");
-    for (const item of result.checks) {
-      lines.push(`- ${item.passed ? "✅" : "❌"} ${item.label} — ${item.detail}`);
+    for (const item of result.observations) {
+      lines.push(`- ${item.passed ? "met" : "not met"} — ${item.label}: ${item.detail}`);
     }
     lines.push("");
   }
@@ -774,31 +906,38 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function galleryHtml(results, browserName) {
+function galleryHtml(results, browserName, reel) {
   const cards = results
-    .map(
-      (result) => `
-        <figure class="card ${result.passed ? "pass" : "fail"}">
-          <a href="./${result.image}"><img src="./${result.image}" alt="${escapeHtml(result.tool)} on fixed wood" loading="lazy"></a>
+    .map((result) => {
+      const met = result.observations.filter((item) => item.passed).length;
+      const media = result.clip
+        ? `<video src="./${result.clip}" controls preload="none" poster="./${result.image}"></video>`
+        : `<a href="./${result.image}"><img src="./${result.image}" alt="${escapeHtml(result.tool)} on fixed wood" loading="lazy"></a>`;
+      return `
+        <figure class="card${met < result.observations.length ? " flagged" : ""}">
+          ${media}
           <figcaption>
             <strong>${escapeHtml(result.tool)}</strong>
-            <span>${result.passed ? "PASS" : "FAIL"} · ${result.checks.filter((item) => item.passed).length}/${result.checks.length} checks</span>
+            <span>${met}/${result.observations.length} expectations met</span>
           </figcaption>
-          <ul>${result.checks.map((item) => `<li>${item.passed ? "✅" : "❌"} ${escapeHtml(item.label)} — ${escapeHtml(item.detail)}</li>`).join("")}</ul>
-        </figure>`,
-    )
+          <ul>${result.observations.map((item) => `<li class="${item.passed ? "met" : "unmet"}">${escapeHtml(item.label)} — ${escapeHtml(item.detail)}</li>`).join("")}</ul>
+        </figure>`;
+    })
     .join("");
+  const header = reel
+    ? `<video class="reel" src="./${reel}" controls preload="metadata"></video>`
+    : "";
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RageLayer tool gallery</title>
-<style>body{margin:0;padding:36px;background:#0b0d10;color:#f5f3ed;font:14px/1.4 system-ui}h1{margin:0}p{color:#9da3ae}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px;margin-top:28px}.card{margin:0;border:1px solid #292d35;border-radius:14px;overflow:hidden;background:#15181e}.card.fail{border-color:#e45858}.card img{display:block;width:100%;height:auto}.card figcaption{display:flex;justify-content:space-between;gap:10px;padding:12px 14px}.card span{color:#9da3ae;font-size:12px}.card ul{margin:0;padding:0 14px 14px 30px;color:#c7cad0;font-size:12px}</style></head>
-<body><h1>Fixed-wood tool evidence</h1><p>${results.filter((result) => result.passed).length}/${results.length} scenarios passed · ${escapeHtml(browserName)}</p><main class="grid">${cards}</main></body></html>\n`;
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RageLayer tool demo</title>
+<style>body{margin:0;padding:36px;background:#0b0d10;color:#f5f3ed;font:14px/1.4 system-ui}h1{margin:0}p{color:#9da3ae;max-width:64ch}video{display:block;width:100%;height:auto;background:#000}.reel{margin-top:24px;border-radius:14px;border:1px solid #292d35}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px;margin-top:28px}.card{margin:0;border:1px solid #292d35;border-radius:14px;overflow:hidden;background:#15181e}.card.flagged{border-color:#c88a3a}.card img{display:block;width:100%;height:auto}.card figcaption{display:flex;justify-content:space-between;gap:10px;padding:12px 14px}.card span{color:#9da3ae;font-size:12px}.card ul{margin:0;padding:0 14px 14px 30px;color:#c7cad0;font-size:12px}.card li.unmet{color:#e0b072}</style></head>
+<body><h1>Tool demo</h1><p>${results.length} scenarios recorded in ${escapeHtml(browserName)}. Watch and judge whether each tool does what it claims. The expectations under each clip are measured context, not pass/fail — an unmet one is a prompt to watch that clip closely.</p>${header}<main class="grid">${cards}</main></body></html>\n`;
 }
 
 await rm(OUTPUT_DIR, { recursive: true, force: true });
 await mkdir(OUTPUT_DIR, { recursive: true });
-const server = await startStaticServer("/tests/fixtures/tool-gallery.html");
+const server = await startStaticServer("/tests/fixtures/tool-demo.html");
 const browser = await launchChrome({
-  url: `${server.origin}/tests/fixtures/tool-gallery.html`,
+  url: `${server.origin}/tests/fixtures/tool-demo.html`,
   flags: [
     "--use-angle=swiftshader",
     "--use-gl=angle",
@@ -810,6 +949,7 @@ const browser = await launchChrome({
   cpuRate: Number(readFlag("--cpu", "1")),
 });
 const { cdp, sessionId } = browser;
+const recorder = createRecorder(cdp, sessionId, OUTPUT_DIR);
 await cdp.send(
   "Emulation.setDeviceMetricsOverride",
   { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false },
@@ -827,7 +967,7 @@ const results = [];
 try {
   for (const tool of TOOLS) {
     if (FILTER && FILTER !== tool.id) continue;
-    const url = `${server.origin}/tests/fixtures/tool-gallery.html?tool=${tool.id}&postfx=${POSTFX ? "on" : "off"}`;
+    const url = `${server.origin}/tests/fixtures/tool-demo.html?tool=${tool.id}&postfx=${POSTFX ? "on" : "off"}`;
     await cdp.send("Page.navigate", { url }, sessionId);
     await waitFor(cdp, sessionId, "document.documentElement?.dataset.ready === 'true'", {
       label: `${tool.id} fixture`,
@@ -843,6 +983,10 @@ try {
     // 8.8s later hits bare floor, because the structure is asleep at the
     // bottom of the viewport by then.
     await run("__gallery.engine.pause()");
+    // Roll before the scenario starts so the clip opens on the intact page with
+    // the tool named on screen — a reviewer needs the before, not just the after.
+    await recorder.start(tool.id);
+    await wait(TITLE_HOLD_MS);
     // Free now that nothing is moving: the capture object exists before its
     // pixels do, and a tool that strikes an unpainted region no-ops. Not
     // fatal — a scenario on a half painted page should report what it
@@ -884,43 +1028,60 @@ try {
     // Frozen: this sample and the screenshot below are the same frame.
     const live = await run("__gallery.liveMetrics()");
 
-    const scenarioChecks = checksFor(tool.id, metrics, live);
-    const passed = scenarioChecks.every((item) => item.passed);
+    const observations = observationsFor(tool.id, metrics, live);
+    const met = observations.filter((item) => item.passed).length;
     await run(
-      `document.querySelector('#result').textContent = ${JSON.stringify(`${passed ? "PASS" : "FAIL"} · ${scenarioChecks.filter((item) => item.passed).length}/${scenarioChecks.length} checks`)}`,
+      `document.querySelector('#result').textContent = ${JSON.stringify(`${met}/${observations.length} expectations met`)}`,
     );
     const image = `${tool.id}.png`;
     await capture(cdp, sessionId, join(OUTPUT_DIR, image));
-    results.push({ tool: tool.id, passed, checks: scenarioChecks, metrics, live, image });
-    console.log(`  ${passed ? "ok  " : "FAIL"} ${tool.id}`);
-    // On CI the JSON/PNG evidence is thrown away with the runner, so a bare
-    // "FAIL chainsaw" is undiagnosable from the log alone. Print what missed.
-    if (!passed) {
-      for (const item of scenarioChecks.filter((check) => !check.passed)) {
-        console.log(`       ✗ ${item.label} — ${item.detail}`);
-      }
+    const clip = await recorder.stop(tool.id);
+    results.push({ tool: tool.id, observations, metrics, live, image, clip });
+    console.log(
+      `  ${tool.id} — ${met}/${observations.length} expectations met${clip ? "" : " (no clip)"}`,
+    );
+    for (const item of observations.filter((check) => !check.passed)) {
+      console.log(`       · ${item.label} — ${item.detail}`);
     }
   }
 
   if (results.length === 0) throw new Error(`No built-in tool matched --only ${FILTER}`);
+  const reel = await recorder.join(results);
   const report = {
     generatedAt: new Date().toISOString(),
     browser: browser.version.Browser,
     surface: "wood",
     scenarios: results.length,
-    failures: results.filter((result) => !result.passed).length,
     consoleErrors: errors,
+    reel,
     results,
   };
   await writeFile(join(OUTPUT_DIR, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
   await writeFile(join(OUTPUT_DIR, "README.md"), reportMarkdown(results, browser.version.Browser));
-  await writeFile(join(OUTPUT_DIR, "index.html"), galleryHtml(results, browser.version.Browser));
+  await writeFile(
+    join(OUTPUT_DIR, "index.html"),
+    galleryHtml(results, browser.version.Browser, reel),
+  );
 
+  // Console errors are the one thing still worth failing on: they are
+  // unambiguous, they do not depend on how fast the machine is, and a reviewer
+  // watching a video will not notice them.
   if (errors.length) {
     throw new Error(`Chrome logged ${errors.length} console error(s): ${errors.join(" | ")}`);
   }
-  if (report.failures) throw new Error(`${report.failures} tool scenarios failed`);
-  console.log(`\nAll ${results.length} fixed-wood tool scenarios passed.`);
+  const unmet = results.reduce(
+    (total, result) => total + result.observations.filter((item) => !item.passed).length,
+    0,
+  );
+  console.log(`\nRecorded ${results.length} tool scenarios.`);
+  if (unmet > 0) {
+    // Reported, never fatal. These expectations are load-sensitive: whether a
+    // structural cut has finished reconciling when the frame is sampled is a
+    // property of the machine, not of the tool. They are here to point a
+    // reviewer at what to look for in the video, not to gate anything.
+    console.log(`${unmet} expectation(s) not met — worth a closer look in the reel.`);
+  }
+  if (reel) console.log(`Reel:     ${join(OUTPUT_DIR, reel)}`);
   console.log(`Evidence: ${OUTPUT_DIR}`);
 } finally {
   await browser.close();

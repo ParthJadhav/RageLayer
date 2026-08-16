@@ -125,14 +125,20 @@ Each non-metrics run writes a `.cpuprofile`, Chrome trace, and JSON summary. Com
 runs with identical Chrome, viewport, DPR, quality, duration, and throttle settings; short Canvas2D
 and GPU measurements vary enough that a single run can point in the wrong direction.
 
-### Visual regression loop
+### Tool demo reel
 
-`bun run test:tools:visual` runs every built-in tool on the same fixed wood surface in real Chrome.
-It writes 16 PNGs plus `report.json`, `README.md`, and a browsable `index.html` under
-`artifacts/tool-gallery/`. The assertions cover both structural outcomes and visual-evidence
-preconditions—for example, the fire image must contain live flames and the acid image an active
-reaction, not only the settled damage left after the spread checks finish. Use
-`node scripts/tool-gallery.mjs --only acid-sprayer` to iterate on one tool before the full pass.
+`bun run demo:tools` records every built-in tool performing its scenario on the same fixed wood
+surface in real Chrome. It writes a clip per tool, a stitched `all-tools.mp4`, 16 stills, and
+`report.json` / `README.md` / a browsable `index.html` under `artifacts/tool-demo/`. Use
+`node scripts/tool-demo.mjs --only acid-sprayer` for one tool, and `--cpu 6` to record what a slow
+machine sees.
+
+This is evidence for a person, not a gate. Nothing blocks on it, and the expectations printed beside
+each clip are measured context rather than pass/fail — whether a structural cut has finished
+reconciling at the instant a frame is sampled depends on the machine, not on the tool, and gating on
+that produced only false alarms. Console errors are the exception and still fail the run. On GitHub,
+trigger the **Tool demo** workflow by hand or label a pull request `tool-demo`; the reel lands as a
+downloadable artifact.
 
 ## Distribution budgets
 
