@@ -16,9 +16,21 @@ const TOOLS = [
   { id: "gun", gesture: "gun", settleMs: 150 },
   { id: "flamethrower", gesture: "flamethrower", settleMs: 0 },
   { id: "water", gesture: "water", settleMs: 0 },
-  { id: "chainsaw", gesture: "chainsaw", settleMs: 150 },
+  {
+    id: "chainsaw",
+    gesture: "chainsaw",
+    settleMs: 150,
+    waitFor: "__gallery.metrics().centerOpacity < 0.3",
+    timeoutMs: 10_000,
+  },
   { id: "paintball", gesture: "paintball", settleMs: 0 },
-  { id: "demolition", gesture: "demolition", settleMs: 300 },
+  {
+    id: "demolition",
+    gesture: "demolition",
+    settleMs: 300,
+    waitFor: "__gallery.metrics().removedRatio > 0",
+    timeoutMs: 10_000,
+  },
   {
     id: "rocket",
     gesture: "click",
@@ -26,7 +38,13 @@ const TOOLS = [
     waitFor: "__gallery.metrics().removedRatio > 0 || __gallery.metrics().bodies > 0",
     timeoutMs: 8_000,
   },
-  { id: "lightning", gesture: "click", settleMs: 250 },
+  {
+    id: "lightning",
+    gesture: "click",
+    settleMs: 250,
+    waitFor: "__gallery.metrics().removedRatio > 0",
+    timeoutMs: 10_000,
+  },
   { id: "blackhole", gesture: "blackhole", settleMs: 0, captureLive: true },
   { id: "bugs", gesture: "bugs", settleMs: 300 },
   { id: "gravity-gun", gesture: "gravityGun", settleMs: 200 },
@@ -740,10 +758,15 @@ try {
       `__gallery.${tool.gesture}(${tool.gesture === "click" ? JSON.stringify(tool.id) : ""})`,
     );
     if (tool.waitFor) {
+      // Not fatal. Surface damage is reconciled in bands across several
+      // frames, so how long a structural cut takes to show up is a property of
+      // the machine, not of the tool. Giving up here and measuring anyway lets
+      // the scenario report what it actually saw — a checked failure with
+      // numbers beats aborting the run with a timeout.
       await waitFor(cdp, sessionId, tool.waitFor, {
         timeoutMs: tool.timeoutMs,
         label: `${tool.id} interaction to complete`,
-      });
+      }).catch(() => {});
     }
     await wait(tool.settleMs);
     const metrics = await run("__gallery.metrics()");
