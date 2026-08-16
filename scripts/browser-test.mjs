@@ -215,11 +215,16 @@ const checks = [
           moveFrames,
           idleFrames: engineFrames - settledAt,
           pointerX: __dd.engine.pointer.x,
+          visibility: document.visibilityState,
+          paused: __dd.engine.paused,
         };
       })()`);
 
       assert(result.pointerX === 420, "the on-demand pointer update was lost");
-      assert(result.moveFrames >= 1, "pointer movement did not request a tool-art frame");
+      assert(
+        result.moveFrames >= 1,
+        `pointer movement did not request a tool-art frame (visibility ${result.visibility}, paused ${result.paused})`,
+      );
       assert(
         result.idleFrames <= 1,
         `the visible idle tool still rendered ${result.idleFrames} frames in 300ms`,
