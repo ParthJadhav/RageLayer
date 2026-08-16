@@ -30,10 +30,10 @@ DOM regions and engine options do not replace it.
 
 ```
 src/
-├── engine.ts        DestroyerEngine orchestration — DOM, rAF, input, destruction,
+├── engine.ts        RageLayerEngine orchestration — DOM, rAF, input, destruction,
 │                    subsystems, history, telemetry, quality and public methods
 ├── engine-options.ts Runtime defaults, validation and normalized engine options
-├── types.ts         The full public type surface (DestroyerOptions, Tool, …)
+├── types.ts         The full public type surface (RageLayerEngineOptions, Tool, …)
 ├── content.ts       ContentLayer — the destructible page: punch/burn/cut/char/restore,
 │                    pristine base, live-mode wound/decal recomposition, OpacityMap
 ├── capture.ts       Capture fidelity: backdrop recovery, seam-free geometry,
@@ -77,9 +77,9 @@ src/
 
 Built-in tools are immutable module-level objects so they can be shared across entry points and
 engines. Their mutable work is not shared: cooldowns, gesture paths, spawn debt, strike history,
-queued projectiles and delayed effects live in `WeakMap` stores keyed by `DestroyerEngineApi`.
+queued projectiles and delayed effects live in `WeakMap` stores keyed by `RageLayerEngineApi`.
 Registering, clearing, unregistering or disposing a tool resets only the calling engine's entry.
-This lets two mounted destroyer layers use the same exported tool at the same time without one
+This lets two mounted RageLayer layers use the same exported tool at the same time without one
 layer advancing, clearing or redirecting the other's work, and lets garbage collection reclaim a
 disposed engine without a global registry.
 

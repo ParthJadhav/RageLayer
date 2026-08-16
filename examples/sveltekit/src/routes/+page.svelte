@@ -14,7 +14,7 @@ onMount(() => {
 <main>
   <h1>A perfectly ordinary page</h1>
   <p>
-    Everything here is real DOM. The destroyer captures it into a canvas, hides the original, and
+    Everything here is real DOM. RageLayer captures it into a canvas, hides the original, and
     lets the visitor take the copy apart.
   </p>
 

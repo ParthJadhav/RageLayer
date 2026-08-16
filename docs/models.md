@@ -37,10 +37,10 @@ Sizes are normalized to 8–256 CSS pixels to avoid accidental oversized allocat
 The default entry remains convenient, but size-sensitive applications can split the system:
 
 ```ts
-import { DestroyerEngine } from "ragelayer/engine";
+import { RageLayerEngine } from "ragelayer/engine";
 import { baseTools } from "ragelayer/tools";
 
-const engine = new DestroyerEngine();
+const engine = new RageLayerEngine();
 engine.registerTools(baseTools);
 engine.setTool("hammer");
 ```

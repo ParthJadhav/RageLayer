@@ -1,7 +1,7 @@
 /**
  * Drawing for the effects layer: particles, flames, and the singularity.
  *
- * Everything here is pure paint, so `DestroyerEngine.render` is left as a
+ * Everything here is pure paint, so `RageLayerEngine.render` is left as a
  * short script of what is drawn in which order and why — in particular where
  * the void mask cuts the frame in half — while the "how" lives down here.
  *

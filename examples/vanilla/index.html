@@ -33,7 +33,7 @@
     <main>
       <h1>A perfectly ordinary page</h1>
       <p>
-        Everything here is real DOM. The destroyer captures it into a canvas, hides the original,
+        Everything here is real DOM. RageLayer captures it into a canvas, hides the original,
         and lets the visitor take the copy apart.
       </p>
       <button id="launch" type="button" aria-pressed="false">Destroy this page</button>
@@ -44,19 +44,19 @@
       import { ToolbarModel } from "../../dist/toolbar/index.js";
 
       const launch = document.getElementById("launch");
-      const destroyer = createRageLayer({ history: true, initialTool: null });
+      const rageLayer = createRageLayer({ history: true, initialTool: null });
 
       let bar = null;
       let toolbar = null;
       let unsubscribe = null;
 
       const close = () => {
-        destroyer.close();
+        rageLayer.close();
         launch.setAttribute("aria-pressed", "false");
         launch.focus();
       };
 
-      destroyer.subscribe((engine) => {
+      rageLayer.subscribe((engine) => {
         // Tear the old toolbar down whatever closed the engine — the close
         // button, Escape, or the host calling `close()`.
         unsubscribe?.();
@@ -115,7 +115,7 @@
       });
 
       launch.addEventListener("click", () => {
-        destroyer.open();
+        rageLayer.open();
         launch.setAttribute("aria-pressed", "true");
       });
 

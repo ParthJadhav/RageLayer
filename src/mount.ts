@@ -1,9 +1,9 @@
 import { defaultTools } from "./default-tools";
-import { DestroyerEngine } from "./engine";
-import type { DestroyerOptions, Tool } from "./types";
+import { RageLayerEngine } from "./engine";
+import type { RageLayerEngineOptions, Tool } from "./types";
 
 /** Options shared by the vanilla helper and all framework adapters. */
-export interface MountRageLayerOptions extends DestroyerOptions {
+export interface MountRageLayerOptions extends RageLayerEngineOptions {
   /** Tools to register. Defaults to the complete built-in toolset. */
   tools?: readonly Tool[];
   /** Tool selected after mounting. Defaults to `"hammer"`; use `null` for click-through. */
@@ -24,7 +24,7 @@ export function mountRageLayer(options: MountRageLayerOptions = {}) {
   const { tools: explicitTools, initialTool, ...engineOptions } = options;
   const tools = explicitTools ?? defaultTools;
   const selectedInitialTool = initialTool === undefined ? "hammer" : initialTool;
-  const engine = new DestroyerEngine(engineOptions);
+  const engine = new RageLayerEngine(engineOptions);
   for (const tool of tools) engine.registerTool(tool);
 
   if (selectedInitialTool !== null && !tools.some((tool) => tool.id === selectedInitialTool)) {
@@ -37,13 +37,13 @@ export function mountRageLayer(options: MountRageLayerOptions = {}) {
 
 export interface RageLayerController {
   /** The mounted engine, or `null` while closed. */
-  readonly engine: DestroyerEngine | null;
+  readonly engine: RageLayerEngine | null;
   readonly isOpen: boolean;
-  open(): DestroyerEngine;
+  open(): RageLayerEngine;
   close(): void;
-  toggle(): DestroyerEngine | null;
+  toggle(): RageLayerEngine | null;
   /** Subscribe to open/close changes. The callback runs immediately. */
-  subscribe(listener: (engine: DestroyerEngine | null) => void): () => void;
+  subscribe(listener: (engine: RageLayerEngine | null) => void): () => void;
 }
 
 /**
@@ -51,9 +51,9 @@ export interface RageLayerController {
  * and is therefore safe to create while a framework is rendering on a server.
  */
 export function createRageLayer(options: MountRageLayerOptions = {}): RageLayerController {
-  let engine: DestroyerEngine | null = null;
+  let engine: RageLayerEngine | null = null;
   let detachDispose: (() => void) | null = null;
-  const listeners = new Set<(engine: DestroyerEngine | null) => void>();
+  const listeners = new Set<(engine: RageLayerEngine | null) => void>();
 
   const notify = () => {
     for (const listener of listeners) listener(engine);

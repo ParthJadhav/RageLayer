@@ -61,7 +61,7 @@ createRageLayer({ reducedMotion: true });  // always reduce camera/UI motion
 createRageLayer({ reducedMotion: false }); // explicitly keep full feedback
 ```
 
-Do not open the destroyer automatically for a visitor who has requested reduced motion. Prefer an
+Do not open RageLayer automatically for a visitor who has requested reduced motion. Prefer an
 explicit, clearly labelled launcher.
 
 ## Host integration checklist

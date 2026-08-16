@@ -162,6 +162,14 @@ jobs:
           RAGELAYER_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
         run: node scripts/browser-test.mjs
 
+      # The release script gates publication on this suite. Running it here too
+      # means a regression surfaces on the pull request instead of halfway
+      # through a publish, when the version bump has already been merged.
+      - name: Fixed-wood tool gallery
+        env:
+          RAGELAYER_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: node scripts/tool-gallery.mjs
+
       - name: Benchmark smoke (short run)
         env:
           RAGELAYER_CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}

@@ -9,7 +9,7 @@
  */
 
 import { ContentLayer } from "../../src/content.ts";
-import { DestroyerEngine } from "../../src/engine.ts";
+import { RageLayerEngine } from "../../src/engine.ts";
 import { makeCanvas, pointerEvent, setViewport, stubRect } from "./dom.mjs";
 
 const live = new Set();
@@ -28,7 +28,7 @@ export function createTestEngine({
 } = {}) {
   setViewport(width, Math.min(height, 768), height);
 
-  const engine = new DestroyerEngine({
+  const engine = new RageLayerEngine({
     captureContent: false,
     postFX: false,
     harvestElements: false,

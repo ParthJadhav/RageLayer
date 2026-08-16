@@ -15,7 +15,7 @@ import { drawBurnChannel } from "./decals";
 import { emit, rand, TAU } from "./math";
 import { createEngineState } from "./tool-kit";
 import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart";
-import type { DestroyerEngineApi, Tool, Vec2 } from "./types";
+import type { RageLayerEngineApi, Tool, Vec2 } from "./types";
 import { WOOD } from "./wood";
 
 // ── Black hole ──────────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ export const blackHole: Tool = {
 };
 
 /** Let go and it collapses — everything it swallowed comes back out at once. */
-function collapseSingularity(engine: DestroyerEngineApi) {
+function collapseSingularity(engine: RageLayerEngineApi) {
   const s = engine.singularity;
   if (!s) return;
   engine.setSingularity(null);
@@ -282,7 +282,7 @@ function boltPath(x0: number, y0: number, x1: number, y1: number, segments: numb
   return pts;
 }
 
-function drawBolt(engine: DestroyerEngineApi, pts: number[], thickness: number, life: number) {
+function drawBolt(engine: RageLayerEngineApi, pts: number[], thickness: number, life: number) {
   for (let i = 0; i < pts.length - 2; i += 2) {
     const ax = pts[i];
     const ay = pts[i + 1];

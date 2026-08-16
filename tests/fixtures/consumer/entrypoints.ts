@@ -1,4 +1,4 @@
-import { DestroyerEngine, type DestroyerOptions, type Tool } from "ragelayer/engine";
+import { RageLayerEngine, type RageLayerEngineOptions, type Tool } from "ragelayer/engine";
 import { loadAdvancedTools, loadBaseTools, loadDefaultTools, loadHeavyTools } from "ragelayer/lazy";
 import { createRateLimiter, createTool } from "ragelayer/sdk";
 import { baseTools, broom, hammer } from "ragelayer/tools";
@@ -10,10 +10,10 @@ const options = {
   pauseWhenHidden: true,
   toolScale: 1.25,
   history: { maxEntries: 3, maxPixels: 8_000_000 },
-} satisfies DestroyerOptions;
+} satisfies RageLayerEngineOptions;
 
 const selected: Tool[] = [hammer, broom, blackHole, rocketLauncher];
-const engine = new DestroyerEngine(options);
+const engine = new RageLayerEngine(options);
 engine.registerTools(selected);
 engine.unregisterTool("blackhole");
 engine.pause();

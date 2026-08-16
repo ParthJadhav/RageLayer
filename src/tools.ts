@@ -13,7 +13,7 @@ import {
   waterHoseArt,
 } from "./toolart";
 import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
-import type { DestroyerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
+import type { RageLayerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
 import { WOOD } from "./wood.js";
 
 /**
@@ -166,7 +166,7 @@ export const hammer: Tool = {
 };
 
 /** The bright filament down the barrel line. Every shot leaves one, hit or miss. */
-function tracer(engine: DestroyerEngineApi, x: number, y: number, angle: number) {
+function tracer(engine: RageLayerEngineApi, x: number, y: number, angle: number) {
   engine.spawnParticle({
     kind: "streak",
     x,
@@ -182,7 +182,7 @@ function tracer(engine: DestroyerEngineApi, x: number, y: number, angle: number)
 }
 
 /** A shell out of the ejection port on the barrel's right side. */
-function ejectCasing(engine: DestroyerEngineApi, x: number, y: number, aim: Vec2) {
+function ejectCasing(engine: RageLayerEngineApi, x: number, y: number, aim: Vec2) {
   const speed = 140 + Math.random() * 110;
   engine.spawnParticle({
     kind: "casing",
@@ -200,7 +200,7 @@ function ejectCasing(engine: DestroyerEngineApi, x: number, y: number, aim: Vec2
   });
 }
 
-function fireShot(engine: DestroyerEngineApi, x: number, y: number, spread = 0) {
+function fireShot(engine: RageLayerEngineApi, x: number, y: number, spread = 0) {
   const sx = x + (Math.random() - 0.5) * spread;
   const sy = y + (Math.random() - 0.5) * spread;
 
@@ -618,7 +618,7 @@ const STRIP_INTERVAL = 64;
 const TOPOLOGY_INTERVAL = 24;
 
 function releaseSawIslands(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   state: { cutBounds: TopologyBounds | null; scanDebt: number },
 ) {
   const bounds = state.cutBounds;
@@ -660,7 +660,7 @@ export const chainsaw: Tool = {
     state.scanDebt = 0;
     state.cutBounds = null;
   },
-  onMove(engine: DestroyerEngineApi, e: ToolPointerEvent) {
+  onMove(engine: RageLayerEngineApi, e: ToolPointerEvent) {
     const state = chainsawState.get(engine);
     if (!e.buttons || !state.lastCut) return;
     const dx = e.x - state.lastCut.x;
@@ -796,7 +796,7 @@ export const chainsaw: Tool = {
 const PAINTBALL_INTERVAL = 0.16;
 const paintballState = createEngineState(() => ({ cooldown: 0 }));
 
-function firePaintball(engine: DestroyerEngineApi, x: number, y: number) {
+function firePaintball(engine: RageLayerEngineApi, x: number, y: number) {
   // A paintball needs a surface. Fired into a hole it flies straight through
   // and is gone — no splat, no drips, nothing to hear it hit.
   if (!engine.onPage(x, y)) {

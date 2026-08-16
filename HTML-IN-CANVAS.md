@@ -209,7 +209,7 @@ mirror stayed on its initial clone forever. Two fixes, both measured working:
 
 - `LiveContentSource` keeps a `MutationObserver` on the capture root (armed just before each
   clone, so a mutation racing the capture still lands). One mutation inside the captured subtree —
-  changes inside filtered-out elements such as the destroyer's own toolbar don't count — flips the
+  changes inside filtered-out elements such as RageLayer's own toolbar don't count — flips the
   mirror to stale, `canRepaint` goes false, and the next refresh re-clones. A page that never
   mutates keeps the ~0.5 ms repaint path; a page that ticks pays the ~6 ms re-clone about once a
   second, which is the design's original "live, re-clone" row.
@@ -300,7 +300,7 @@ only when live.
 ## 5. Public API
 
 ```ts
-new DestroyerEngine({
+new RageLayerEngine({
   captureMode: "auto",   // "auto" (default) | "snapshot" | "live"
   liveRefreshMs: 1000,   // 0 disables periodic refresh
 });

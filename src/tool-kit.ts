@@ -9,7 +9,7 @@
  */
 
 import { TAU } from "./math";
-import type { DestroyerEngineApi } from "./types";
+import type { RageLayerEngineApi } from "./types";
 
 /**
  * Retained tool state keyed by engine.
@@ -20,9 +20,9 @@ import type { DestroyerEngineApi } from "./types";
  * exposing state on the public `Tool` object or retaining disposed engines.
  */
 export function createEngineState<T>(create: () => T) {
-  let states = new WeakMap<DestroyerEngineApi, T>();
+  let states = new WeakMap<RageLayerEngineApi, T>();
   return {
-    get(engine: DestroyerEngineApi): T {
+    get(engine: RageLayerEngineApi): T {
       let state = states.get(engine);
       if (state === undefined) {
         state = create();
@@ -31,10 +31,10 @@ export function createEngineState<T>(create: () => T) {
       return state;
     },
     /** Read existing state without allocating it solely for an idle-work check. */
-    peek(engine: DestroyerEngineApi): T | undefined {
+    peek(engine: RageLayerEngineApi): T | undefined {
       return states.get(engine);
     },
-    reset(engine?: DestroyerEngineApi) {
+    reset(engine?: RageLayerEngineApi) {
       if (engine) states.delete(engine);
       else states = new WeakMap();
     },
@@ -42,7 +42,7 @@ export function createEngineState<T>(create: () => T) {
 }
 
 export function debris(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   x: number,
   y: number,
   count: number,
@@ -76,7 +76,7 @@ export function debris(
  * looking fresh for a second after the fast debris is gone.
  */
 export function dustPuff(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   x: number,
   y: number,
   count: number,

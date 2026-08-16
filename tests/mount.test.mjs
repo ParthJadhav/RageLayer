@@ -4,14 +4,14 @@ import { createRageLayer } from "../src/mount.ts";
 
 describe("framework-neutral lifecycle helpers", () => {
   test("the lazy controller is safe without browser globals", () => {
-    const destroyer = createRageLayer();
+    const rageLayer = createRageLayer();
     const states = [];
-    const unsubscribe = destroyer.subscribe((engine) => states.push(engine));
+    const unsubscribe = rageLayer.subscribe((engine) => states.push(engine));
 
-    expect(destroyer.engine).toBeNull();
-    expect(destroyer.isOpen).toBe(false);
+    expect(rageLayer.engine).toBeNull();
+    expect(rageLayer.isOpen).toBe(false);
     expect(states).toEqual([null]);
-    expect(destroyer.close()).toBeUndefined();
+    expect(rageLayer.close()).toBeUndefined();
 
     unsubscribe();
   });

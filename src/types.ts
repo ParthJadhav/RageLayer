@@ -71,24 +71,24 @@ export interface Tool {
    * every frame — the drawn tool *is* the cursor. See `ToolArtFn`.
    */
   art?: ToolArtFn;
-  onDown?(engine: DestroyerEngineApi, e: ToolPointerEvent): void;
-  onMove?(engine: DestroyerEngineApi, e: ToolPointerEvent): void;
-  onUp?(engine: DestroyerEngineApi, e: ToolPointerEvent): void;
+  onDown?(engine: RageLayerEngineApi, e: ToolPointerEvent): void;
+  onMove?(engine: RageLayerEngineApi, e: ToolPointerEvent): void;
+  onUp?(engine: RageLayerEngineApi, e: ToolPointerEvent): void;
   /** Called every frame while the tool is selected. `held` = pointer down. */
-  tick?(engine: DestroyerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
+  tick?(engine: RageLayerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
   /**
    * Continue autonomous work after another tool is selected. Pair with
    * `hasPendingWork`; the engine calls this only while that predicate is true.
    * Timed projectiles and fuses belong here, never held-pointer behavior.
    */
-  backgroundTick?(engine: DestroyerEngineApi, dt: number): void;
+  backgroundTick?(engine: RageLayerEngineApi, dt: number): void;
   /**
    * Whether this tool currently owns autonomous work that needs animation
    * frames. Defining the predicate also opts the selected tool into idle
    * sleeping when it returns false and no pointer/effect work remains. Keep it
    * cheap and side-effect-free; the scheduler may ask outside the frame step.
    */
-  hasPendingWork?(engine: DestroyerEngineApi): boolean;
+  hasPendingWork?(engine: RageLayerEngineApi): boolean;
   /**
    * Drop any retained state — in-flight projectiles, strike sites, spawn
    * debts. Tools are module-level singletons shared by every engine, so the
@@ -97,7 +97,7 @@ export interface Tool {
    * state isolated when multiple layers are mounted at once; stateless tools
    * may ignore it.
    */
-  reset?(engine?: DestroyerEngineApi): void;
+  reset?(engine?: RageLayerEngineApi): void;
 }
 
 export type ParticleKind =
@@ -401,7 +401,7 @@ export interface PerformanceOptions {
   onSample?(snapshot: PerformanceSnapshot): void;
 }
 
-export interface DestroyerOptions {
+export interface RageLayerEngineOptions {
   /** Element the overlay attaches to. Defaults to document.body. */
   target?: HTMLElement;
   zIndex?: number;
@@ -561,7 +561,7 @@ export interface CutOptions {
   width?: number;
 }
 
-export interface DestroyerEngineApi {
+export interface RageLayerEngineApi {
   readonly width: number;
   readonly height: number;
   readonly damageCtx: CanvasRenderingContext2D;

@@ -2,7 +2,7 @@ import { defineRageLayerElement, RageLayerElement, TAG_NAME } from "ragelayer/el
 import { hammer } from "ragelayer/tools";
 
 defineRageLayerElement();
-defineRageLayerElement("page-destroyer");
+defineRageLayerElement("page-rage-layer");
 
 const element = new RageLayerElement();
 element.configure({
@@ -11,5 +11,5 @@ element.configure({
   strings: { close: "Close it" },
 });
 element.addEventListener("ragelayer-close", () => {});
-void element.destroyerEngine;
+void element.rageLayerEngine;
 void TAG_NAME;

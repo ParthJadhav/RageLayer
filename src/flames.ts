@@ -11,7 +11,7 @@
  * out, and spread only takes where fuel remains. That is what makes a blaze
  * gutter out where it has already eaten through.
  *
- * `FlameHost` below is a subset of the public `DestroyerEngineApi` — the same
+ * `FlameHost` below is a subset of the public `RageLayerEngineApi` — the same
  * surface a third-party tool works against.
  */
 

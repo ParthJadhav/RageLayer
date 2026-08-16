@@ -297,13 +297,13 @@ const checks = [
           return {
             barHeight: bar.getBoundingClientRect().height,
             guide: guide.textContent,
-            destroyerVisible: name.textContent.includes('Destroyer') && name.getBoundingClientRect().width > 0,
+            brandVisible: name.textContent.includes('RageLayer') && name.getBoundingClientRect().width > 0,
             overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
           };
         })()`);
         assert(result.guide.includes("Laser Cutter"), "hovering a tool did not explain it");
         assert(result.guide.includes("clean cut"), "the laser hint does not describe its gesture");
-        assert(result.destroyerVisible, "the toolbar has no visible Destroyer identity");
+        assert(result.brandVisible, "the toolbar has no visible RageLayer identity");
         assert(result.barHeight <= 70, `the desktop toolbar grew to ${result.barHeight}px tall`);
         assert(!result.overflow, "the toolbar introduced horizontal page overflow");
       } finally {
@@ -346,7 +346,7 @@ const checks = [
             minControlWidth: Math.min(...controls.map((control) => control.getBoundingClientRect().width)),
             minControlHeight: Math.min(...controls.map((control) => control.getBoundingClientRect().height)),
             guideFontSize: Number.parseFloat(getComputedStyle(guide).fontSize),
-            destroyerVisible: name.textContent.includes('Destroyer') && name.getBoundingClientRect().width > 0,
+            brandVisible: name.textContent.includes('RageLayer') && name.getBoundingClientRect().width > 0,
             metaInsideViewport: meta.getBoundingClientRect().left >= 0 && meta.getBoundingClientRect().right <= innerWidth,
             touchGuide,
           };
@@ -362,8 +362,8 @@ const checks = [
           `a control was only ${result.minControlHeight}px tall`,
         );
         assert(result.guideFontSize >= 14, `the mobile tool guide was ${result.guideFontSize}px`);
-        assert(result.destroyerVisible, "the mobile toolbar has no visible Destroyer identity");
-        assert(result.metaInsideViewport, "the Destroyer controls escaped the phone viewport");
+        assert(result.brandVisible, "the mobile toolbar has no visible RageLayer identity");
+        assert(result.metaInsideViewport, "the RageLayer controls escaped the phone viewport");
         assert(
           result.touchGuide.includes("Laser Cutter"),
           "touch did not reveal the selected tool name",
@@ -572,7 +572,7 @@ const customElementChecks = [
           label: toolbar.getAttribute('aria-label'),
           buttonCount: toolbar.querySelectorAll('button').length,
           focus: root.activeElement?.getAttribute('aria-label'),
-          aiming: Boolean(window.__ddElement.destroyerEngine.aim),
+          aiming: Boolean(window.__ddElement.rageLayerEngine.aim),
         };
       })()`);
 

@@ -1,17 +1,17 @@
 import { useRageLayer } from "ragelayer/vue";
 
-const destroyer = useRageLayer({
+const rageLayer = useRageLayer({
   initialTool: "water",
   captureContent: false,
 });
 
-const open: boolean = destroyer.isOpen.value;
-destroyer.engine.value?.setTool("broom");
+const open: boolean = rageLayer.isOpen.value;
+rageLayer.engine.value?.setTool("broom");
 
 void open;
-void destroyer.open;
-void destroyer.close;
-void destroyer.toggle;
+void rageLayer.open;
+void rageLayer.close;
+void rageLayer.toggle;
 
 // The ready-made Vue toolbar, so its props and events stay type-checked from
 // a consumer's perspective rather than only from inside the package.

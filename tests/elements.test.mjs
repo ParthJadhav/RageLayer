@@ -104,7 +104,7 @@ describe("harvesting", () => {
     expect(harvested[0].y).toBe(400);
   });
 
-  test("the destroyer's own furniture is filtered out", () => {
+  test("RageLayer's own furniture is filtered out", () => {
     // The toolbar is marked `data-ragelayer-ignore`; making it demolishable would let
     // the toy destroy its own controls.
     build(

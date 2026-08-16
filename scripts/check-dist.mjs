@@ -3,8 +3,8 @@ import { dirname, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
 const expected = {
-  "dist/index.js": ["createRageLayer", "mountRageLayer", "DestroyerEngine"],
-  "dist/engine/index.js": ["DestroyerEngine"],
+  "dist/index.js": ["createRageLayer", "mountRageLayer", "RageLayerEngine"],
+  "dist/engine/index.js": ["RageLayerEngine"],
   "dist/tools/index.js": ["baseTools", "hammer", "broom"],
   "dist/tools/heavy.js": ["heavyTools", "blackHole", "rocketLauncher"],
   "dist/tools/advanced.js": ["advancedTools", "gravityGun", "laserCutter", "acidSprayer"],
@@ -46,7 +46,10 @@ const removedExports = {
     "wreckingBallArt",
     "glitchGun",
     "glitchGunArt",
+    // Renamed in 1.0.0 with no alias; the old names must not come back.
+    "DestroyerEngine",
   ],
+  "dist/engine/index.js": ["DestroyerEngine"],
   "dist/tools/heavy.js": ["freezeRay"],
   "dist/tools/advanced.js": ["wreckingBall", "glitchGun"],
 };
@@ -73,6 +76,12 @@ for (const name of [
   "drawFrost",
   "wreckingBall",
   "glitchGun",
+  // Renamed in 1.0.0 with no alias.
+  "DestroyerEngine",
+  "DestroyerEngineApi",
+  "DestroyerOptions",
+  "DestroyerStrings",
+  "DestroyerToolStrings",
 ]) {
   if (new RegExp(`\\b${name}\\b`).test(rootTypes)) {
     throw new Error(`dist/index.d.ts still declares removed API ${name}`);

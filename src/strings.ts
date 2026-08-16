@@ -8,12 +8,12 @@
  * they are overridden by id.
  */
 
-export interface DestroyerToolStrings {
+export interface RageLayerToolStrings {
   name?: string;
   hint?: string;
 }
 
-export interface DestroyerStrings {
+export interface RageLayerStrings {
   /** Accessible name of the toolbar itself. */
   toolbarLabel: string;
   undo: string;
@@ -45,10 +45,10 @@ export interface DestroyerStrings {
   keyboardMoved: string;
   keyboardStruck: string;
   /** Per-tool overrides, keyed by tool id. */
-  tools?: Record<string, DestroyerToolStrings>;
+  tools?: Record<string, RageLayerToolStrings>;
 }
 
-export const DEFAULT_STRINGS: DestroyerStrings = {
+export const DEFAULT_STRINGS: RageLayerStrings = {
   toolbarLabel: "RageLayer tools",
   undo: "Undo destruction",
   redo: "Redo destruction",
@@ -80,7 +80,7 @@ export const DEFAULT_STRINGS: DestroyerStrings = {
 };
 
 /** Merge host overrides over the defaults. Tool overrides merge per id. */
-export function resolveStrings(overrides?: Partial<DestroyerStrings>): DestroyerStrings {
+export function resolveStrings(overrides?: Partial<RageLayerStrings>): RageLayerStrings {
   if (!overrides) return DEFAULT_STRINGS;
   return {
     ...DEFAULT_STRINGS,
@@ -98,7 +98,7 @@ export function formatString(template: string, values: Record<string, string | n
 
 /** A tool's display name and hint, with any host override applied. */
 export function toolStrings(
-  strings: DestroyerStrings,
+  strings: RageLayerStrings,
   tool: { id: string; name: string; hint: string },
 ): { name: string; hint: string } {
   const override = strings.tools?.[tool.id];

@@ -15,6 +15,10 @@ bun run docs:dev   # documentation site at a local URL
 bun run audit      # dependency advisory check
 ```
 
+Use the Node version in `.nvmrc` (22): tsdown, which produces `dist/`, requires Node 22 or newer.
+That is a contributor requirement only — the published package supports Node 20+, which is what
+`engines` in `package.json` declares and what CI verifies on 20, 22, and 24.
+
 Toolchain: [Bun](https://bun.sh) (runtime + tests), [tsdown](https://tsdown.dev) (Rolldown
 build), [Biome](https://biomejs.dev) (lint + format), publint + arethetypeswrong (package
 correctness), [VitePress](https://vitepress.dev) (documentation), and

@@ -317,7 +317,7 @@ export class ContentLayer {
   }
 
   /**
-   * Rasterize `root` into this layer. `filter` excludes the destroyer's own
+   * Rasterize `root` into this layer. `filter` excludes RageLayer's own
    * DOM (overlay, toolbar) and framework dev tooling from the capture.
    *
    * `width`/`height` describe the *layer* (document coordinates); `options`

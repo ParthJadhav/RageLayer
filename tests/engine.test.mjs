@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DestroyerEngine } from "../src/engine.ts";
+import { RageLayerEngine } from "../src/engine.ts";
 import { hammer } from "../src/tools.ts";
 import {
   flushResizeObservers,
@@ -21,7 +21,7 @@ const BASE = { captureContent: false, postFX: false, harvestElements: false, tex
 const engines = new Set();
 
 function makeEngine(options = {}) {
-  const engine = new DestroyerEngine({ ...BASE, ...options });
+  const engine = new RageLayerEngine({ ...BASE, ...options });
   engines.add(engine);
   return engine;
 }

@@ -22,23 +22,23 @@ import {
 
 import { RAGELAYER_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
-import { DestroyerEngine } from "../engine";
-import type { DestroyerStrings } from "../strings";
+import { RageLayerEngine } from "../engine";
+import type { RageLayerStrings } from "../strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar";
-import type { DestroyerOptions, Tool } from "../types";
+import type { RageLayerEngineOptions, Tool } from "../types";
 import { acquireToolbarStyles, BAR_CLASS, releaseToolbarStyles } from "./styles";
 
 export const RageLayer = defineComponent({
   name: "RageLayer",
   props: {
     tools: { type: Array as PropType<readonly Tool[]>, default: undefined },
-    engineOptions: { type: Object as PropType<DestroyerOptions>, default: undefined },
-    strings: { type: Object as PropType<Partial<DestroyerStrings>>, default: undefined },
+    engineOptions: { type: Object as PropType<RageLayerEngineOptions>, default: undefined },
+    strings: { type: Object as PropType<Partial<RageLayerStrings>>, default: undefined },
     soundDefault: { type: Boolean, default: false },
   },
   emits: ["close", "ready"],
   setup(props, { emit }) {
-    const engine = shallowRef<DestroyerEngine | null>(null);
+    const engine = shallowRef<RageLayerEngine | null>(null);
     const model = shallowRef<ToolbarModel | null>(null);
     const state = ref<ToolbarState | null>(null);
     // SSR guard: nothing renders until the component is mounted in a browser,
@@ -56,7 +56,7 @@ export const RageLayer = defineComponent({
 
     onMounted(() => {
       acquireToolbarStyles();
-      const created = new DestroyerEngine({
+      const created = new RageLayerEngine({
         soundEnabled: props.soundDefault,
         history: true,
         ...props.engineOptions,

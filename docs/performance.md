@@ -29,7 +29,7 @@ disables both.
 ## Telemetry
 
 ```ts
-const engine = new DestroyerEngine({
+const engine = new RageLayerEngine({
   performance: {
     sampleIntervalMs: 1000,
     onSample(sample) {

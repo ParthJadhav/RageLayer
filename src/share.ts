@@ -1,7 +1,7 @@
 /**
  * Getting the wreckage out of the browser.
  *
- * `DestroyerEngine.snapshot()` flattens the visible carnage into a Blob; these
+ * `RageLayerEngine.snapshot()` flattens the visible carnage into a Blob; these
  * two helpers are the only things standing between that and a file the user can
  * keep. Both are deliberately best-effort — clipboard writes need a secure
  * context and a live user gesture, and the caller should fall back to the

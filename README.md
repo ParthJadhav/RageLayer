@@ -78,8 +78,8 @@ For a custom UI, use the headless hook:
 import { useRageLayer } from "ragelayer/react";
 
 function DestroyButton() {
-  const destroyer = useRageLayer({ initialTool: "flamethrower" });
-  return <button onClick={destroyer.toggle}>{destroyer.isOpen ? "Repair" : "Destroy"}</button>;
+  const rageLayer = useRageLayer({ initialTool: "flamethrower" });
+  return <button onClick={rageLayer.toggle}>{rageLayer.isOpen ? "Repair" : "Destroy"}</button>;
 }
 ```
 
@@ -154,10 +154,10 @@ The lazy controller does no browser work until `open()`, which makes it safe to 
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer({ initialTool: "hammer" });
+const rageLayer = createRageLayer({ initialTool: "hammer" });
 
-document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
-window.addEventListener("pagehide", () => destroyer.close());
+document.querySelector("#destroy")?.addEventListener("click", () => rageLayer.toggle());
+window.addEventListener("pagehide", () => rageLayer.close());
 ```
 
 If you already own the lifecycle, mount the engine directly:
@@ -231,10 +231,10 @@ runs, so `dist` also works loaded directly in a browser without a bundler.
 For the smallest deliberate setup, combine the engine-only and base-tool entries:
 
 ```ts
-import { DestroyerEngine } from "ragelayer/engine";
+import { RageLayerEngine } from "ragelayer/engine";
 import { baseTools } from "ragelayer/tools";
 
-const engine = new DestroyerEngine({ toolScale: 1.15 });
+const engine = new RageLayerEngine({ toolScale: 1.15 });
 engine.registerTools(baseTools);
 engine.setTool("hammer");
 ```

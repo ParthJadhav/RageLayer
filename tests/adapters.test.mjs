@@ -25,8 +25,8 @@ class FakeElement extends EventTarget {
 describe("framework adapters", () => {
   test("the headless React hook is safe during server rendering", () => {
     function Consumer() {
-      const destroyer = useReactRageLayer({ initialTool: "hammer" });
-      return createElement("span", null, destroyer.isOpen ? "open" : "closed");
+      const rageLayer = useReactRageLayer({ initialTool: "hammer" });
+      return createElement("span", null, rageLayer.isOpen ? "open" : "closed");
     }
 
     expect(renderToString(createElement(Consumer))).toBe("<span>closed</span>");
@@ -34,13 +34,13 @@ describe("framework adapters", () => {
 
   test("the Vue composable starts closed and is safe inside an effect scope", () => {
     const scope = effectScope();
-    const destroyer = scope.run(() =>
+    const rageLayer = scope.run(() =>
       useVueRageLayer({ initialTool: "hammer", captureContent: false }),
     );
 
-    expect(destroyer.engine.value).toBeNull();
-    expect(destroyer.isOpen.value).toBe(false);
-    expect(typeof destroyer.open).toBe("function");
+    expect(rageLayer.engine.value).toBeNull();
+    expect(rageLayer.isOpen.value).toBe(false);
+    expect(typeof rageLayer.open).toBe("function");
     scope.stop();
   });
 

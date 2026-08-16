@@ -1,4 +1,4 @@
-import type { DestroyerEngineApi, Tool, ToolArtFn, ToolPointerEvent, Vec2 } from "./types";
+import type { RageLayerEngineApi, Tool, ToolArtFn, ToolPointerEvent, Vec2 } from "./types";
 
 export type { ToolIconBounds } from "./icon-bounds";
 export { registerToolIconBounds } from "./icon-bounds";
@@ -11,15 +11,15 @@ export interface CustomToolDefinition<State> {
   cursor?: string;
   art?: ToolArtFn;
   createState(): State;
-  onDown?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
-  onMove?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
-  onUp?(state: State, engine: DestroyerEngineApi, event: ToolPointerEvent): void;
+  onDown?(state: State, engine: RageLayerEngineApi, event: ToolPointerEvent): void;
+  onMove?(state: State, engine: RageLayerEngineApi, event: ToolPointerEvent): void;
+  onUp?(state: State, engine: RageLayerEngineApi, event: ToolPointerEvent): void;
   /** Advance the selected tool. `held` is true only during an active gesture. */
-  tick?(state: State, engine: DestroyerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
+  tick?(state: State, engine: RageLayerEngineApi, dt: number, held: boolean, pointer: Vec2): void;
   /** Advance retained work after this tool is no longer selected. Pair with `hasPendingWork`. */
-  backgroundTick?(state: State, engine: DestroyerEngineApi, dt: number): void;
+  backgroundTick?(state: State, engine: RageLayerEngineApi, dt: number): void;
   /** Cheap, side-effect-free predicate that keeps frames alive only while retained work exists. */
-  hasPendingWork?(state: State, engine: DestroyerEngineApi): boolean;
+  hasPendingWork?(state: State, engine: RageLayerEngineApi): boolean;
   /** Finalize the old state before the factory replaces it with a fresh `createState()` result. */
   reset?(state: State): void;
 }

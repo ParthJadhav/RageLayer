@@ -1,7 +1,7 @@
 # Framework integrations
 
 RageLayer keeps the rendering engine framework-neutral and puts thin lifecycle bindings on
-top. Every binding ultimately creates the same `DestroyerEngine`, registers the same tools, and
+top. Every binding ultimately creates the same `RageLayerEngine`, registers the same tools, and
 calls `dispose()` when its owner goes away.
 
 | Stack | First-class API | Entry point |
@@ -11,7 +11,7 @@ calls `dispose()` when its owner goes away.
 | Svelte / SvelteKit | Launcher action + controller | `ragelayer/svelte` |
 | Astro, Angular, Solid, Qwik, vanilla | Lifecycle controller | `ragelayer` |
 
-Size-sensitive custom integrations can import `DestroyerEngine` from
+Size-sensitive custom integrations can import `RageLayerEngine` from
 `ragelayer/engine`, everyday tools from `ragelayer/tools`, and cinematic tools from
 `ragelayer/tools/heavy`. `ragelayer/lazy` exposes on-demand loaders for all three
 toolset choices.
@@ -49,13 +49,13 @@ Important props:
 | `tools` | `Tool[]` | `defaultTools` | Replace the toolbar's tools |
 | `soundDefault` | `boolean` | `false` | Start with sound enabled |
 | `toolStyle` | `"3d" \| "emoji"` | `"3d"` | Drawn tool art or classic cursors |
-| `strings` | `Partial<DestroyerStrings>` | English defaults | Translate or reword toolbar labels and tool hints |
-| `engineOptions` | `DestroyerOptions` | `{}` | Capture, rendering, physics, and quality options |
+| `strings` | `Partial<RageLayerStrings>` | English defaults | Translate or reword toolbar labels and tool hints |
+| `engineOptions` | `RageLayerEngineOptions` | `{}` | Capture, rendering, physics, and quality options |
 | `debugGlobal` | `boolean` | `false` | Expose the engine for profiling or end-to-end tests |
 
 Set the `history` engine option to `true` to add Undo and Redo controls to the toolbar. The same
 history is available through <kbd>Cmd/Ctrl</kbd>+<kbd>Z</kbd> and
-<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> while the destroyer is open.
+<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> while RageLayer is open.
 
 Use the hook when you provide the controls:
 
@@ -183,11 +183,11 @@ For explicit lifecycle control:
   import { onDestroy } from "svelte";
   import { createRageLayer } from "ragelayer/svelte";
 
-  const destroyer = createRageLayer({ initialTool: "laser-cutter" });
-  onDestroy(destroyer.close);
+  const rageLayer = createRageLayer({ initialTool: "laser-cutter" });
+  onDestroy(rageLayer.close);
 </script>
 
-<button onclick={() => destroyer.toggle()}>Destroy</button>
+<button onclick={() => rageLayer.toggle()}>Destroy</button>
 ```
 
 ## Vanilla JavaScript
@@ -195,30 +195,30 @@ For explicit lifecycle control:
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer({ initialTool: "flamethrower" });
+const rageLayer = createRageLayer({ initialTool: "flamethrower" });
 const button = document.querySelector<HTMLButtonElement>("#destroy");
 
-button?.addEventListener("click", () => destroyer.toggle());
-const unsubscribe = destroyer.subscribe((engine) => {
+button?.addEventListener("click", () => rageLayer.toggle());
+const unsubscribe = rageLayer.subscribe((engine) => {
   if (button) button.ariaPressed = String(engine !== null);
 });
 
 // In an SPA teardown:
 unsubscribe();
-destroyer.close();
+rageLayer.close();
 ```
 
 Use `mountRageLayer()` when you want an engine immediately, or construct
-`DestroyerEngine` directly for full registration control.
+`RageLayerEngine` directly for full registration control.
 
 ### Progressive tool loading
 
 ```ts
-import { DestroyerEngine } from "ragelayer/engine";
+import { RageLayerEngine } from "ragelayer/engine";
 import { baseTools } from "ragelayer/tools";
 import { loadHeavyTools } from "ragelayer/lazy";
 
-const engine = new DestroyerEngine({ toolScale: 1.1 });
+const engine = new RageLayerEngine({ toolScale: 1.1 });
 engine.registerTools(baseTools);
 
 async function unlockCinematicTools() {
@@ -240,8 +240,8 @@ Astro's regular browser script can use the core controller:
 <script>
   import { createRageLayer } from "ragelayer";
 
-  const destroyer = createRageLayer({ initialTool: "rocket" });
-  document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
+  const rageLayer = createRageLayer({ initialTool: "rocket" });
+  document.querySelector("#destroy")?.addEventListener("click", () => rageLayer.toggle());
 </script>
 ```
 
@@ -273,9 +273,9 @@ import { onCleanup } from "solid-js";
 import { createRageLayer } from "ragelayer";
 
 export function DestroyButton() {
-  const destroyer = createRageLayer({ initialTool: "blackhole" });
-  onCleanup(destroyer.close);
-  return <button onClick={() => destroyer.toggle()}>Destroy</button>;
+  const rageLayer = createRageLayer({ initialTool: "blackhole" });
+  onCleanup(rageLayer.close);
+  return <button onClick={() => rageLayer.toggle()}>Destroy</button>;
 }
 ```
 
@@ -287,9 +287,9 @@ an element rather than a component:
 ```ts
 import "ragelayer/element";
 
-const destroyer = document.createElement("rage-layer");
-destroyer.addEventListener("ragelayer-close", () => destroyer.remove());
-document.body.append(destroyer);
+const rageLayer = document.createElement("rage-layer");
+rageLayer.addEventListener("ragelayer-close", () => rageLayer.remove());
+document.body.append(rageLayer);
 ```
 
 See [Toolbars, i18n & keyboard](./toolbar.md) for configuration, translation and keyboard use.

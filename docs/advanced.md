@@ -45,7 +45,7 @@ held tool from retriggering the same combo every frame.
 | Orbital bomb | gravity + explosion | stronger debris impulse |
 
 ```ts
-const engine = new DestroyerEngine({
+const engine = new RageLayerEngine({
   combos: { windowMs: 1800, radius: 96, cooldownMs: 800, maxInteractions: 48 },
 });
 
@@ -126,7 +126,7 @@ export const makeConfettiDrill = defineTool({
   },
 });
 
-const engine = new DestroyerEngine();
+const engine = new RageLayerEngine();
 engine.registerTool(makeConfettiDrill());
 ```
 

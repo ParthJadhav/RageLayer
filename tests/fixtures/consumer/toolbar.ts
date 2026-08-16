@@ -1,4 +1,4 @@
-import { DestroyerEngine } from "ragelayer/engine";
+import { RageLayerEngine } from "ragelayer/engine";
 import {
   DEFAULT_STRINGS,
   resolveStrings,
@@ -7,7 +7,7 @@ import {
 } from "ragelayer/toolbar";
 import { baseTools } from "ragelayer/tools";
 
-const engine = new DestroyerEngine({ captureContent: false });
+const engine = new RageLayerEngine({ captureContent: false });
 engine.registerTools(baseTools);
 
 const model = new ToolbarModel(engine, {

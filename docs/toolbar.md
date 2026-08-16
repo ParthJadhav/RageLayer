@@ -41,18 +41,18 @@ custom toolset, engine options, translated strings — call `configure()` before
 import { RageLayerElement } from "ragelayer/element";
 import { hammer, gun } from "ragelayer/tools";
 
-const destroyer = new RageLayerElement();
-destroyer.configure({
+const rageLayer = new RageLayerElement();
+rageLayer.configure({
   tools: [hammer, gun],
   history: true,
   strings: { close: "Dismiss" },
 });
-destroyer.addEventListener("ragelayer-close", () => destroyer.remove());
-document.body.append(destroyer);
+rageLayer.addEventListener("ragelayer-close", () => rageLayer.remove());
+document.body.append(rageLayer);
 ```
 
 The element emits `ragelayer-close` when the visitor presses the close button; hosts normally remove it in
-response. `destroyer.destroyerEngine` exposes the live engine.
+response. `rageLayer.rageLayerEngine` exposes the live engine.
 
 ::: tip Bundlers and the registration side effect
 `import "ragelayer/element"` exists for its side effect. The package marks that one entry
@@ -82,7 +82,7 @@ drive it yourself.
 
 ## Building your own toolbar
 
-`ToolbarModel` gives you the button list and every behaviour a destroyer toolbar needs: which tool
+`ToolbarModel` gives you the button list and every behaviour a RageLayer toolbar needs: which tool
 is selected, whether undo is available, the capture-status chip, keyboard shortcuts that correctly
 ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export. Its
 `state.hint` is the current control's plain-language instruction; the built-in toolbars keep that
@@ -185,9 +185,9 @@ Every user-visible string the built-in UI produces can be replaced. This is how 
 toy — and also how you match your own tone of voice.
 
 ```ts
-import type { DestroyerStrings } from "ragelayer/toolbar";
+import type { RageLayerStrings } from "ragelayer/toolbar";
 
-const french: Partial<DestroyerStrings> = {
+const french: Partial<RageLayerStrings> = {
   toolbarLabel: "Outils de destruction",
   repair: "Tout réparer",
   close: "Fermer",

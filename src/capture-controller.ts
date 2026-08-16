@@ -129,7 +129,7 @@ export class CaptureController {
 
   /**
    * Install a ready-made layer, bypassing rasterization: mounts its canvas in
-   * the right place in the stack and switches the destroyer onto it. For hosts
+   * the right place in the stack and switches RageLayer onto it. For hosts
    * that pre-render their own page raster, and for tests that need a
    * destructible surface without driving the whole pipeline.
    */
@@ -141,7 +141,7 @@ export class CaptureController {
     overlay.container.insertBefore(layer.canvas, overlay.damageCanvas);
   }
 
-  /** Rasterize the page and switch the destroyer onto the copy. */
+  /** Rasterize the page and switch RageLayer onto the copy. */
   async capture() {
     if (this.capturing || this.disposed || !this.root) return;
     const startedAt = performance.now();

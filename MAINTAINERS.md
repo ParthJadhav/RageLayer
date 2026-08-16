@@ -25,6 +25,11 @@ Dependabot groups monthly development updates. Review lockfile changes, run `bun
 adding runtime dependencies for behavior that can stay procedural. Follow [SECURITY.md](./SECURITY.md)
 for private reports and coordinate advisories before public disclosure.
 
+`vite` is pinned exactly, and force-resolved through `overrides`, because VitePress still declares
+`vite@^5` while the documentation build needs a newer one; without the override the two disagree and
+`bun run docs:build` fails. Dependabot will keep proposing bumps — accept one only after
+`bun run docs:build` passes with it, and move the pin and the override together.
+
 ## Releases
 
 Follow [docs/releasing.md](./docs/releasing.md). Review the generated version PR, ensure the semver bump

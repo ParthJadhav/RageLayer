@@ -156,37 +156,37 @@ describe("the headless React hook", () => {
   }
 
   test("toggling from a host control opens and closes the engine", () => {
-    let destroyer;
+    let rageLayer;
     function Consumer() {
-      destroyer = useRageLayer({ captureContent: false, tools: [hammer] });
-      return createElement("span", null, destroyer.isOpen ? "open" : "closed");
+      rageLayer = useRageLayer({ captureContent: false, tools: [hammer] });
+      return createElement("span", null, rageLayer.isOpen ? "open" : "closed");
     }
 
     const { host, unmount } = render(Consumer);
     expect(host.textContent).toBe("closed");
 
     act(() => {
-      track(destroyer.toggle());
+      track(rageLayer.toggle());
     });
     expect(host.textContent).toBe("open");
 
-    act(() => destroyer.close());
+    act(() => rageLayer.close());
     expect(host.textContent).toBe("closed");
 
     unmount();
   });
 
   test("unmounting closes the engine it opened", () => {
-    let destroyer;
+    let rageLayer;
     function Consumer() {
-      destroyer = useRageLayer({ captureContent: false, tools: [hammer] });
+      rageLayer = useRageLayer({ captureContent: false, tools: [hammer] });
       return null;
     }
 
     const { unmount } = render(Consumer);
     let engine;
     act(() => {
-      engine = track(destroyer.open());
+      engine = track(rageLayer.open());
     });
     expect(engine.disposed).toBe(false);
 

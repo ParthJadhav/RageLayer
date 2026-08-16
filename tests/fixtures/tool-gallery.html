@@ -96,7 +96,7 @@
       <div id="result">Scenario ready</div>
     </div>
     <script type="module">
-      import { defaultTools, DestroyerEngine } from "../../dist/index.js";
+      import { defaultTools, RageLayerEngine } from "../../dist/index.js";
 
       const toolIds = [
         "hammer", "gun", "flamethrower", "water", "chainsaw", "paintball", "demolition",
@@ -133,7 +133,7 @@
       document.querySelector("#tool-label").textContent = tool.name;
       document.querySelector("#evidence").showPopover();
 
-      const engine = new DestroyerEngine({
+      const engine = new RageLayerEngine({
         contentRoot: document.querySelector("#stage"),
         zIndex: 100,
         history: false,

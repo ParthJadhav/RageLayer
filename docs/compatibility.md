@@ -53,10 +53,10 @@ These operations are safe on a server:
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer(); // lazy; does not read document
+const rageLayer = createRageLayer(); // lazy; does not read document
 ```
 
-`destroyer.open()`, `mountRageLayer()`, and `new DestroyerEngine()` are browser operations.
+`rageLayer.open()`, `mountRageLayer()`, and `new RageLayerEngine()` are browser operations.
 The direct mount helper throws an actionable error when used during SSR.
 
 ## Content Security Policy
