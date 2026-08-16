@@ -6,7 +6,7 @@
  * aiming that the built-in toolbars use.
  */
 
-export type { DestroyerStrings, DestroyerToolStrings } from "./strings";
+export type { RageLayerStrings, RageLayerToolStrings } from "./strings";
 export { DEFAULT_STRINGS, formatString, resolveStrings, toolStrings } from "./strings";
 export type {
   ToolbarButton,

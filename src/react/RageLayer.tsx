@@ -3,10 +3,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { defaultTools } from "../default-tools";
-import { DestroyerEngine } from "../engine";
-import type { DestroyerStrings } from "../strings";
+import { RageLayerEngine } from "../engine";
+import type { RageLayerStrings } from "../strings";
 import { type ToolbarButton as ButtonState, ToolbarModel, type ToolbarState } from "../toolbar";
-import type { DestroyerOptions, Tool, ToolStyle } from "../types";
+import type { RageLayerEngineOptions, Tool, ToolStyle } from "../types";
 import {
   acquireStyles,
   barStyle,
@@ -24,9 +24,9 @@ export interface RageLayerProps {
   /** Extra or replacement tools. Defaults to the full built-in set. */
   tools?: Tool[];
   /** Engine options (zIndex, caps, physics, post-FX, target element). */
-  engineOptions?: DestroyerOptions;
+  engineOptions?: RageLayerEngineOptions;
   /** Overridden or translated user-visible strings. */
-  strings?: Partial<DestroyerStrings>;
+  strings?: Partial<RageLayerStrings>;
   /** Start with sound on. Default false — visitors get to opt in. */
   soundDefault?: boolean;
   /** Drawn tool art (default) or classic emoji cursors and toolbar icons. */
@@ -105,7 +105,7 @@ export function RageLayer({
   toolStyle = "3d",
   debugGlobal = false,
 }: RageLayerProps) {
-  const engineRef = useRef<DestroyerEngine | null>(null);
+  const engineRef = useRef<RageLayerEngine | null>(null);
   const modelRef = useRef<ToolbarModel | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ToolbarState | null>(null);
@@ -121,7 +121,7 @@ export function RageLayer({
   const resolvedToolStyle = engineOptions?.toolStyle ?? toolStyle;
 
   useEffect(() => {
-    const engine = new DestroyerEngine({
+    const engine = new RageLayerEngine({
       soundEnabled: soundDefault,
       ...engineOptions,
       toolStyle: resolvedToolStyle,
@@ -144,7 +144,7 @@ export function RageLayer({
     };
     window.addEventListener("keydown", onWindowKeyDown);
 
-    const debugWindow = window as unknown as { __rageLayer?: DestroyerEngine };
+    const debugWindow = window as unknown as { __rageLayer?: RageLayerEngine };
     if (debugGlobal) debugWindow.__rageLayer = engine;
 
     return () => {

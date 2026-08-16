@@ -43,8 +43,6 @@ import type {
   CaptureMode,
   CaptureStatus,
   ContentApi,
-  DestroyerEngineApi,
-  DestroyerOptions,
   EngineError,
   EngineErrorScope,
   EngineEvent,
@@ -55,6 +53,8 @@ import type {
   PerformanceQuality,
   PerformanceQualityTier,
   PerformanceSnapshot,
+  RageLayerEngineApi,
+  RageLayerEngineOptions,
   Singularity,
   Tool,
   Vec2,
@@ -95,7 +95,7 @@ interface EngineHistoryEntry extends DestructionHistoryEntry {
 }
 
 /**
- * DestroyerEngine owns the overlay DOM, the rAF loop, pointer input, and all
+ * RageLayerEngine owns the overlay DOM, the rAF loop, pointer input, and all
  * simulation state. It is framework-agnostic: the React wrapper is a thin
  * lifecycle shim around this class.
  *
@@ -114,7 +114,7 @@ interface EngineHistoryEntry extends DestructionHistoryEntry {
  *   transform; particles are simulated in document coordinates and the canvas
  *   transform maps them into view.
  */
-export class DestroyerEngine implements DestroyerEngineApi {
+export class RageLayerEngine implements RageLayerEngineApi {
   private comboTracker: ComboTracker | null;
   private comboListeners = new Set<(event: ComboEvent) => void>();
   private errorListeners = new Set<(error: EngineError) => void>();
@@ -283,7 +283,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
   private collapseTimer = 0;
   private opts: ResolvedEngineOptions;
 
-  constructor(options: DestroyerOptions = {}) {
+  constructor(options: RageLayerEngineOptions = {}) {
     this.comboTracker =
       options.combos === false
         ? null
@@ -987,7 +987,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     return { y0: this.scrollY - viewport, y1: this.scrollY + viewport * 2 };
   }
 
-  // ── DestroyerEngineApi (used by tools) ────────────────────────────────────
+  // ── RageLayerEngineApi (used by tools) ────────────────────────────────────
 
   random() {
     return Math.random();
@@ -1250,7 +1250,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       body.vy = (dy / d) * speed + (options.dirY ?? 0) * power - 110;
       body.av = (Math.random() - 0.5) * 10;
       this.physics.add(body);
-      DestroyerEngine.appendPoly(carve, cell);
+      RageLayerEngine.appendPoly(carve, cell);
       carvedCells.push(cell);
       made++;
     }
@@ -1422,7 +1422,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
     this.physics.add(body);
 
     const carve = new Path2D();
-    DestroyerEngine.appendPoly(carve, points);
+    RageLayerEngine.appendPoly(carve, points);
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
@@ -1517,7 +1517,7 @@ export class DestroyerEngine implements DestroyerEngineApi {
       body.vy = -30 - Math.random() * 110 + (body.y - fromY) * 0.3;
       body.av = (Math.random() - 0.5) * 3.6;
       this.physics.add(body);
-      DestroyerEngine.appendPoly(carve, cell);
+      RageLayerEngine.appendPoly(carve, cell);
       carvedCells.push(cell);
       made++;
     }

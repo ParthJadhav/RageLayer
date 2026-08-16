@@ -39,7 +39,7 @@ export {
 export { defaultTools } from "./default-tools";
 export type { PageElement } from "./elements";
 export { elementAt, elementsInBand, harvestElements } from "./elements";
-export { DestroyerEngine } from "./engine";
+export { RageLayerEngine } from "./engine";
 export type { BakeOptions, ChunkSource } from "./fracture";
 export { bakeChunk, convexHull, gridCells, makeChunk, shardBudget, voronoiCells } from "./fracture";
 export type { GLProgram } from "./gl";
@@ -72,7 +72,7 @@ export type { CustomToolDefinition, RateLimiter } from "./sdk";
 export { createRateLimiter, createTool, defineTool } from "./sdk";
 export { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
 export { clearSpriteCache } from "./sprites";
-export type { DestroyerStrings, DestroyerToolStrings } from "./strings";
+export type { RageLayerStrings, RageLayerToolStrings } from "./strings";
 export { DEFAULT_STRINGS, formatString, resolveStrings, toolStrings } from "./strings";
 export type { SurfaceParams } from "./surface";
 export { DEFAULT_SURFACE_PARAMS, SurfaceRenderer } from "./surface";
@@ -117,8 +117,6 @@ export type {
   ContentApi,
   ContentPatch,
   CutOptions,
-  DestroyerEngineApi,
-  DestroyerOptions,
   EngineError,
   EngineErrorScope,
   EngineEvent,
@@ -134,6 +132,8 @@ export type {
   PerformanceQuality,
   PerformanceQualityTier,
   PerformanceSnapshot,
+  RageLayerEngineApi,
+  RageLayerEngineOptions,
   Singularity,
   SoundApi,
   Tool,

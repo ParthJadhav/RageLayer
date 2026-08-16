@@ -1,7 +1,7 @@
 /**
  * The toolbar, without a view layer.
  *
- * Everything a destroyer toolbar has to get right — the button list, the
+ * Everything a RageLayer toolbar has to get right — the button list, the
  * capture-status chip, keyboard shortcuts that don't fire while the visitor is
  * typing, roving focus, keyboard aiming for people who can't use a pointer,
  * snapshot export — is behaviour, not markup. Keeping it here means the React
@@ -13,9 +13,9 @@
  * subscribers whenever anything a view would render has changed.
  */
 
-import type { DestroyerEngine } from "./engine";
+import type { RageLayerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
-import { type DestroyerStrings, formatString, resolveStrings, toolStrings } from "./strings";
+import { formatString, type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
 import { toolIconDataUrl } from "./toolart";
 import { TOOLBAR_ICONS } from "./toolbar-icons";
 import type { CaptureStatus, Tool, ToolStyle } from "./types";
@@ -72,7 +72,7 @@ export interface ToolbarModelOptions {
   /** Tools to show. Defaults to the engine's registered tools. */
   tools?: readonly Tool[];
   /** Overridden or translated user-visible strings. */
-  strings?: Partial<DestroyerStrings>;
+  strings?: Partial<RageLayerStrings>;
   /** Match toolbar icons to the engine's pointer-art style. */
   toolStyle?: ToolStyle;
   /** Called by the close action and by Escape with no tool selected. */
@@ -94,9 +94,9 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 export class ToolbarModel {
-  private readonly engine: DestroyerEngine;
+  private readonly engine: RageLayerEngine;
   private readonly options: ToolbarModelOptions;
-  private readonly strings: DestroyerStrings;
+  private readonly strings: RageLayerStrings;
   private readonly listeners = new Set<(state: ToolbarState) => void>();
   private readonly detachers: (() => void)[] = [];
   private readonly iconCache = new Map<string, string | null>();
@@ -109,7 +109,7 @@ export class ToolbarModel {
   private destroyed = false;
   private cached: ToolbarState | null = null;
 
-  constructor(engine: DestroyerEngine, options: ToolbarModelOptions = {}) {
+  constructor(engine: RageLayerEngine, options: ToolbarModelOptions = {}) {
     this.engine = engine;
     this.options = options;
     this.strings = resolveStrings(options.strings);

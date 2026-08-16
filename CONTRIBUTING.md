@@ -15,6 +15,10 @@ bun run docs:dev   # documentation site at a local URL
 bun run audit      # dependency advisory check
 ```
 
+Use the Node version in `.nvmrc` (22): tsdown, which produces `dist/`, requires Node 22 or newer.
+That is a contributor requirement only — the published package supports Node 20+, which is what
+`engines` in `package.json` declares and what CI verifies on 20, 22, and 24.
+
 Toolchain: [Bun](https://bun.sh) (runtime + tests), [tsdown](https://tsdown.dev) (Rolldown
 build), [Biome](https://biomejs.dev) (lint + format), publint + arethetypeswrong (package
 correctness), [VitePress](https://vitepress.dev) (documentation), and
@@ -55,7 +59,7 @@ the default location.
 ```sh
 bun run check              # everything CI checks
 bun run test:browser       # if behavior depends on capture, WebGL, or real layout
-bun run test:tools:visual  # if a tool's gesture, effect, or art changed
+bun run demo:tools         # if a tool's gesture, effect, or art changed — then watch the reel
 bun run benchmark          # if you touched the runtime hot paths
 bun run profile:effects:low-end # if you touched rendering or particle emission
 bun run memory:check       # if you touched lifecycle/dispose paths

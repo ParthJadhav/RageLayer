@@ -10,7 +10,7 @@ const open = ref(false);
   <main style="max-width: 720px; margin: 0 auto; padding: 4rem 1.5rem; font-family: system-ui">
     <h1>A perfectly ordinary page</h1>
     <p>
-      Everything here is real DOM. The destroyer captures it into a canvas, hides the original,
+      Everything here is real DOM. RageLayer captures it into a canvas, hides the original,
       and lets the visitor take the copy apart.
     </p>
 

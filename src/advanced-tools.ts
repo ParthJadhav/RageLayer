@@ -2,11 +2,11 @@ import { acidSprayerArt, gravityGunArt, laserCutterArt, stickyBombArt } from "./
 import { TAU } from "./math";
 import { createEngineState } from "./tool-kit";
 import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
-import type { DestroyerEngineApi, Tool } from "./types";
+import type { RageLayerEngineApi, Tool } from "./types";
 import { WOOD } from "./wood";
 
 function sparkBurst(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   x: number,
   y: number,
   count: number,
@@ -110,7 +110,7 @@ const laserStates = createEngineState<LaserState>(() => ({
 }));
 const LASER_TOPOLOGY_INTERVAL = 24;
 
-function releaseLaserIslands(engine: DestroyerEngineApi, state: LaserState) {
+function releaseLaserIslands(engine: RageLayerEngineApi, state: LaserState) {
   if (!state.cutBounds) return 0;
   state.scanDebt = 0;
   return engine.dislodge(
@@ -225,7 +225,7 @@ function acidNoise(seed: number) {
 }
 
 function drawAcidStain(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   x: number,
   y: number,
   radius: number,
@@ -265,7 +265,7 @@ function drawAcidStain(
 }
 
 /** Damage, stain and reaction effects all share this exact impact coordinate. */
-function reactAcid(engine: DestroyerEngineApi, x: number, y: number, radius: number, seed: number) {
+function reactAcid(engine: RageLayerEngineApi, x: number, y: number, radius: number, seed: number) {
   if (!engine.onPage(x, y)) return false;
   engine.content?.burn(x, y, radius);
   drawAcidStain(engine, x, y, radius, seed);
@@ -318,7 +318,7 @@ function reactAcid(engine: DestroyerEngineApi, x: number, y: number, radius: num
 }
 
 function depositAcid(
-  engine: DestroyerEngineApi,
+  engine: RageLayerEngineApi,
   state: AcidState,
   pointer: { x: number; y: number },
 ) {
@@ -342,7 +342,7 @@ function depositAcid(
   });
 }
 
-function creepAcid(engine: DestroyerEngineApi, state: AcidState, dt: number) {
+function creepAcid(engine: RageLayerEngineApi, state: AcidState, dt: number) {
   for (let i = state.deposits.length - 1; i >= 0; i--) {
     const deposit = state.deposits[i];
     const activeDt = Math.min(dt, Math.max(0, ACID_CREEP_LIFETIME - deposit.age));

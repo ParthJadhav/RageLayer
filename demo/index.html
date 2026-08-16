@@ -238,7 +238,7 @@
     <script type="module">
       import {
         defaultTools,
-        DestroyerEngine,
+        RageLayerEngine,
         downloadBlob,
         snapshotFilename,
         TOOLBAR_ICONS,
@@ -246,7 +246,7 @@
         toolIconDataUrl,
       } from "../dist/index.js";
 
-      const engine = new DestroyerEngine({ soundEnabled: true, history: true });
+      const engine = new RageLayerEngine({ soundEnabled: true, history: true });
       window.engine = engine;
       window.__rageLayer = engine;
 
@@ -389,7 +389,7 @@
       status.textContent = "capturing…";
       const name = document.createElement("strong");
       name.id = "rl-name";
-      name.textContent = "Destroyer";
+      name.textContent = "RageLayer";
       // Identity and performance context sit above the action row so the
       // complete desktop toolset never wraps around these wider labels.
       meta.append(name, status);

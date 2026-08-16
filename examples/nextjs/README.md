@@ -7,7 +7,7 @@ bun install
 bun run dev
 ```
 
-`DestroyButton` is a Client Component. The destroyer entry is already marked `"use client"`, but
+`DestroyButton` is a Client Component. RageLayer entry is already marked `"use client"`, but
 the trigger needs its own directive because it holds state.
 
 The component is loaded with `next/dynamic` so a normal page visit never downloads the engine —

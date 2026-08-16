@@ -61,8 +61,8 @@ bun add ragelayer
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer({ initialTool: "hammer" });
-document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
+const rageLayer = createRageLayer({ initialTool: "hammer" });
+document.querySelector("#destroy")?.addEventListener("click", () => rageLayer.toggle());
 ```
 
 [Read the integration guide →](./integrations.md)

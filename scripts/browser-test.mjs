@@ -8,7 +8,7 @@
  * the built `dist` through the actual demo page in headless Chrome and asserts
  * what a visitor would see.
  *
- *   node scripts/browser-test.mjs [--only <substring>]
+ *   node scripts/browser-test.mjs [--only <substring>] [--cpu <rate>]
  *
  * `RAGELAYER_CHROME_PATH` selects the browser. Exits non-zero if any check fails.
  */
@@ -17,6 +17,14 @@ import { evaluate, launchChrome, startStaticServer, waitFor } from "./lib/browse
 
 const filter = readFlag("--only", "");
 
+/**
+ * Rasterizing a cold page is the slowest thing this suite does, and it is the
+ * one wait whose budget has to survive a loaded shared runner. Generous on
+ * purpose: a timeout here should mean the capture is broken, not that the
+ * machine was busy.
+ */
+const CAPTURE_TIMEOUT_MS = 60_000;
+
 function readFlag(name, fallback) {
   const index = process.argv.indexOf(name);
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
@@ -24,6 +32,21 @@ function readFlag(name, fallback) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+/**
+ * Poll a page-side expression until it is true. The equivalent of `waitFor`
+ * from lib/browser.mjs for checks that only receive `run`. Failing here as a
+ * timeout rather than as a wrong value keeps a slow machine distinguishable
+ * from a broken one.
+ */
+async function until(run, expression, label, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await run(expression)) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out after ${timeoutMs}ms waiting for ${label}`);
 }
 
 /**
@@ -176,9 +199,24 @@ const checks = [
           engineFrames++;
           return original(now);
         };
-        // Let clear/capture and the first pointer presentation drain, then
-        // prove a later move still requests an on-demand redraw.
-        await new Promise((resolve) => setTimeout(resolve, 250));
+        // Wait for the loop to genuinely sleep rather than draining for a
+        // fixed 250ms. The frame that clear/setTool/the first move requested
+        // captured the pre-patch engine.frame when it was scheduled; on a slow
+        // machine it can still be pending after any fixed budget, and the
+        // second move then coalesces into that callback — the engine presents
+        // the move correctly, but the counter never sees it and this check
+        // reports a wedge that does not exist. No scheduled frame and a parked
+        // frame clock mean the next wake must schedule the patched frame.
+        const settleDeadline = performance.now() + 10000;
+        while (
+          (__dd.engine.raf !== 0 || !__dd.engine.frameClockSleeping) &&
+          performance.now() < settleDeadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 16));
+        }
+        if (__dd.engine.raf !== 0 || !__dd.engine.frameClockSleeping) {
+          return { settled: false };
+        }
         const beforeMove = engineFrames;
         __dd.engine.container.dispatchEvent(new PointerEvent('pointermove', {
           clientX: 420,
@@ -186,19 +224,32 @@ const checks = [
           pointerId: 1,
           isPrimary: true,
         }));
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        // Wait for the redraw the move should request instead of assuming it
+        // lands inside a fixed budget: the claim is that a move schedules a
+        // frame, not that a loaded machine services it within 80ms.
+        const moveDeadline = performance.now() + 2000;
+        while (engineFrames === beforeMove && performance.now() < moveDeadline) {
+          await new Promise((resolve) => setTimeout(resolve, 16));
+        }
         const moveFrames = engineFrames - beforeMove;
         const settledAt = engineFrames;
         await new Promise((resolve) => setTimeout(resolve, 300));
         return {
+          settled: true,
           moveFrames,
           idleFrames: engineFrames - settledAt,
           pointerX: __dd.engine.pointer.x,
+          visibility: document.visibilityState,
+          paused: __dd.engine.paused,
         };
       })()`);
 
+      assert(result.settled, "the frame loop never slept after clear and tool selection");
       assert(result.pointerX === 420, "the on-demand pointer update was lost");
-      assert(result.moveFrames >= 1, "pointer movement did not request a tool-art frame");
+      assert(
+        result.moveFrames >= 1,
+        `pointer movement did not request a tool-art frame (visibility ${result.visibility}, paused ${result.paused})`,
+      );
       assert(
         result.idleFrames <= 1,
         `the visible idle tool still rendered ${result.idleFrames} frames in 300ms`,
@@ -297,13 +348,13 @@ const checks = [
           return {
             barHeight: bar.getBoundingClientRect().height,
             guide: guide.textContent,
-            destroyerVisible: name.textContent.includes('Destroyer') && name.getBoundingClientRect().width > 0,
+            brandVisible: name.textContent.includes('RageLayer') && name.getBoundingClientRect().width > 0,
             overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth,
           };
         })()`);
         assert(result.guide.includes("Laser Cutter"), "hovering a tool did not explain it");
         assert(result.guide.includes("clean cut"), "the laser hint does not describe its gesture");
-        assert(result.destroyerVisible, "the toolbar has no visible Destroyer identity");
+        assert(result.brandVisible, "the toolbar has no visible RageLayer identity");
         assert(result.barHeight <= 70, `the desktop toolbar grew to ${result.barHeight}px tall`);
         assert(!result.overflow, "the toolbar introduced horizontal page overflow");
       } finally {
@@ -346,7 +397,7 @@ const checks = [
             minControlWidth: Math.min(...controls.map((control) => control.getBoundingClientRect().width)),
             minControlHeight: Math.min(...controls.map((control) => control.getBoundingClientRect().height)),
             guideFontSize: Number.parseFloat(getComputedStyle(guide).fontSize),
-            destroyerVisible: name.textContent.includes('Destroyer') && name.getBoundingClientRect().width > 0,
+            brandVisible: name.textContent.includes('RageLayer') && name.getBoundingClientRect().width > 0,
             metaInsideViewport: meta.getBoundingClientRect().left >= 0 && meta.getBoundingClientRect().right <= innerWidth,
             touchGuide,
           };
@@ -362,8 +413,8 @@ const checks = [
           `a control was only ${result.minControlHeight}px tall`,
         );
         assert(result.guideFontSize >= 14, `the mobile tool guide was ${result.guideFontSize}px`);
-        assert(result.destroyerVisible, "the mobile toolbar has no visible Destroyer identity");
-        assert(result.metaInsideViewport, "the Destroyer controls escaped the phone viewport");
+        assert(result.brandVisible, "the mobile toolbar has no visible RageLayer identity");
+        assert(result.metaInsideViewport, "the RageLayer controls escaped the phone viewport");
         assert(
           result.touchGuide.includes("Laser Cutter"),
           "touch did not reveal the selected tool name",
@@ -488,7 +539,16 @@ const exampleChecks = [
     name: "a host-built toolbar renders from the shared model",
     async run(run) {
       await run("document.getElementById('launch').click()");
-      await run("new Promise((resolve) => setTimeout(resolve, 1500))");
+      // Opening rasterizes the page before the engine — and therefore the
+      // toolbar — exists. That takes as long as the machine takes, so wait for
+      // the bar rather than for a duration; a fixed sleep is a coin flip on a
+      // shared CI runner and reports "0 buttons" when it loses.
+      await until(
+        run,
+        "document.querySelectorAll('#bar button').length > 0",
+        "the host toolbar to render",
+        CAPTURE_TIMEOUT_MS,
+      );
 
       const count = await run("document.querySelectorAll('#bar button').length");
       assert(count > 10, `the host toolbar rendered ${count} buttons`);
@@ -527,6 +587,14 @@ const exampleChecks = [
         run(
           `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`,
         );
+
+      // Independent of whether the check above already opened the engine.
+      await until(
+        run,
+        "Boolean(window.__ddExampleEngine)",
+        "the example engine to mount",
+        CAPTURE_TIMEOUT_MS,
+      );
 
       // Pick a tool by digit, then enter aiming — no pointer involved at all.
       await press("2");
@@ -572,7 +640,7 @@ const customElementChecks = [
           label: toolbar.getAttribute('aria-label'),
           buttonCount: toolbar.querySelectorAll('button').length,
           focus: root.activeElement?.getAttribute('aria-label'),
-          aiming: Boolean(window.__ddElement.destroyerEngine.aim),
+          aiming: Boolean(window.__ddElement.rageLayerEngine.aim),
         };
       })()`);
 
@@ -635,6 +703,9 @@ const browser = await launchChrome({
   // Software GL: CI runners have no GPU, and the surface shader must still
   // come up there or the fallback would silently become the only tested path.
   flags: ["--use-angle=swiftshader", "--use-gl=angle", "--enable-unsafe-swiftshader"],
+  // `--cpu 6` reproduces a CI runner locally; the load-dependent failures in
+  // this suite only surface once frames are slow enough to overlap real work.
+  cpuRate: Number(readFlag("--cpu", "1")),
 });
 
 // A runtime error the page swallowed is still a defect; surface it as one.

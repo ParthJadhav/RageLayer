@@ -29,7 +29,7 @@ const MIN_RECT = 1;
  * so the caller's scroll position doesn't leak into the result — this runs once
  * at capture time and the mask stays valid until the page reflows.
  *
- * `filter` is the same predicate the capture uses, so the destroyer's own
+ * `filter` is the same predicate the capture uses, so RageLayer's own
  * toolbar and framework dev tooling don't leave phantom text in the mask.
  */
 export function buildTextMask(

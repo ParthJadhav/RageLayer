@@ -106,7 +106,7 @@
 
     <script type="module">
       import { advancedTools } from "../dist/tools/advanced.js";
-      import { DestroyerEngine, defaultTools } from "../dist/index.js";
+      import { RageLayerEngine, defaultTools } from "../dist/index.js";
       import { heavyTools } from "../dist/tools/heavy.js";
 
       // ---- Page content ------------------------------------------------------
@@ -160,7 +160,7 @@
 
       async function init(options = {}) {
         dispose();
-        engine = new DestroyerEngine({
+        engine = new RageLayerEngine({
           soundEnabled: false,
           captureContent: options.captureContent ?? true,
           captureMode: options.captureMode ?? "auto",

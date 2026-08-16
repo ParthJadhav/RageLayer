@@ -531,8 +531,8 @@ export class PerformanceMonitor implements PerfCounterSink {
     // Canvas2D rasterization and texture uploads may complete after the JS call
     // returns, so `frameMs` alone can under-report their cost. Treat cadence as
     // engine pressure only when frames are persistently late *and* the engine
-    // itself is doing meaningful work; a busy host page with a cheap destroyer
-    // must not lower our quality.
+    // itself is doing meaningful work; a busy host page with a cheap RageLayer
+    // layer must not lower our quality.
     const cadenceOverload =
       frame.p95 > targetBudget * 1.8 &&
       longFrames / Math.max(1, this.samples) > 0.1 &&

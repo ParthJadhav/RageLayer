@@ -1,4 +1,4 @@
-import type { DestroyerEngine } from "../engine";
+import type { RageLayerEngine } from "../engine";
 import { createRageLayer, type MountRageLayerOptions, type RageLayerController } from "../mount";
 
 export interface RageLayerActionOptions extends MountRageLayerOptions {
@@ -12,7 +12,7 @@ export interface RageLayerActionReturn {
 }
 
 export interface RageLayerChangeDetail {
-  engine: DestroyerEngine | null;
+  engine: RageLayerEngine | null;
   open: boolean;
 }
 

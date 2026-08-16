@@ -1,20 +1,20 @@
 import type { ComputedRef, ShallowRef } from "vue";
 import { computed, onScopeDispose, shallowRef } from "vue";
-import type { DestroyerEngine } from "../engine";
+import type { RageLayerEngine } from "../engine";
 import { createRageLayer, type MountRageLayerOptions } from "../mount";
 
 export interface UseRageLayerResult {
-  engine: ShallowRef<DestroyerEngine | null>;
+  engine: ShallowRef<RageLayerEngine | null>;
   isOpen: ComputedRef<boolean>;
-  open(): DestroyerEngine;
+  open(): RageLayerEngine;
   close(): void;
-  toggle(): DestroyerEngine | null;
+  toggle(): RageLayerEngine | null;
 }
 
 /** Vue composable for a custom launcher or toolbar. Safe to create during SSR. */
 export function useRageLayer(options: MountRageLayerOptions = {}): UseRageLayerResult {
   const controller = createRageLayer(options);
-  const engine = shallowRef<DestroyerEngine | null>(null);
+  const engine = shallowRef<RageLayerEngine | null>(null);
   const unsubscribe = controller.subscribe((next) => {
     engine.value = next;
   });

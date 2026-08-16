@@ -39,7 +39,7 @@
     </main>
 
     <script type="module">
-      import { Body, defaultTools, DestroyerEngine } from "../dist/index.js";
+      import { Body, defaultTools, RageLayerEngine } from "../dist/index.js";
 
       const SCENARIOS = ["idle", "particles", "fire", "physics", "mixed"];
       const TAU = Math.PI * 2;
@@ -126,7 +126,7 @@
       }
 
       function createEngine(options = {}) {
-        const next = new DestroyerEngine({
+        const next = new RageLayerEngine({
           captureContent: false,
           soundEnabled: false,
           harvestElements: false,

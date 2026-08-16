@@ -48,12 +48,12 @@ That's the whole integration: a floating toolbar appears, the page becomes destr
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer({
+const rageLayer = createRageLayer({
   initialTool: "flamethrower",
   soundEnabled: true,
 });
 
-document.querySelector("#destroy")?.addEventListener("click", () => destroyer.toggle());
+document.querySelector("#destroy")?.addEventListener("click", () => rageLayer.toggle());
 ```
 
 The controller registers all 16 tools and handles repeated open/close cycles. Build whatever UI

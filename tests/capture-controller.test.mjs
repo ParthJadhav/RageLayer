@@ -6,7 +6,7 @@ import { makeCanvas, setViewport } from "./support/dom.mjs";
 
 /**
  * The controller's job is to be the thing that never breaks the toy: whichever
- * way rasterization fails, the destroyer has to keep working in overlay mode
+ * way rasterization fails, RageLayer has to keep working in overlay mode
  * and say so. These drive it directly, without an engine around it.
  *
  * The rasterizers themselves are browser-only — html-to-image needs a real SVG

@@ -68,7 +68,7 @@ function documentRect(el: Element, scrollX: number, scrollY: number) {
 
 /**
  * Harvest the page's furniture. `filter` is the engine's capture filter, so the
- * destroyer's own toolbar and framework dev overlays never become targets.
+ * RageLayer's own toolbar and framework dev overlays never become targets.
  */
 export function harvestElements(
   root: HTMLElement,

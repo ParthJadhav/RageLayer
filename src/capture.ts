@@ -8,7 +8,7 @@
  *    the viewport canvas, so a site that paints its background on `<html>`
  *    (or on `<body>`, which is then propagated and no longer painted inside
  *    body's own box) rasterizes to a partly transparent image. Composited over
- *    the destroyer's dark void that reads as a washed-out overlay.
+ *    RageLayer's dark void that reads as a washed-out overlay.
  *    `resolvePageBackdrop` recovers the effective backdrop.
  * 2. **The capture origin drifts from the overlay origin.** The overlay canvas
  *    is anchored at the document origin, but the capture root's border box may
@@ -97,9 +97,9 @@ function isDevToolElement(el: Element): boolean {
 }
 
 /**
- * Default `filter` handed to html-to-image. Keeps the destroyer's own DOM and
+ * Default `filter` handed to html-to-image. Keeps RageLayer's own DOM and
  * framework dev tooling out of the snapshot. Overridable via
- * `DestroyerOptions.captureFilter` — compose with it rather than replacing it
+ * `RageLayerEngineOptions.captureFilter` — compose with it rather than replacing it
  * if you only want to add exclusions.
  */
 export function defaultCaptureFilter(node: Node): boolean {

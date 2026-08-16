@@ -13,6 +13,8 @@
 
 Confirm that public behavior has documentation and a Changeset, visual changes have demo/harness
 evidence, hot-path changes include benchmark context, and lifecycle changes pass the memory gate.
+When a tool's gesture, effect or art changed, label the pull request `tool-demo` and watch the
+recorded reel — no automated check judges whether a tool still looks right.
 `bun run check` is the minimum merge gate; `bun run docs:build` must also pass when documentation or
 examples change.
 
@@ -24,6 +26,11 @@ it. Otherwise implement it once in the core controller or engine.
 Dependabot groups monthly development updates. Review lockfile changes, run `bun audit`, and avoid
 adding runtime dependencies for behavior that can stay procedural. Follow [SECURITY.md](./SECURITY.md)
 for private reports and coordinate advisories before public disclosure.
+
+`vite` is pinned exactly, and force-resolved through `overrides`, because VitePress still declares
+`vite@^5` while the documentation build needs a newer one; without the override the two disagree and
+`bun run docs:build` fails. Dependabot will keep proposing bumps — accept one only after
+`bun run docs:build` passes with it, and move the pin and the override together.
 
 ## Releases
 

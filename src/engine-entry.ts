@@ -2,7 +2,7 @@
 
 export type { ComboEvent, ComboId, ComboTrackerOptions, InteractionKind } from "./combos";
 export { COMBO_DEFINITIONS, ComboTracker } from "./combos";
-export { DestroyerEngine } from "./engine";
+export { RageLayerEngine } from "./engine";
 export type { DestructionHistoryEntry, HistoryOptions, HistoryState } from "./history";
 export { DestructionHistory } from "./history";
 export type { CustomToolDefinition, RateLimiter, ToolIconBounds } from "./sdk";

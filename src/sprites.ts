@@ -216,7 +216,7 @@ let cache: Sprites | null = null;
  *
  * Always safe: the cache is rebuilt lazily by the next `sprites()` call, so
  * callers holding no reference lose nothing but the memory. The engine invokes
- * this when the last live `DestroyerEngine` is disposed; hosts that mount and
+ * this when the last live `RageLayerEngine` is disposed; hosts that mount and
  * unmount rapidly pay one rebuild per remount, which is a handful of small
  * gradient fills.
  */

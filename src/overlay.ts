@@ -1,5 +1,5 @@
 /**
- * Overlay — the DOM the destroyer draws into, and every question about where
+ * Overlay — the DOM RageLayer draws into, and every question about where
  * things are.
  *
  * Layer stack (bottom → top), all in document coordinates:

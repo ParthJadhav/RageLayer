@@ -16,11 +16,11 @@
 
 import { RAGELAYER_IGNORE_ATTR } from "./capture";
 import { defaultTools } from "./default-tools";
-import { DestroyerEngine } from "./engine";
-import type { DestroyerStrings } from "./strings";
+import { RageLayerEngine } from "./engine";
+import type { RageLayerStrings } from "./strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "./toolbar";
 import { toolbarIconElement } from "./toolbar-icons";
-import type { DestroyerOptions, Tool } from "./types";
+import type { RageLayerEngineOptions, Tool } from "./types";
 
 export const TAG_NAME = "rage-layer";
 
@@ -197,9 +197,9 @@ button svg { display: block; }
 }
 `;
 
-export interface RageLayerElementConfig extends DestroyerOptions {
+export interface RageLayerElementConfig extends RageLayerEngineOptions {
   tools?: readonly Tool[];
-  strings?: Partial<DestroyerStrings>;
+  strings?: Partial<RageLayerStrings>;
 }
 
 /**
@@ -220,7 +220,7 @@ const ElementBase: typeof HTMLElement =
 export class RageLayerElement extends ElementBase {
   static observedAttributes = ["initial-tool", "sound"];
 
-  private engine: DestroyerEngine | null = null;
+  private engine: RageLayerEngine | null = null;
   private model: ToolbarModel | null = null;
   private unsubscribe: (() => void) | null = null;
   private bar!: HTMLDivElement;
@@ -240,12 +240,12 @@ export class RageLayerElement extends ElementBase {
     }
   }
 
-  get destroyerEngine(): DestroyerEngine | null {
+  get rageLayerEngine(): RageLayerEngine | null {
     return this.engine;
   }
 
   connectedCallback() {
-    // The toolbar is part of the destroyer, not part of the page it destroys.
+    // The toolbar is part of RageLayer, not part of the page it destroys.
     this.setAttribute(RAGELAYER_IGNORE_ATTR, "");
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this.setup();
@@ -282,7 +282,7 @@ export class RageLayerElement extends ElementBase {
 
     const tools = this.config.tools ?? defaultTools;
 
-    const engine = new DestroyerEngine({
+    const engine = new RageLayerEngine({
       soundEnabled: this.hasAttribute("sound"),
       history: true,
       ...this.config,

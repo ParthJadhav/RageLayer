@@ -98,8 +98,8 @@ describe("mounting", () => {
   test("an engine is created and exposed", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
 
-    expect(element.destroyerEngine).not.toBeNull();
-    expect(element.destroyerEngine.getTools().map((tool) => tool.id)).toEqual(["hammer"]);
+    expect(element.rageLayerEngine).not.toBeNull();
+    expect(element.rageLayerEngine.getTools().map((tool) => tool.id)).toEqual(["hammer"]);
   });
 
   test("the initial-tool attribute selects a tool", () => {
@@ -108,13 +108,13 @@ describe("mounting", () => {
       node.setAttribute("initial-tool", "hammer");
     });
 
-    expect(element.destroyerEngine.tool?.id).toBe("hammer");
+    expect(element.rageLayerEngine.tool?.id).toBe("hammer");
   });
 
   test("the element registers every built-in tool by default", () => {
     mount((node) => node.configure({ captureContent: false }));
 
-    const ids = element.destroyerEngine.getTools().map((tool) => tool.id);
+    const ids = element.rageLayerEngine.getTools().map((tool) => tool.id);
     expect(ids).toContain("hammer");
     expect(ids).toContain("blackhole");
   });
@@ -122,7 +122,7 @@ describe("mounting", () => {
   test("an explicit toolset replaces the defaults", () => {
     mount((node) => node.configure({ captureContent: false, tools: [hammer, broom] }));
 
-    const ids = element.destroyerEngine.getTools().map((tool) => tool.id);
+    const ids = element.rageLayerEngine.getTools().map((tool) => tool.id);
     expect(ids).toEqual(["hammer", "broom"]);
   });
 });
@@ -194,7 +194,7 @@ describe("interaction", () => {
 
     buttonNamed(hammer.name).click();
 
-    expect(element.destroyerEngine.tool?.id).toBe("hammer");
+    expect(element.rageLayerEngine.tool?.id).toBe("hammer");
     expect(buttonNamed(hammer.name).getAttribute("aria-pressed")).toBe("true");
   });
 
@@ -229,13 +229,13 @@ describe("interaction", () => {
 
   test("global shortcuts reach the model", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
-    expect(element.destroyerEngine.sound.enabled).toBe(false);
+    expect(element.rageLayerEngine.sound.enabled).toBe(false);
 
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "m", bubbles: true, cancelable: true }),
     );
 
-    expect(element.destroyerEngine.sound.enabled).toBe(true);
+    expect(element.rageLayerEngine.sound.enabled).toBe(true);
   });
 
   test("overridden strings reach the rendered buttons", () => {
@@ -250,17 +250,17 @@ describe("interaction", () => {
 describe("teardown", () => {
   test("removing the element disposes its engine", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
-    const engine = element.destroyerEngine;
+    const engine = element.rageLayerEngine;
 
     element.remove();
 
     expect(engine.disposed).toBe(true);
-    expect(element.destroyerEngine).toBeNull();
+    expect(element.rageLayerEngine).toBeNull();
   });
 
   test("the overlay leaves the page when the element does", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
-    const container = element.destroyerEngine.container;
+    const container = element.rageLayerEngine.container;
 
     element.remove();
 
@@ -269,12 +269,12 @@ describe("teardown", () => {
 
   test("reconnecting builds a fresh engine", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
-    const first = element.destroyerEngine;
+    const first = element.rageLayerEngine;
     element.remove();
 
     document.body.appendChild(element);
 
-    expect(element.destroyerEngine).not.toBe(first);
-    expect(element.destroyerEngine.disposed).toBe(false);
+    expect(element.rageLayerEngine).not.toBe(first);
+    expect(element.rageLayerEngine.disposed).toBe(false);
   });
 });

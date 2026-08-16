@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { DestroyerEngine } from "../src/engine.ts";
+import { RageLayerEngine } from "../src/engine.ts";
 import { hammer } from "../src/tools.ts";
 import { setViewport } from "./support/dom.mjs";
 import { createTestEngine, disposeTestEngines } from "./support/engine.mjs";
@@ -14,7 +14,7 @@ import { createTestEngine, disposeTestEngines } from "./support/engine.mjs";
 const engines = new Set();
 
 function makeEngine(options = {}) {
-  const engine = new DestroyerEngine({
+  const engine = new RageLayerEngine({
     captureContent: false,
     postFX: false,
     harvestElements: false,

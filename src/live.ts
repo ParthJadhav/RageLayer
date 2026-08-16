@@ -208,7 +208,7 @@ function syncAnimationClocks(root: HTMLElement, clone: HTMLElement) {
 }
 
 /**
- * Drop from the clone everything `filter` rejects — the destroyer's own overlay
+ * Drop from the clone everything `filter` rejects — RageLayer's own overlay
  * and toolbar, framework dev tooling, anything the host excluded. This is the
  * clone-path equivalent of the `filter` option we hand to html-to-image, so
  * both capture modes honour the same `captureFilter`.
@@ -225,7 +225,7 @@ function prune(el: Element, filter: (node: HTMLElement) => boolean) {
  *
  * The mounted clone is a copy of the page at capture time, so any DOM change
  * inside the captured subtree makes it stale. The exception is a change inside
- * an element `filter` rejects — the destroyer's own toolbar, dev overlays —
+ * an element `filter` rejects — RageLayer's own toolbar, dev overlays —
  * which `prune` keeps out of the mirror anyway. `characterData` mutations
  * target text nodes, so the walk starts from the owning element.
  */

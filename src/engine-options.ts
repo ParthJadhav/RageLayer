@@ -1,11 +1,11 @@
-import type { DestroyerOptions } from "./types";
+import type { RageLayerEngineOptions } from "./types";
 
 /** Soft transient effects default to CSS-pixel resolution; hosts can opt into supersampling. */
 const DEFAULT_FX_DPR = 1;
 
 export type ResolvedEngineOptions = Required<
   Pick<
-    DestroyerOptions,
+    RageLayerEngineOptions,
     | "zIndex"
     | "gravity"
     | "maxFlames"
@@ -38,7 +38,7 @@ function clampOption(value: number | undefined, fallback: number, min: number, m
  * about wiring subsystems rather than validation. It also protects JavaScript
  * callers from `NaN`/infinite values, which TypeScript cannot prevent at runtime.
  */
-export function resolveEngineOptions(options: DestroyerOptions): ResolvedEngineOptions {
+export function resolveEngineOptions(options: RageLayerEngineOptions): ResolvedEngineOptions {
   return {
     zIndex: Math.round(clampOption(options.zIndex, 2_147_483_000, -2_147_483_648, 2_147_483_647)),
     gravity: finiteOr(options.gravity, 1_750),

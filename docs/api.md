@@ -23,28 +23,28 @@ For most custom integrations, start with the lazy controller:
 ```ts
 import { createRageLayer } from "ragelayer";
 
-const destroyer = createRageLayer({
+const rageLayer = createRageLayer({
   initialTool: "hammer",
   tools: myTools, // defaults to defaultTools
 });
 
-destroyer.open();
-destroyer.engine; // DestroyerEngine | null
-destroyer.isOpen;
-destroyer.toggle();
-destroyer.close();
-destroyer.subscribe((engine) => console.log(engine));
+rageLayer.open();
+rageLayer.engine; // RageLayerEngine | null
+rageLayer.isOpen;
+rageLayer.toggle();
+rageLayer.close();
+rageLayer.subscribe((engine) => console.log(engine));
 ```
 
 `createRageLayer()` is SSR-safe because it stays lazy. `mountRageLayer(options)`
 registers the tools and returns a live engine immediately, so call it only in a browser. Construct
-`DestroyerEngine` directly when you want to register each tool yourself.
+`RageLayerEngine` directly when you want to register each tool yourself.
 
-## `new DestroyerEngine(options?)`
+## `new RageLayerEngine(options?)`
 
 Creates the overlay and starts capturing the page. Must run in a browser.
 
-### `DestroyerOptions`
+### `RageLayerEngineOptions`
 
 | Option | Type | Default | |
 |---|---|---|---|
@@ -130,7 +130,7 @@ const stamp: Tool = {
 };
 ```
 
-Handlers receive the engine as `DestroyerEngineApi` — the full toolkit:
+Handlers receive the engine as `RageLayerEngineApi` — the full toolkit:
 
 ### Surfaces
 
@@ -164,8 +164,8 @@ engine.pullDebris(x, y, r, strength, dt);   // safe gravity-tool primitive
 engine.launchDebris(x, y, r, dx, dy, speed);
 ```
 
-The concrete `DestroyerEngine` also exposes its `PhysicsWorld` for low-level integrations; custom
-tools typed against `DestroyerEngineApi` should use the bounded debris primitives above.
+The concrete `RageLayerEngine` also exposes its `PhysicsWorld` for low-level integrations; custom
+tools typed against `RageLayerEngineApi` should use the bounded debris primitives above.
 
 ### State & repair
 
@@ -189,7 +189,7 @@ Built-ins use exact measured silhouette bounds; custom models use an alpha-scan 
 All exported for reuse without the engine:
 
 - **Physics** — `PhysicsWorld`, `Body`, `MAX_BODIES`: a 2D sequential-impulse solver
-  (SAT, contact clipping, friction, sleeping) with nothing destroyer-specific in it.
+  (SAT, contact clipping, friction, sleeping) with nothing RageLayer-specific in it.
 - **Fracture** — `voronoiCells`, `gridCells`, `convexHull`, `bakeChunk`, `makeChunk`,
   `shardBudget`: impact-biased Voronoi shattering and chunk-sprite baking.
 - **Decals** — `drawCrack`, `drawBulletHole`, `drawScorch`, `drawGash`,
