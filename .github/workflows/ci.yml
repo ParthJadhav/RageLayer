@@ -97,7 +97,7 @@ jobs:
       # Node 20/22/24 consumer touches is the result, not the bundler. tsdown
       # itself needs Node 22+, so rebuilding per-major would test nothing real.
       - name: Download dist from the verify job
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: dist
           path: dist
@@ -148,7 +148,7 @@ jobs:
 
       - name: Install Chrome for Testing
         id: chrome
-        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+        uses: browser-actions/setup-chrome@48ad923757ca74d66703209fe939badbdf80f2f4 # v2.2.0
         with:
           chrome-version: stable
 
