@@ -1,5 +1,65 @@
 # RageLayer
 
+## 1.0.0
+
+### Major Changes
+
+- [`a084549`](https://github.com/ParthJadhav/RageLayer/commit/a0845493e9e14483ce1e5aa886ffa635478f97ee) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Remove tool loadouts and show the complete toolset everywhere. The `ragelayer/loadouts` entry point,
+  `BUILT_IN_LOADOUTS`, `createToolLoadout()`, `resolveToolLoadout()`, the `loadout` option on
+  `mountRageLayer()` / `createRageLayer()`, the `loadout` prop on the React and Vue components, and the
+  `loadout` attribute on `<rage-layer>` are all gone. Every toolbar now registers and shows all sixteen
+  built-in tools; pass a `tools` array to narrow the set. `mountRageLayer()` selects `"hammer"` when
+  `initialTool` is omitted, as it already did without a loadout.
+
+  Redesign the toolbar. Action buttons are single-path SVG icons drawn in `currentColor` instead of
+  emoji, so their idle, hover and disabled states are driven by one colour token — disabled controls
+  dim their ink rather than washing out the whole button, which had left undo and redo nearly
+  invisible. The bar, hint pill and status chip share one set of surface tokens, the selected tool
+  carries a tinted fill plus a dock-style accent marker, and buttons are 40px on desktop and a full
+  44px once the row scrolls on narrow screens. `ToolbarButton.glyph` and `ToolbarButton.fontSize` are
+  replaced by `ToolbarButton.iconPath`; the new `TOOLBAR_ICONS`, `toolbarIconSvg()` and
+  `toolbarIconElement()` exports let a host-built toolbar render the same icons.
+
+- [#10](https://github.com/ParthJadhav/RageLayer/pull/10) [`cecc8f2`](https://github.com/ParthJadhav/RageLayer/commit/cecc8f2b1bc745387bdc19fda099373b5638c292) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Rename the last `Destroyer*` public names to match the package. `DestroyerEngine` is now
+  `RageLayerEngine`, `DestroyerEngineApi` is `RageLayerEngineApi`, `DestroyerOptions` is
+  `RageLayerEngineOptions`, `DestroyerStrings` is `RageLayerStrings`, `DestroyerToolStrings` is
+  `RageLayerToolStrings`, and the `<rage-layer>` element property `destroyerEngine` is
+  `rageLayerEngine`. There are no deprecated aliases — the old names are gone, and
+  `bun run check:package` asserts they stay gone.
+
+  Migration is a rename in place; no behaviour, option, or DOM contract changed. Entry points
+  (`ragelayer/react`, …), attributes (`data-ragelayer-*`) and events (`ragelayer-close`,
+  `ragelayerchange`) were already correct and are untouched.
+
+  The demo toolbar also showed a stale `Destroyer` brand label; it now reads `RageLayer`, matching
+  every other piece of display text.
+
+- [`a084549`](https://github.com/ParthJadhav/RageLayer/commit/a0845493e9e14483ce1e5aa886ffa635478f97ee) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Replace configurable page materials with one fixed wood-like physical response. This removes the
+  material registry, material definitions and DOM material attributes from the public API. It also
+  removes Freeze Ray, Wrecking Ball, and Glitch Gun, reducing the built-in set to 16 tools: seven base,
+  five heavy, and four advanced.
+
+  Laser Cutter now cuts structure immediately like the Chainsaw and drops isolated pieces. Acid
+  Sprayer keeps visible and structural impacts aligned and spreads a short, bounded distance around
+  each deposit, with a persistent reaction rim that stays clipped to surviving wood. Fire spreads
+  across surviving content with a coherent baked flame body and a bounded smoke plume. Paintball
+  supports automatic fire while held, and the Water Hose uses a compact pressure-nozzle model. The
+  Gun model now has a more complete silhouette, working slide, and firing-cadence recoil.
+
+  Toolbars also keep usage hints visible, share keyboard aiming and translations across React, Vue,
+  and the custom element, and provide non-shrinking 44px touch targets on narrow screens.
+  Built-in cooldowns, gesture paths and delayed effects are now isolated per engine, so simultaneous
+  mounted layers cannot advance or clear one another's tool state. Timed effects continue after tool
+  switches, while settled built-ins stop requesting idle animation frames even when their 3D model
+  remains visible under a stationary pointer. Waking an idle loop no longer integrates its sleeping
+  interval, and faded tool-audio loops are stopped and disconnected instead of processing silently.
+
+### Patch Changes
+
+- [`a084549`](https://github.com/ParthJadhav/RageLayer/commit/a0845493e9e14483ce1e5aa886ffa635478f97ee) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Live capture mode now shows DOM mutations. The mirror's repaint fast path redraws a mounted clone, so a counter ticking in page DOM — or anything inserted after the capture — never appeared on screen. A `MutationObserver` on the capture root (mutations inside `captureFilter`-excluded elements don't count) now marks the mirror stale so the next refresh re-clones, and the refresh loop presents the recomposed band itself so an idle page — whose frame loop is parked — actually shows it.
+
+- [`278287c`](https://github.com/ParthJadhav/RageLayer/commit/278287c55ea964fcd02a35216ae53204ddbdd1c8) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Display text now reads `RageLayer` consistently. Console warnings use the `[RageLayer]` prefix instead of `[ragelayer]`, and shared screenshots download as `RageLayer-<timestamp>.png`. The package name, entry points (`ragelayer/react`, …), DOM attributes (`data-ragelayer-*`), and events (`ragelayer-close`, `ragelayerchange`) are unchanged — npm forbids uppercase in package names, and the DOM contracts stay case-stable.
+
 ## 0.6.1
 
 ### Patch Changes
