@@ -12,6 +12,8 @@ Twelve entry points:
 - `ragelayer/react` — toolbar component and headless hook
 - `ragelayer/vue` — lifecycle-safe Vue composable
 - `ragelayer/svelte` — Svelte action and lifecycle controller
+- `ragelayer/element` — the `<rage-layer>` custom element for every other stack
+- `ragelayer/toolbar` — `ToolbarModel` and strings, to build your own toolbar
 
 Everything is fully typed; this page covers the surfaces you'll actually reach for. For the
 exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
