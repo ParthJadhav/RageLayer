@@ -37,3 +37,9 @@ for private reports and coordinate advisories before public disclosure.
 Follow [docs/releasing.md](./docs/releasing.md). Review the generated version PR, ensure the semver bump
 matches [the stability policy](./docs/versioning.md), and verify npm provenance plus the attached
 registry tarball after publication.
+
+Two traps in that pin. VitePress 1.x cannot build on vite 8: the render step calls
+`transformWithEsbuild`, which vite 8 removed from its default install, and the docs build dies at
+"rendering pages". And a local `bun run docs:build` can pass anyway when a stale `node_modules`
+still carries `esbuild` from an earlier install — verify the bump on a clean install, or let CI do
+it, because that is the environment that decides.
