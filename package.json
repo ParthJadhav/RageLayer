@@ -204,8 +204,8 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
     "@biomejs/biome": "^2.4.0",
-    "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^2.29.5",
+    "@changesets/changelog-github": "^1.0.0",
+    "@changesets/cli": "^3.0.1",
     "@happy-dom/global-registrator": "^20.11.2",
     "@napi-rs/canvas": "^1.0.5",
     "@types/react": "^19.2.18",
