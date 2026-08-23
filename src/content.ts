@@ -27,7 +27,7 @@ import { type PageBackdrop, pickPixelRatio, pinFixedDescendants } from "./captur
 import { teeContexts } from "./ctx-proxy";
 import { rand, TAU } from "./math";
 import { type OpacityBounds, OpacityMap } from "./opacity-map";
-import type { PerfCounterSink } from "./performance";
+import type { PerfCounterSink } from "./perf-counters";
 import { blit, sprites } from "./sprites";
 import { type SurfaceParams, SurfaceRenderer } from "./surface";
 import { findDetachedPolygons, polygonMaterialArea, type TopologyBounds } from "./topology";

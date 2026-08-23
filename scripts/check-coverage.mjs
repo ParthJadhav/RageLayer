@@ -34,6 +34,16 @@ const BROWSER_ONLY = new Map([
   ["src/share.ts", "clipboard and download side effects"],
 ]);
 
+/**
+ * Bun 1.3.14 can zero source-line hits when lcov keeps a later transpiled
+ * instance of the same module (oven-sh/bun#35345). Keep function coverage and
+ * the global line ratchet enforced; skip only the corrupted per-file line
+ * value until Bun merges instances correctly.
+ */
+const BUN_LCOV_LINE_EXEMPT = new Map([
+  ["src/pointer-input.ts", "direct unit and engine tests; duplicated transpiled-module line map"],
+]);
+
 function parseLcov(text) {
   const files = [];
   let current = null;
@@ -88,12 +98,25 @@ for (const metric of ["lines", "functions"]) {
 for (const entry of report) {
   if (BROWSER_ONLY.has(entry.file)) continue;
   for (const metric of ["lines", "functions"]) {
+    if (metric === "lines" && BUN_LCOV_LINE_EXEMPT.has(entry.file)) continue;
     const value = ratio(entry[metric]);
     if (value < PER_FILE[metric]) {
       failures.push(
         `${entry.file} ${metric} coverage ${percent(value)} is below the ${percent(PER_FILE[metric])} per-module floor`,
       );
     }
+  }
+}
+
+for (const [file, reason] of BUN_LCOV_LINE_EXEMPT) {
+  const entry = report.find((candidate) => candidate.file === file);
+  if (!entry) {
+    failures.push(`${file} has an lcov line exemption but no longer exists; drop the exemption`);
+  } else if (ratio(entry.lines) > 0.8) {
+    failures.push(
+      `${file} now has ${percent(ratio(entry.lines))} line coverage; ` +
+        `remove its Bun lcov exemption (${reason})`,
+    );
   }
 }
 

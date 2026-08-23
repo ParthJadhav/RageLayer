@@ -15,7 +15,7 @@
  */
 
 import { TAU } from "./math";
-import type { PerfCounterSink } from "./performance";
+import type { PerfCounterSink } from "./perf-counters";
 import { pointInPolygon } from "./topology";
 
 /** Coarse enough to resolve the chainsaw's 4–7px kerf, compact enough for tall pages. */

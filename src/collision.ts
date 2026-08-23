@@ -12,7 +12,14 @@
  * chunks generates contacts every frame and must not allocate to do it.
  */
 
-import type { Body } from "./physics";
+/** Geometry and material capability required by narrow-phase collision. */
+export interface CollisionBody {
+  readonly count: number;
+  readonly wn: ArrayLike<number>;
+  readonly wv: ArrayLike<number>;
+  readonly restitution: number;
+  readonly friction: number;
+}
 
 export interface ContactPoint {
   px: number;
@@ -29,9 +36,9 @@ export interface ContactPoint {
   bias: number;
 }
 
-export interface Manifold {
-  a: Body;
-  b: Body;
+export interface Manifold<TBody extends CollisionBody = CollisionBody> {
+  a: TBody;
+  b: TBody;
   nx: number;
   ny: number;
   points: ContactPoint[];
@@ -52,7 +59,7 @@ export function createContactPoint(): ContactPoint {
   return { px: 0, py: 0, sep: 0, pn: 0, pt: 0, mn: 0, mt: 0, bias: 0 };
 }
 
-export function createManifold(a: Body, b: Body): Manifold {
+export function createManifold<TBody extends CollisionBody>(a: TBody, b: TBody): Manifold<TBody> {
   return {
     a,
     b,
@@ -75,7 +82,7 @@ export function createManifold(a: Body, b: Body): Manifold {
  * property loads and call overhead. Same dot products, same strict-`>`
  * tie-breaks, so the chosen face and separation are bit-identical.
  */
-function leastPenetration(a: Body, b: Body, out: Penetration) {
+function leastPenetration(a: CollisionBody, b: CollisionBody, out: Penetration) {
   const an = a.wn;
   const av = a.wv;
   const bv = b.wv;
@@ -142,7 +149,11 @@ const clipB: number[] = [];
  * to the reference face's side planes gives the one or two contact points that
  * a stable stack needs (a single point would let every chunk see-saw).
  */
-export function collide(a: Body, b: Body, out: Manifold): boolean {
+export function collide<TBody extends CollisionBody>(
+  a: TBody,
+  b: TBody,
+  out: Manifold<TBody>,
+): boolean {
   leastPenetration(a, b, penetrationA);
   if (penetrationA.sep > 0) return false;
   leastPenetration(b, a, penetrationB);

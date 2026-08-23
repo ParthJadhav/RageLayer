@@ -31,6 +31,8 @@ import {
   type QualityProfile,
 } from "./performance";
 import { MAX_BODIES, PhysicsWorld } from "./physics";
+import { createPointerInput } from "./pointer-input";
+import type { PointerInputController } from "./pointer-input-host";
 import { PostFX } from "./postfx";
 import { blit, clearSpriteCache, sprites } from "./sprites";
 import { polygonArea2 } from "./topology";
@@ -73,14 +75,6 @@ const HEAT_SCALE = 8;
  * land further out (paint splashes, lightning channels) call `markSurface`.
  */
 const TOOL_DECAL_REACH = 96;
-/**
- * Pointermove positions remembered between frames. Real pointers deliver a
- * handful of moves per frame at most; past this many the oldest geometry is
- * already sub-pixel noise and the newest slot is overwritten instead, keeping
- * the total displacement (and so every `dx`/`dy` sum) exact.
- */
-const POINTER_RING_CAP = 32;
-
 interface EngineHistoryEntry extends DestructionHistoryEntry {
   content: ContentCheckpoint | null;
   damage: HTMLCanvasElement | null;
@@ -167,18 +161,14 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private readonly fx = new FxPainter();
   private tools = new Map<string, Tool>();
   private activeTool: Tool | null = null;
-  private pointer: Vec2 = { x: -1000, y: -1000 };
-  private lastPointer: Vec2 = { x: -1000, y: -1000 };
-  private pointerDown = false;
-  /**
-   * Pointermove ring, filled cheaply by `onPointerMove` and replayed through
-   * the active tool once per frame by `flushPointerMoves`. Slots are reused
-   * frame to frame, so a coalesced-event storm allocates nothing.
-   */
-  private readonly pendingMoves: { x: number; y: number; buttons: number }[] = [];
-  private pendingMoveCount = 0;
-  /** Reused `onMove` event object; tools read it synchronously during a flush. */
-  private readonly moveScratch = { x: 0, y: 0, dx: 0, dy: 0, buttons: 0 };
+  /** Browser pointer events and gesture state, kept outside the simulation root. */
+  private readonly pointerInput: PointerInputController;
+  private get pointer(): Vec2 {
+    return this.pointerInput.pointer;
+  }
+  private get pointerDown(): boolean {
+    return this.pointerInput.held;
+  }
   // ── Tool-art pose state ────────────────────────────────────────────────────
   // Everything the drawn-tool renderings derive their animation from: press/
   // release timestamps (seconds, on the rAF clock) and a smoothed read of
@@ -186,8 +176,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   // Stamped from `lastTime`, the frame clock, never `performance.now()`:
   // renderToolArt subtracts them from the frame timestamp, and a host driving
   // `frame()` with its own clock must not see the two time bases diverge.
-  private artDownAt = -Infinity;
-  private artUpAt = -Infinity;
   private artVX = 0;
   private artVY = 0;
   private readonly artAimX = REST_AIM_X;
@@ -229,7 +217,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private disposed = false;
   private pausedByHost = false;
   private pausedByVisibility = false;
-  private activePointerId: number | null = null;
   private listeners = new Map<EngineEvent, Set<() => void>>();
   private resizeTimer = 0;
   private resizeObserver: ResizeObserver | null = null;
@@ -367,12 +354,24 @@ export class RageLayerEngine implements RageLayerEngineApi {
       }
     }
 
-    this.overlay.container.addEventListener("pointerdown", this.onPointerDown);
-    this.overlay.container.addEventListener("pointermove", this.onPointerMove);
-    window.addEventListener("pointerup", this.onPointerUp);
-    window.addEventListener("pointercancel", this.onPointerCancel);
-    this.overlay.container.addEventListener("pointerleave", this.onPointerLeave);
-    this.overlay.container.addEventListener("contextmenu", this.onContextMenu);
+    this.pointerInput = createPointerInput({
+      engine: this,
+      container: this.overlay.container,
+      getTool: () => this.activeTool,
+      isBlocked: () => this.paused || this.disposed,
+      coordinates: () => ({
+        scrollX: this.scrollX,
+        scrollY: this.scrollY,
+        originX: this.overlay.originX,
+        originY: this.overlay.originY,
+      }),
+      nowSeconds: () => this.lastTime / 1000,
+      checkpoint: (label) => {
+        this.checkpoint(label);
+      },
+      requestFrame: () => this.requestFrame(),
+      silenceToolLoops: () => this.silenceToolLoops(),
+    });
 
     this.lastTime = performance.now();
     if (!this.paused) this.requestFrame();
@@ -453,7 +452,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // History is an administrative action, not a pointer release. In
     // particular, undoing while a black hole is held must not detonate it, and
     // the held tool must not resume against the restored page next frame.
-    this.cancelPointer();
+    this.pointerInput.cancel();
     const target = this.history.undo(this.createHistoryEntry("redo"));
     if (!target) return false;
     this.restoreHistoryEntry(target);
@@ -464,7 +463,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
   redo(): boolean {
     if (!this.history?.state.canRedo) return false;
-    this.cancelPointer();
+    this.pointerInput.cancel();
     const target = this.history.redo(this.createHistoryEntry("undo"));
     if (!target) return false;
     this.restoreHistoryEntry(target);
@@ -613,8 +612,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // while the registry points at the new one makes `tool`, `getTools()` and
     // `unregisterTool()` disagree, and a held old tool can keep ticking after
     // its replacement has apparently landed.
-    if (replacingActive) this.flushPointerMoves();
-    if (replacingActive && this.pointerDown) this.endPointer();
+    if (replacingActive) this.pointerInput.flush();
+    if (replacingActive && this.pointerDown) this.pointerInput.end();
     if (previous && previous !== tool) previous.reset?.(this);
 
     // Give shared tools a chance to initialize this engine's isolated state.
@@ -656,8 +655,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const next = id ? (this.tools.get(id) ?? null) : null;
     if (next === this.activeTool) return;
     // Pending hover moves were aimed at the outgoing tool.
-    this.flushPointerMoves();
-    if (this.pointerDown) this.endPointer();
+    this.pointerInput.flush();
+    if (this.pointerDown) this.pointerInput.end();
     this.activeTool = next;
     this.syncToolPresentation();
     this.emit("toolchange");
@@ -773,7 +772,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
   clear() {
     // Cancel before the checkpoint so undo restores exactly the pre-clear
     // page, without synthesizing an onUp action such as a singularity collapse.
-    this.cancelPointer();
+    this.pointerInput.cancel();
     if (!this.restoringHistory) this.checkpoint("clear");
     if (this.overlay.damageReady)
       this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
@@ -905,14 +904,9 @@ export class RageLayerEngine implements RageLayerEngineApi {
     window.removeEventListener("scroll", this.onScroll);
     window.removeEventListener("pagehide", this.onPageHide);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
-    window.removeEventListener("pointerup", this.onPointerUp);
-    window.removeEventListener("pointercancel", this.onPointerCancel);
+    this.pointerInput.dispose();
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.overlay.container.removeEventListener("pointerdown", this.onPointerDown);
-    this.overlay.container.removeEventListener("pointermove", this.onPointerMove);
-    this.overlay.container.removeEventListener("pointerleave", this.onPointerLeave);
-    this.overlay.container.removeEventListener("contextmenu", this.onContextMenu);
     this.capture.dispose();
     this.physics.clear();
     this.postfx?.dispose();
@@ -955,8 +949,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     for (const tool of this.tools.values()) tool.reset?.(this);
     this.tools.clear();
     this.activeTool = null;
-    this.pointerDown = false;
-    this.activePointerId = null;
     this.fire.dispose();
     this._singularity = null;
 
@@ -1133,32 +1125,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
    * Returns false when there is no tool selected or the engine is paused.
    */
   strike(x: number, y: number, { holdMs = 0 }: { holdMs?: number } = {}): boolean {
-    const tool = this.activeTool;
-    if (!tool || this.paused || this.disposed) return false;
-
-    // Recorded pointer moves precede the synthetic gesture, as they would a real one.
-    this.flushPointerMoves();
-    this.checkpoint(tool.id);
-    const event = { x, y, dx: 0, dy: 0, buttons: 1 };
-    this.pointer.x = x;
-    this.pointer.y = y;
-    this.lastPointer.x = x;
-    this.lastPointer.y = y;
-    this.artDownAt = this.lastTime / 1000;
-    this.pointerDown = true;
-    tool.onDown?.(this, event);
-
-    if (holdMs > 0) {
-      const dt = 1 / 60;
-      const steps = Math.min(600, Math.round(holdMs / (dt * 1000)));
-      for (let i = 0; i < steps; i++) tool.tick?.(this, dt, true, this.pointer);
-    }
-
-    this.pointerDown = false;
-    this.artUpAt = this.lastTime / 1000;
-    tool.onUp?.(this, { ...event, buttons: 0 });
-    this.requestFrame();
-    return true;
+    return this.pointerInput.strike(x, y, holdMs);
   }
 
   /**
@@ -1614,7 +1581,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     if (this.paused) {
       cancelAnimationFrame(this.raf);
       this.raf = 0;
-      this.endPointer();
+      this.pointerInput.end();
       this.silenceLoops();
     } else {
       // Do not integrate the time spent suspended as one enormous simulation step.
@@ -1788,158 +1755,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     }
   };
 
-  private toolEvent(e: PointerEvent) {
-    // Equivalent to `clientX - container.getBoundingClientRect().left`, but
-    // without forcing a layout on every pointermove. The scroll offset comes
-    // from the same passive-listener cache the render loop trusts — two fewer
-    // browser-boundary reads per event.
-    const x = e.clientX + this.scrollX - this.overlay.originX;
-    const y = e.clientY + this.scrollY - this.overlay.originY;
-    const ev = {
-      x,
-      y,
-      dx: this.lastPointer.x < -100 ? 0 : x - this.lastPointer.x,
-      dy: this.lastPointer.y < -100 ? 0 : y - this.lastPointer.y,
-      buttons: e.buttons,
-    };
-    this.lastPointer.x = x;
-    this.lastPointer.y = y;
-    this.pointer.x = x;
-    this.pointer.y = y;
-    return ev;
-  }
-
-  private onPointerDown = (e: PointerEvent) => {
-    if (!this.activeTool || e.button !== 0 || !e.isPrimary || this.paused) return;
-    e.preventDefault();
-    // Hover moves recorded before the press belong before it.
-    this.flushPointerMoves();
-    this.checkpoint(this.activeTool.id);
-    this.pointerDown = true;
-    this.activePointerId = e.pointerId;
-    try {
-      this.overlay.container.setPointerCapture?.(e.pointerId);
-    } catch {
-      // Older Safari builds can reject capture even though Pointer Events exist.
-    }
-    this.artDownAt = this.lastTime / 1000;
-    this.lastPointer.x = this.lastPointer.y = -1000;
-    // Always build the event (it updates this.pointer for tick-driven tools),
-    // even when the tool has no onDown handler.
-    const ev = this.toolEvent(e);
-    this.activeTool.onDown?.(this, ev);
-    this.requestFrame();
-  };
-
-  private onPointerMove = (e: PointerEvent) => {
-    if (!this.activeTool || !e.isPrimary) return;
-    if (this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
-    // Record-only: pointermove can outrun the frame rate by an order of
-    // magnitude, so the event does the cheap coordinate conversion and defers
-    // the tool's response to `flushPointerMoves`, which replays the whole path
-    // in the frame this wakes — same-frame, so no added input latency.
-    const x = e.clientX + this.scrollX - this.overlay.originX;
-    const y = e.clientY + this.scrollY - this.overlay.originY;
-    this.pointer.x = x;
-    this.pointer.y = y;
-    const at =
-      this.pendingMoveCount < POINTER_RING_CAP ? this.pendingMoveCount++ : POINTER_RING_CAP - 1;
-    let slot = this.pendingMoves[at];
-    if (!slot) {
-      slot = { x: 0, y: 0, buttons: 0 };
-      this.pendingMoves[at] = slot;
-    }
-    slot.x = x;
-    slot.y = y;
-    slot.buttons = e.buttons;
-    this.requestFrame();
-    // Paused engines schedule no frame, but tools always saw moves (a broom
-    // can still sweep a paused page). Keep that by flushing in the event.
-    if (this.paused) this.flushPointerMoves();
-  };
-
-  /**
-   * Replay every pointer position recorded since the last flush through the
-   * active tool's `onMove`, in order. Path-integrating tools (chainsaw, laser,
-   * broom, demolition) still see every intermediate position; the per-event
-   * cost is just the ring write above.
-   */
-  private flushPointerMoves() {
-    const count = this.pendingMoveCount;
-    if (count === 0) return;
-    this.pendingMoveCount = 0;
-    const tool = this.activeTool;
-    const ev = this.moveScratch;
-    const last = this.lastPointer;
-    for (let i = 0; i < count; i++) {
-      const move = this.pendingMoves[i];
-      ev.x = move.x;
-      ev.y = move.y;
-      ev.dx = last.x < -100 ? 0 : move.x - last.x;
-      ev.dy = last.y < -100 ? 0 : move.y - last.y;
-      ev.buttons = move.buttons;
-      last.x = move.x;
-      last.y = move.y;
-      tool?.onMove?.(this, ev);
-    }
-  }
-
-  private onPointerUp = (e: PointerEvent) => {
-    this.endPointer(e);
-  };
-
-  private onPointerCancel = (e: PointerEvent) => {
-    this.endPointer(e);
-  };
-
-  private endPointer(e?: PointerEvent) {
-    if (!this.pointerDown) return;
-    if (e && this.activePointerId !== null && e.pointerId !== this.activePointerId) return;
-    // Moves recorded before the release belong before it.
-    this.flushPointerMoves();
-    this.pointerDown = false;
-    this.artUpAt = this.lastTime / 1000;
-    const ev = e ? this.toolEvent(e) : { ...this.pointer, dx: 0, dy: 0, buttons: 0 };
-    this.activeTool?.onUp?.(this, ev);
-    this.silenceToolLoops();
-    this.releaseActivePointerCapture();
-    this.requestFrame();
-  }
-
-  /** Stop a gesture without invoking the tool's destructive release action. */
-  private cancelPointer() {
-    if (!this.pointerDown) return;
-    this.pointerDown = false;
-    this.artUpAt = this.lastTime / 1000;
-    this.silenceToolLoops();
-    this.releaseActivePointerCapture();
-    this.requestFrame();
-  }
-
-  private releaseActivePointerCapture() {
-    if (this.activePointerId !== null) {
-      try {
-        this.overlay.container.releasePointerCapture?.(this.activePointerId);
-      } catch {
-        // Capture may already have been released by the browser on cancellation.
-      }
-    }
-    this.activePointerId = null;
-  }
-
-  private onPointerLeave = () => {
-    // Deliver anything recorded on the way out before parking the sentinel.
-    this.flushPointerMoves();
-    if (this.pointerDown) return;
-    this.pointer.x = this.pointer.y = -1000;
-    this.lastPointer.x = this.lastPointer.y = -1000;
-    this.requestFrame();
-  };
-
-  private onContextMenu = (e: Event) => {
-    if (this.activeTool) e.preventDefault();
-  };
-
   private frame = (now: number) => {
     if (this.disposed || this.paused) return;
     this.raf = 0;
@@ -1966,7 +1781,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // Coalesced pointer input lands first — exactly where the events used to
     // run — so everything below (the post-FX demand check, heat reset, tool
     // ticks, rendering) sees the same state it did when moves were per-event.
-    this.flushPointerMoves();
+    this.pointerInput.flush();
 
     // Direct API users can spawn entities without selecting a tool. Lazily
     // bring up post-FX on the first frame that can actually use it as well.
@@ -2187,8 +2002,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
       held: this.pointerDown,
       // Hold durations can never be negative, whatever clock stamped them: a
       // press recorded moments "after" this frame's timestamp is a hold of 0.
-      sinceDown: Math.max(0, time - this.artDownAt),
-      sinceUp: Math.max(0, time - this.artUpAt),
+      sinceDown: Math.max(0, time - this.pointerInput.artDownAt),
+      sinceUp: Math.max(0, time - this.pointerInput.artUpAt),
       vx: this.artVX,
       vy: this.artVY,
       aimX: this.artAimX,
