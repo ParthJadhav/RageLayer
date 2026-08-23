@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import {
@@ -16,7 +16,10 @@ const variant = readFlag("--variant", "full");
 const quality = readFlag("--quality", "high");
 const metricsOnly = process.argv.includes("--metrics-only");
 const captureScreenshots = process.argv.includes("--screenshots");
-const outputDir = resolve(readFlag("--output", join(tmpdir(), `ragelayer-effects-${Date.now()}`)));
+const requestedOutputDir = readFlag("--output", null);
+const outputDir = requestedOutputDir
+  ? resolve(requestedOutputDir)
+  : await mkdtemp(join(tmpdir(), "ragelayer-effects-"));
 const effects = readFlag("--effects", "lightning,paintball,blackhole")
   .split(",")
   .map((value) => value.trim())
