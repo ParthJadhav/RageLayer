@@ -44,12 +44,14 @@
  */
 
 import {
+  canvasUploadCostMs,
   createProgram,
   createQuad,
   createTexture,
   type GLProgram,
   GpuTimer,
   maxTextureSize,
+  SLOW_UPLOAD_THRESHOLD_MS,
 } from "./gl";
 import type { PerfCounterSink } from "./performance";
 
@@ -373,6 +375,12 @@ export class SurfaceRenderer {
 
     const limit = maxTextureSize(gl);
     if (width > limit || height > limit || width < 1 || height < 1) return false;
+
+    // Per-frame dirty-rect uploads are this renderer's entire diet. On
+    // browsers that pay a fixed multi-ms toll per canvas→texture transfer
+    // (Gecko and WebKit today, per the probe), shading costs far more than it
+    // shows — refuse, and the raw 2D surface presents instead.
+    if (canvasUploadCostMs(gl) > SLOW_UPLOAD_THRESHOLD_MS) return false;
 
     if (!this.program) {
       this.program = createProgram(gl, FRAG);

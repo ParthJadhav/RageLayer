@@ -337,6 +337,12 @@ export interface PerformanceGpuStats {
   postFXMs: number;
   /** At least one context reported a working timer-query extension. */
   available: boolean;
+  /**
+   * Probed cost of one canvas→texture upload on this browser, or null before
+   * any GL context ran the probe. Above the engine's threshold the shaded
+   * surface and post-FX stay on their plain 2D fallbacks.
+   */
+  uploadCostMs: number | null;
 }
 
 /** Live-mode base refresh (recompose) activity over the sample window. */

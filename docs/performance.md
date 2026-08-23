@@ -43,7 +43,9 @@ const engine = new RageLayerEngine({
       //                  reconciles, avg dirty-rect page coverage
       // sample.opacity — opacity-map sample() calls, path hit-tests, flattens
       // sample.gpu     — async GPU pass ms for the surface shader and post-FX
-      //                  chain (timer-query extensions; `available` says so)
+      //                  chain (timer-query extensions; `available` says so),
+      //                  plus the probed per-upload canvas→texture cost
+      //                  (`uploadCostMs`) that decides the GL fallbacks below
       // sample.capture — live-mode band recompose count + avg ms
       sendToYourRUM(sample);
     },
@@ -73,6 +75,19 @@ layer defaults to `effectsPixelRatio: 1`. This avoids a fourfold Canvas2D→WebG
 screens for imagery that is already soft, glowing, or in motion. Set a value up to `2` to opt into
 supersampled effects; the engine clamps it to the device ratio.
 
+## GPU upload probe
+
+The shaded surface and the post-FX bloom both re-upload 2D canvas pixels into WebGL textures every
+frame. Chromium does those transfers GPU-to-GPU (~0.01 ms); Firefox and Safari/WebKit currently pay
+a fixed toll of several milliseconds *per upload call*, regardless of rectangle size — enough that
+the two GL stages alone cost 100+ ms per frame under load. The first GL context the engine creates
+therefore times a few small probe uploads once per page. Above the threshold (1 ms per call) the
+WebGL2 surface shading and the WebGL post-FX chain stay on their plain-2D fallbacks: every
+destruction visual (wounds, decals, particles, fire, physics) is unchanged, only glass-edge
+shading, page warp, bloom, and heat shimmer switch off. The measured cost is reported as
+`sample.gpu.uploadCostMs`, and the probe re-evaluates on every page load, so a browser that ships
+fast uploads gets the full pipeline back automatically.
+
 ## Repeatable benchmarks
 
 A network-free Chrome DevTools Protocol suite lives in `scripts/` (no Puppeteer/Playwright
@@ -85,6 +100,20 @@ bun run memory:check       # create/work/dispose cycles with forced GC — leak 
 bun run profile:effects    # all 16 tools, fixed high quality
 bun run profile:effects:low-end
 ```
+
+A cross-browser runner drives the same stress fixture in Firefox, WebKit, and Chrome via
+Playwright (an optional devDependency — install with
+`bun add -d playwright-core && bunx playwright-core install firefox webkit`):
+
+```sh
+bun run perf:browsers                      # all scenarios, firefox + webkit + chrome
+node scripts/cross-browser.mjs --headed \
+  --browsers firefox --scenarios mayhem    # windowed run of one engine/scenario
+```
+
+It reports rAF cadence and the engine's own snapshot breakdown per browser and writes
+`SUMMARY.md`, `results.json`, and per-browser timegraphs. Chromium-only extras (CPU profiles,
+traces, CPU throttling) remain in the CDP suite below.
 
 Set `RAGELAYER_CHROME_PATH` to your Chrome binary. Output is JSON: browser task/script/layout time,
 rAF percentiles, long tasks, heap deltas, entity counts, and the engine's own phase breakdown.

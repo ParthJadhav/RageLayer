@@ -1,3 +1,4 @@
+import { measuredUploadCostMs } from "./gl";
 import type {
   PerformanceEntities,
   PerformanceFrameBreakdown,
@@ -270,7 +271,7 @@ export class PerformanceMonitor implements PerfCounterSink {
       render: { wet: 0, puffs: 0, solids: 0, hot: 0, flames: 0, bodies: 0 },
       surface: { uploads: 0, uploadPixels: 0, reconciles: 0, coverage: 0 },
       opacity: { samples: 0, pathTests: 0, flattens: 0 },
-      gpu: { surfaceMs: 0, postFXMs: 0, available: false },
+      gpu: { surfaceMs: 0, postFXMs: 0, available: false, uploadCostMs: measuredUploadCostMs() },
       capture: { recomposes: 0, recomposeMs: 0 },
       longFrames: 0,
       longFrameRate: 0,
@@ -511,6 +512,7 @@ export class PerformanceMonitor implements PerfCounterSink {
         surfaceMs: this.gpuSurfaceSamples > 0 ? this.gpuSurfaceMsSum / this.gpuSurfaceSamples : 0,
         postFXMs: this.gpuPostFXSamples > 0 ? this.gpuPostFXMsSum / this.gpuPostFXSamples : 0,
         available: this.gpuAvailable,
+        uploadCostMs: measuredUploadCostMs(),
       },
       capture: {
         recomposes: this.recomposes,
