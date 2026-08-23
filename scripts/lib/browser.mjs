@@ -28,10 +28,17 @@ const CONTENT_TYPES = {
   ".svg": "image/svg+xml",
 };
 
-/** Serve the package directory on an ephemeral localhost port. */
-export async function startStaticServer(indexPath = "/demo/index.html") {
+/**
+ * Serve the package directory on an ephemeral localhost port.
+ *
+ * `onRequest(request, response)` runs first and may claim the request by
+ * returning true — the hook lets harnesses accept result beacons from
+ * browsers they cannot script (e.g. a stock Firefox launched via `open`).
+ */
+export async function startStaticServer(indexPath = "/demo/index.html", { onRequest } = {}) {
   const server = createServer(async (request, response) => {
     try {
+      if (onRequest && (await onRequest(request, response))) return;
       const url = new URL(request.url ?? "/", "http://localhost");
       const pathname = decodeURIComponent(url.pathname === "/" ? indexPath : url.pathname);
       const filepath = resolve(packageRoot, `.${pathname}`);

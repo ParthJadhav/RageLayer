@@ -19,6 +19,7 @@ import {
   voronoiCells,
 } from "./fracture";
 import { drawAccretionDisc, drawEventHorizon, drawFlame, FxPainter } from "./fx-render";
+import { measuredUploadCostMs, SLOW_UPLOAD_THRESHOLD_MS } from "./gl";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
 import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
 import { Overlay } from "./overlay";
@@ -2485,16 +2486,37 @@ export class RageLayerEngine implements RageLayerEngineApi {
     ctx.setTransform(dpr, 0, 0, dpr, -overlay.fxOffsetX * dpr, -overlay.fxOffsetY * dpr);
   }
 
+  /** Scratch for `maskFxToPage`'s per-frame hole-run query; reused, never grows hot. */
+  private readonly maskRectScratch: number[] = [];
+
+  /**
+   * Cached inverse of the visible band's page alpha (opaque where the page is
+   * gone), kept in step with the fx canvas. Only exists on slow-canvas
+   * browsers — see `maskFxToPage`.
+   */
+  private holeBand: HTMLCanvasElement | null = null;
+  private holeBandCtx: CanvasRenderingContext2D | null = null;
+  private holeBandLeft = -1;
+  private holeBandTop = -1;
+  /** The capture the cache was built from — a recapture invalidates it. */
+  private holeBandLayer: ContentLayer | null = null;
+  private readonly holeBandDamage = { x0: 0, y0: 0, x1: 0, y1: 0 };
+
   /**
    * Erase every fx pixel that no longer has page under it.
    *
-   * One `destination-in` draw of the content surface's visible band: the
-   * page's alpha channel is already the authoritative record of what still
-   * exists, so using it as a mask clips surface-bound effects to the surviving
-   * page pixel-for-pixel — including the parts of the fx band that hang past
-   * the document's edges, which have no source pixels and are erased outright.
-   * GPU-to-GPU, no readback; costs one viewport-sized draw per frame and only
-   * runs when the surface pass drew something.
+   * On fast-canvas browsers (Chrome) this is one `destination-in` draw of the
+   * content surface's visible band — a free GPU blend. On browsers whose
+   * uploads probe slow (Gecko, WebKit) that op is poison twice over: it
+   * touches every pixel of the fx canvas, and it knocks Gecko's Canvas2D off
+   * its accelerated path so every later canvas-source draw in the frame pays
+   * a fixed toll (~30ms/frame in the bug-swarm stress scenario). Those
+   * browsers instead take one `destination-out` draw of a cached inverse of
+   * the band's page alpha — fx · (1 − holes) is exactly fx · pageAlpha, and
+   * `destination-out` leaves pixels outside its source untouched, so nothing
+   * deopts. Frames with no holes in view (per the opacity map) skip the mask
+   * outright, and only clear the strips of fx band hanging past the
+   * document's edges, which the full-band draw used to erase implicitly.
    */
   private maskFxToPage(
     ctx: CanvasRenderingContext2D,
@@ -2508,18 +2530,113 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const y1 = Math.min(layer.height, view.bottom);
     if (x1 <= x0 || y1 <= y0) return;
     const d = layer.dpr;
-    ctx.globalCompositeOperation = "destination-in";
-    ctx.drawImage(
-      layer.surface,
-      x0 * d,
-      y0 * d,
-      (x1 - x0) * d,
-      (y1 - y0) * d,
-      x0,
-      y0,
-      x1 - x0,
-      y1 - y0,
-    );
+    const rects = this.maskRectScratch;
+    rects.length = 0;
+    const known = layer.collectMaskRects(x0, y0, x1, y1, rects);
+    if (known) {
+      // Nothing on the page can be missing under the band's edges either, but
+      // the band itself may hang past the document; `destination-in` used to
+      // erase those strips as a side effect, so clear them deliberately.
+      if (view.top < y0) ctx.clearRect(view.left, view.top, view.right - view.left, y0 - view.top);
+      if (view.bottom > y1) ctx.clearRect(view.left, y1, view.right - view.left, view.bottom - y1);
+      if (view.left < x0) ctx.clearRect(view.left, y0, x0 - view.left, y1 - y0);
+      if (view.right > x1) ctx.clearRect(x1, y0, view.right - x1, y1 - y0);
+      if (rects.length === 0) return;
+    }
+    // Where uploads probe fast (Chrome), one GPU `destination-in` draw is
+    // optimal and the hole cache below is pure overhead; a slow probe marks
+    // the browsers whose canvas the `destination-in` family deopts. An
+    // unprobed environment (no WebGL at all) is treated as slow.
+    const uploadCost = measuredUploadCostMs();
+    if (uploadCost !== null && uploadCost <= SLOW_UPLOAD_THRESHOLD_MS) {
+      ctx.globalCompositeOperation = "destination-in";
+      ctx.drawImage(
+        layer.surface,
+        x0 * d,
+        y0 * d,
+        (x1 - x0) * d,
+        (y1 - y0) * d,
+        x0,
+        y0,
+        x1 - x0,
+        y1 - y0,
+      );
+      ctx.globalCompositeOperation = "source-over";
+      return;
+    }
+    // Slow-canvas path: one `destination-out` draw of a cached inverse of the
+    // band's page alpha (opaque where the page is gone, including past the
+    // document's edges) — fx · (1 − holes) is exactly fx · pageAlpha. The
+    // cache rebuilds when the band moves or resizes and otherwise refreshes
+    // only the surface-damage rect, so steady frames pay one draw and no
+    // surface reads.
+    const fxCanvas = ctx.canvas;
+    let hole = this.holeBand;
+    let holeCtx = this.holeBandCtx;
+    let rebuild = false;
+    if (!hole || hole.width !== fxCanvas.width || hole.height !== fxCanvas.height) {
+      hole = this.holeBand = document.createElement("canvas");
+      hole.width = fxCanvas.width;
+      hole.height = fxCanvas.height;
+      holeCtx = this.holeBandCtx = hole.getContext("2d")!;
+      rebuild = true;
+    }
+    if (
+      view.left !== this.holeBandLeft ||
+      view.top !== this.holeBandTop ||
+      layer !== this.holeBandLayer
+    ) {
+      this.holeBandLeft = view.left;
+      this.holeBandTop = view.top;
+      this.holeBandLayer = layer;
+      rebuild = true;
+    }
+    // Consume even when rebuilding: the damage is covered either way.
+    const damaged = layer.consumeMaskDamage(this.holeBandDamage);
+    if (rebuild || damaged) {
+      const scale = this.overlay.fxDpr;
+      holeCtx!.setTransform(scale, 0, 0, scale, -view.left * scale, -view.top * scale);
+      holeCtx!.fillStyle = "#000";
+      if (rebuild) {
+        holeCtx!.fillRect(view.left, view.top, view.right - view.left, view.bottom - view.top);
+        holeCtx!.globalCompositeOperation = "destination-out";
+        holeCtx!.drawImage(
+          layer.surface,
+          x0 * d,
+          y0 * d,
+          (x1 - x0) * d,
+          (y1 - y0) * d,
+          x0,
+          y0,
+          x1 - x0,
+          y1 - y0,
+        );
+      } else {
+        const dmg = this.holeBandDamage;
+        const ux0 = Math.max(x0, dmg.x0);
+        const uy0 = Math.max(y0, dmg.y0);
+        const ux1 = Math.min(x1, dmg.x1);
+        const uy1 = Math.min(y1, dmg.y1);
+        if (ux1 > ux0 && uy1 > uy0) {
+          holeCtx!.fillRect(ux0, uy0, ux1 - ux0, uy1 - uy0);
+          holeCtx!.globalCompositeOperation = "destination-out";
+          holeCtx!.drawImage(
+            layer.surface,
+            ux0 * d,
+            uy0 * d,
+            (ux1 - ux0) * d,
+            (uy1 - uy0) * d,
+            ux0,
+            uy0,
+            ux1 - ux0,
+            uy1 - uy0,
+          );
+        }
+      }
+      holeCtx!.globalCompositeOperation = "source-over";
+    }
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.drawImage(hole, view.left, view.top, view.right - view.left, view.bottom - view.top);
     ctx.globalCompositeOperation = "source-over";
   }
 

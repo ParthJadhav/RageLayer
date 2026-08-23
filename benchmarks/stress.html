@@ -555,6 +555,48 @@
 
       window.stress = { scenarios: Object.keys(SCENARIOS), init, run, dispose };
       document.documentElement.dataset.ready = "true";
+
+      // ---- Autorun -----------------------------------------------------------
+      // Browsers without a scripting protocol (stock Firefox forks, Safari
+      // Technology Preview) can still run the suite: load the page with
+      // ?autorun=mayhem,inferno (or autorun=all) and results are POSTed to
+      // `beacon` (default /report) on the serving origin.
+      const params = new URLSearchParams(location.search);
+      const autorun = params.get("autorun");
+      if (autorun) {
+        (async () => {
+          const payload = {
+            userAgent: navigator.userAgent,
+            devicePixelRatio,
+            viewport: { width: innerWidth, height: innerHeight },
+            results: [],
+          };
+          try {
+            const names = autorun === "all" ? Object.keys(SCENARIOS) : autorun.split(",");
+            const durationMs = Number(params.get("duration")) || 6000;
+            payload.init = await init({
+              quality: params.get("quality") ?? "high",
+              captureMode: params.get("captureMode") ?? "auto",
+            });
+            for (const name of names) {
+              payload.results.push(await run(name, durationMs));
+              engine.clear();
+              await new Promise((settle) => setTimeout(settle, 600));
+            }
+          } catch (error) {
+            payload.error = String(error?.stack ?? error);
+          }
+          // The tab lingers after the run in a browser we cannot script;
+          // dispose so it cannot keep a single engine resource alive.
+          dispose();
+          await fetch(params.get("beacon") ?? "/report", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          document.title = "stress: done";
+        })();
+      }
     </script>
   </body>
 </html>

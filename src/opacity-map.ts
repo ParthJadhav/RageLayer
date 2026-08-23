@@ -87,6 +87,16 @@ export class OpacityMap {
   private topology = new Uint8Array(0);
   private topologyCols = 0;
   private topologyRows = 0;
+  /**
+   * Per-128px-cell "page alpha may be missing here" flags, on the same grid as
+   * `cells`. Seeded from pristine transparency at capture, set by every remove
+   * op, and deliberately never cleared by restores — a stale flag only costs a
+   * masked draw, a missing one would leave effects floating over a hole.
+   */
+  private maskCells = new Uint8Array(0);
+  /** The capture's own transparency, kept so `restoreAll` can reseed. */
+  private pristineMask = new Uint8Array(0);
+  private maskRows = 0;
 
   reset(source: HTMLCanvasElement, width: number, height: number) {
     const scale = Math.min(1, Math.sqrt(2_000_000 / Math.max(1, width * height)));
@@ -123,6 +133,10 @@ export class OpacityMap {
       alpha.fill(255);
     }
     this.baseAlpha = alpha;
+    this.maskRows = Math.max(1, Math.ceil(height / 128));
+    this.pristineMask = new Uint8Array(this.cols * this.maskRows);
+    this.seedMaskFromAlpha(this.pristineMask, alpha, 250);
+    this.maskCells = this.pristineMask.slice();
     this.rebuildTopology();
     // Only the Uint8 alpha plane is retained; release the temporary RGBA
     // backing immediately (up to 8 MB at the map budget).
@@ -167,6 +181,9 @@ export class OpacityMap {
     this.operations.length = 0;
     this.cells.clear();
     this.dropRemovedPlane();
+    if (this.maskCells.length === this.pristineMask.length) {
+      this.maskCells.set(this.pristineMask);
+    }
     this.rebuildTopology();
   }
 
@@ -211,6 +228,21 @@ export class OpacityMap {
     } catch {
       // A tainted source remains renderable. In that rare case history restores
       // visuals exactly and hit testing conservatively falls back to pristine.
+    }
+    if (this.maskCells.length === this.pristineMask.length) {
+      this.maskCells.set(this.pristineMask);
+      const removed = this.removed;
+      if (removed) {
+        // Re-flag every cell the surviving (post-restore) wounds still touch.
+        for (let my = 0; my < this.mapHeight; my++) {
+          const tileRow = Math.min(this.maskRows - 1, Math.floor(my / this.scaleY / 128));
+          for (let mx = 0, src = my * this.mapWidth; mx < this.mapWidth; mx++, src++) {
+            if (removed[src] === 0) continue;
+            const tileCol = Math.min(this.cols - 1, Math.floor(mx / this.scaleX / 128));
+            this.maskCells[tileRow * this.cols + tileCol] = 1;
+          }
+        }
+      }
     }
     this.rebuildTopology();
     if (this.removed) {
@@ -264,6 +296,50 @@ export class OpacityMap {
     return pristine;
   }
 
+  /**
+   * Append the horizontal runs of 128px cells inside the CSS-px rect where
+   * page alpha may be missing — pristine transparency or any wound since. Runs
+   * land in `out` as x0, y0, x1, y1 quadruples clamped to the rect. Returns
+   * false when there is no capture to answer from, in which case the whole
+   * rect must be treated as suspect.
+   *
+   * The flags only ever over-approximate (see `maskCells`), so a caller may
+   * skip masking everything outside the returned runs.
+   */
+  collectMaskRects(x0: number, y0: number, x1: number, y1: number, out: number[]): boolean {
+    if (!this.baseAlpha || this.maskCells.length === 0) return false;
+    const c0 = Math.max(0, Math.floor(x0 / 128));
+    const r0 = Math.max(0, Math.floor(y0 / 128));
+    const c1 = Math.min(this.cols - 1, Math.floor((x1 - 0.01) / 128));
+    const r1 = Math.min(this.maskRows - 1, Math.floor((y1 - 0.01) / 128));
+    for (let r = r0; r <= r1; r++) {
+      const rowY0 = Math.max(y0, r * 128);
+      const rowY1 = Math.min(y1, (r + 1) * 128);
+      let runStart = -1;
+      for (let c = c0; c <= c1 + 1; c++) {
+        const flagged = c <= c1 && this.maskCells[r * this.cols + c] !== 0;
+        if (flagged && runStart < 0) runStart = c;
+        if (!flagged && runStart >= 0) {
+          out.push(Math.max(x0, runStart * 128), rowY0, Math.min(x1, c * 128), rowY1);
+          runStart = -1;
+        }
+      }
+    }
+    return true;
+  }
+
+  /** Flag every 128px cell whose downscaled plane has alpha below `minOpaque`. */
+  private seedMaskFromAlpha(target: Uint8Array, alpha: Uint8Array, minOpaque: number) {
+    for (let my = 0; my < this.mapHeight; my++) {
+      const tileRow = Math.min(this.maskRows - 1, Math.floor(my / this.scaleY / 128));
+      for (let mx = 0, src = my * this.mapWidth; mx < this.mapWidth; mx++, src++) {
+        if (alpha[src] >= minOpaque) continue;
+        const tileCol = Math.min(this.cols - 1, Math.floor(mx / this.scaleX / 128));
+        target[tileRow * this.cols + tileCol] = 1;
+      }
+    }
+  }
+
   /** 0 = pristine void, 1 = surviving material, 2 = structurally removed. */
   stateAt(x: number, y: number): 0 | 1 | 2 {
     if (x < 0 || y < 0 || x >= this.width || y >= this.height || this.topology.length === 0)
@@ -280,6 +356,9 @@ export class OpacityMap {
     this.dropRemovedPlane();
     this.topology = new Uint8Array(0);
     this.topologyCols = this.topologyRows = 0;
+    this.maskCells = new Uint8Array(0);
+    this.pristineMask = new Uint8Array(0);
+    this.maskRows = 0;
     this.raster.width = 0;
     this.raster.height = 0;
     // The hit-test context's backing canvas (browser-default 300×150) holds
@@ -308,6 +387,7 @@ export class OpacityMap {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const key = ty * this.cols + tx;
+        if (!operation.restores && key < this.maskCells.length) this.maskCells[key] = 1;
         let list = this.cells.get(key);
         if (!list) {
           list = [];
