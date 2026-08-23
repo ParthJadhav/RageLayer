@@ -27,7 +27,7 @@ import { ContentLayer } from "./content";
 import { harvestElements, type PageElement } from "./elements";
 import { LiveContentSource, supportsLiveCapture } from "./live";
 import type { Overlay } from "./overlay";
-import type { PerfCounterSink } from "./performance";
+import type { PerfCounterSink } from "./perf-counters";
 import { DEFAULT_SURFACE_PARAMS, type SurfaceParams } from "./surface";
 import { buildTextMask } from "./textmask";
 import type { CaptureMode, CaptureStatus, EngineErrorScope } from "./types";

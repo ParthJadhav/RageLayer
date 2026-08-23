@@ -304,7 +304,7 @@ export class PhysicsWorld {
   /** Velocity/position solver passes per step (see `WorldOptions.iterations`). */
   private iterations: number;
   /** Contact storage is pooled so a tumbling heap does not allocate every frame. */
-  private manifolds: Manifold[] = [];
+  private manifolds: Manifold<Body>[] = [];
   /**
    * Persistent x-sorted candidate list for the sweep-and-prune broadphase.
    * Membership is maintained incrementally (`add` appends, disposed bodies are

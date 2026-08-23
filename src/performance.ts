@@ -1,4 +1,5 @@
 import { measuredUploadCostMs } from "./gl";
+import type { PerfCounterName, PerfCounterSink } from "./perf-counters";
 import type {
   PerformanceEntities,
   PerformanceFrameBreakdown,
@@ -78,31 +79,7 @@ export interface FrameMeasurement {
   targetFps: number;
 }
 
-/**
- * Per-window event counters subsystems report through `PerfCounterSink.count`.
- * Amount-carrying names (`…Pixels`, `…Ms`, `…Coverage`) add their amount; the
- * rest are plain occurrence counts. Everything resets when a snapshot publishes.
- */
-export type PerfCounterName =
-  | "surfaceUploads"
-  | "surfaceUploadPixels"
-  | "surfaceReconciles"
-  | "surfaceCoverage"
-  | "opacitySamples"
-  | "opacityPathTests"
-  | "opacityFlattens"
-  | "recomposeMs"
-  | "gpuSurfaceMs"
-  | "gpuPostFXMs"
-  | "gpuTimerAvailable";
-
-/**
- * The narrow write-only face of `PerformanceMonitor` handed down to
- * subsystems. Allocation-free per call, so it is safe on hot paths.
- */
-export interface PerfCounterSink {
-  count(name: PerfCounterName, amount?: number): void;
-}
+export type { PerfCounterName, PerfCounterSink } from "./perf-counters";
 
 function percentile(values: number[], fraction: number): number {
   if (values.length === 0) return 0;

@@ -9,7 +9,7 @@
  * set (integer texture sizing, `texSubImage2D` from a canvas at an offset).
  */
 
-import type { PerfCounterName, PerfCounterSink } from "./performance";
+import type { PerfCounterName, PerfCounterSink } from "./perf-counters";
 
 /**
  * Full-screen triangle strip in clip space. `vUv` is flipped on Y at sample

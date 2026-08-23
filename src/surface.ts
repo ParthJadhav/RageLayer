@@ -53,7 +53,7 @@ import {
   maxTextureSize,
   SLOW_UPLOAD_THRESHOLD_MS,
 } from "./gl";
-import type { PerfCounterSink } from "./performance";
+import type { PerfCounterSink } from "./perf-counters";
 
 const FRAG = `#version 300 es
 precision highp float;

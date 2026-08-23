@@ -28,7 +28,7 @@
  */
 
 import { canvasUploadCostMs, GpuTimer, SLOW_UPLOAD_THRESHOLD_MS } from "./gl";
-import type { PerfCounterSink } from "./performance";
+import type { PerfCounterSink } from "./perf-counters";
 
 const VERT = `
 attribute vec2 aPos;

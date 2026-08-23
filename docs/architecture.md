@@ -30,9 +30,12 @@ DOM regions and engine options do not replace it.
 
 ```
 src/
-├── engine.ts        RageLayerEngine orchestration — DOM, rAF, input, destruction,
+├── engine.ts        RageLayerEngine orchestration — DOM, rAF, destruction,
 │                    subsystems, history, telemetry, quality and public methods
 ├── engine-options.ts Runtime defaults, validation and normalized engine options
+├── pointer-input.ts Pointer gesture lifecycle — event binding, capture ownership,
+│                    bounded move buffering, cancellation and scripted strikes
+├── perf-counters.ts Write-only telemetry capability shared by hot-path subsystems
 ├── types.ts         The full public type surface (RageLayerEngineOptions, Tool, …)
 ├── content.ts       ContentLayer — the destructible page: punch/burn/cut/char/restore,
 │                    pristine base, live-mode wound/decal recomposition, OpacityMap
@@ -45,6 +48,7 @@ src/
 ├── gl.ts            Small WebGL helpers shared by surface.ts
 ├── physics.ts       PhysicsWorld/Body — sequential-impulse rigid bodies, sleeping,
 │                    sweep-and-prune broadphase, blast/attract
+├── collision.ts     Narrow-phase SAT/contact geometry over a minimal body contract
 ├── fracture.ts      Voronoi/grid shattering + chunk sprite baking
 ├── particles.ts     Bounded particle storage and simulation
 ├── flames.ts        Wood fuel, contact heat, bounded fire spread and smoke emission
