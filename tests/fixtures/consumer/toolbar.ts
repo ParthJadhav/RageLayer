@@ -19,12 +19,9 @@ const model = new ToolbarModel(engine, {
 const unsubscribe = model.subscribe((state: ToolbarState) => {
   void state.buttons.map((button) => button.label);
   void state.status?.label;
-  void state.aim;
 });
 
-model.startAiming();
-model.moveAim(1, 0);
-void model.strikeAtAim();
+void engine.strike(10, 10, { holdMs: 50 });
 unsubscribe();
 model.destroy();
 void resolveStrings({ repair: "Fix" });

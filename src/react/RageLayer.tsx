@@ -80,21 +80,10 @@ function ToolbarButton({
   );
 }
 
-const srOnlyStyle: React.CSSProperties = {
-  position: "absolute",
-  width: 1,
-  height: 1,
-  margin: -1,
-  padding: 0,
-  overflow: "hidden",
-  clipPath: "inset(50%)",
-  whiteSpace: "nowrap",
-};
-
 /**
  * Drop-in RageLayer: mounts the engine and renders `ToolbarModel` through
  * React. Vue, the custom element, and this component therefore expose the
- * same tools, actions, shortcuts, aiming mode, hints and translated strings.
+ * same tools, actions, shortcuts, hints and translated strings.
  */
 export function RageLayer({
   onClose,
@@ -187,8 +176,8 @@ export function RageLayer({
     if (next === null || count === 0) return;
 
     event.preventDefault();
-    // When aiming is active, arrows inside the toolbar still navigate the
-    // toolbar; only global arrows steer the canvas cursor.
+    // Arrows inside the toolbar navigate the toolbar; they must not reach
+    // the document-level shortcut handler.
     event.stopPropagation();
     const normalized = ((next % count) + count) % count;
     modelRef.current?.setFocusIndex(normalized);
@@ -202,12 +191,6 @@ export function RageLayer({
     <div style={hostStyle} data-ragelayer-ignore="">
       <div className="rl-hint" data-ragelayer-ignore="" role="status" aria-live="polite">
         <span className="rl-hint-pill">{state.hint}</span>
-      </div>
-
-      {/* Movement and strike announcements are separate from the visible
-          guide so coordinates do not replace its concise instruction. */}
-      <div style={srOnlyStyle} role="status" aria-live="polite">
-        {state.announcement}
       </div>
 
       {statusText && (

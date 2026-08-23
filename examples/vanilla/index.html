@@ -109,7 +109,7 @@
         bar.querySelector("button")?.focus();
       });
 
-      // Shortcuts, keyboard aiming and undo all come from the model.
+      // Shortcuts and undo all come from the model.
       window.addEventListener("keydown", (event) => {
         if (toolbar?.handleKeyDown(event)) event.preventDefault();
       });

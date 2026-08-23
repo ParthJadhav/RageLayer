@@ -166,16 +166,6 @@ button svg { display: block; }
   font-size: 12px;
   white-space: nowrap;
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 @media (prefers-reduced-motion: reduce) {
   .bar { animation: none; }
   button { transition: none; }
@@ -225,7 +215,6 @@ export class RageLayerElement extends ElementBase {
   private unsubscribe: (() => void) | null = null;
   private bar!: HTMLDivElement;
   private guide!: HTMLDivElement;
-  private live!: HTMLDivElement;
   private buttons: HTMLButtonElement[] = [];
   private restoringFocus = false;
   private previousFocus: HTMLElement | null = null;
@@ -271,14 +260,10 @@ export class RageLayerElement extends ElementBase {
     this.bar.className = "bar";
     this.bar.setAttribute("role", "toolbar");
     this.bar.setAttribute("aria-orientation", "horizontal");
-    this.live = document.createElement("div");
-    this.live.className = "sr-only";
-    this.live.setAttribute("role", "status");
-    this.live.setAttribute("aria-live", "polite");
     this.guide = document.createElement("div");
     this.guide.className = "guide";
     this.guide.setAttribute("aria-hidden", "true");
-    root.replaceChildren(style, this.live, this.guide, this.bar);
+    root.replaceChildren(style, this.guide, this.bar);
 
     const tools = this.config.tools ?? defaultTools;
 
@@ -347,14 +332,14 @@ export class RageLayerElement extends ElementBase {
     if (next === null) return;
 
     event.preventDefault();
-    // Arrow keys inside the bar are navigation, not aiming.
+    // Arrow keys inside the bar are navigation; they must not reach the
+    // document-level shortcut handler.
     event.stopPropagation();
     model.setFocusIndex(next);
     this.buttons[((next % count) + count) % count]?.focus();
   };
 
   private render(state: ToolbarState) {
-    this.live.textContent = state.announcement;
     this.guide.textContent = state.hint ?? "";
 
     const focusedIndex = this.buttons.indexOf(this.shadowRoot?.activeElement as HTMLButtonElement);

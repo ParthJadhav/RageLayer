@@ -6,7 +6,7 @@ import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
 import type { ContentCheckpoint, ContentLayer } from "./content";
 import { atopAsOver } from "./ctx-proxy";
 import { drawPaintStreak } from "./decals";
-import { elementAt, elementsInBand, type PageElement } from "./elements";
+import { elementAt, type PageElement } from "./elements";
 import { type ResolvedEngineOptions, resolveEngineOptions } from "./engine-options";
 import type { FieldSnapshot } from "./fields";
 import { FlameField } from "./flames";
@@ -18,13 +18,7 @@ import {
   shardBudget,
   voronoiCells,
 } from "./fracture";
-import {
-  drawAccretionDisc,
-  drawAimCursor,
-  drawEventHorizon,
-  drawFlame,
-  FxPainter,
-} from "./fx-render";
+import { drawAccretionDisc, drawEventHorizon, drawFlame, FxPainter } from "./fx-render";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
 import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
 import { Overlay } from "./overlay";
@@ -119,8 +113,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private comboListeners = new Set<(event: ComboEvent) => void>();
   private errorListeners = new Set<(error: EngineError) => void>();
   private lastError: EngineError | null = null;
-  /** Keyboard aiming cursor, in document coordinates. */
-  private aimCursor: Vec2 | null = null;
   private applyingCombo = false;
   private readonly history: DestructionHistory<EngineHistoryEntry> | null;
   private restoringHistory = false;
@@ -278,9 +270,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private readonly bugs = new BugSwarm();
   /** Fractional accumulator for infalling-matter strands. */
   private spaghettiDebt = 0;
-  /** Elements still queued to fall during a `collapse()`. */
-  private collapseQueue: PageElement[] = [];
-  private collapseTimer = 0;
   private opts: ResolvedEngineOptions;
 
   constructor(options: RageLayerEngineOptions = {}) {
@@ -772,7 +761,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       this.physics.clear();
       this.bugs.clear();
       this._singularity = null;
-      this.collapseQueue.length = 0;
       this.comboTracker?.clear();
       for (const tool of this.tools.values()) tool.reset?.(this);
       this.requestFrame();
@@ -797,7 +785,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.fire.refuel();
     this.bugs.clear();
     this._singularity = null;
-    this.collapseQueue.length = 0;
     this.comboTracker?.clear();
     // Rockets in flight, queued restrikes, hammer sites: a repaired page owes
     // nothing to the destruction that was still in progress.
@@ -958,7 +945,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.particles.clear();
     this.fx.clear();
     this.bugs.clear();
-    this.collapseQueue.length = 0;
     this.pageElements.length = 0;
     this.comboTracker?.clear();
     this.comboTracker = null;
@@ -1131,28 +1117,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
   }
 
   /**
-   * Where the keyboard cursor is, or null when nothing is aiming.
-   *
-   * Drawn by the engine rather than by the toolbar because it has to sit over
-   * the destruction, in document space, on the same canvas that scrolls with
-   * the page — a DOM element would have to chase all of that.
-   */
-  get aim(): Vec2 | null {
-    return this.aimCursor;
-  }
-
-  setAim(point: Vec2 | null) {
-    this.aimCursor = point ? { x: point.x, y: point.y } : null;
-    this.requestFrame();
-  }
-
-  /**
    * Use the active tool at a document point without a pointing device.
    *
-   * The toolbar is fully keyboard-operable, but the canvas is not: without
-   * this, a keyboard-only visitor can select the hammer and then do nothing
-   * with it. `strike` runs the same `onDown`/`onUp` pair a click produces, so
-   * a tool needs no special handling to be reachable this way.
+   * `strike` runs the same `onDown`/`onUp` pair a click produces, so a tool
+   * needs no special handling to be driven this way. The built-in toolbars no
+   * longer offer a keyboard path to the canvas, so this is the hook a host
+   * builds one on — as well as the way tests and scripted demos fire a tool.
    *
    * `holdMs` drives tools that do their work in `tick` while held — a
    * flamethrower or chainsaw needs to be on for a moment to do anything.
@@ -1560,34 +1530,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.shake(9, 0, 1);
     this.sound.thunk();
     return true;
-  }
-
-  collapse() {
-    const top = this.scrollY - 240;
-    const bottom = this.scrollY + this.overlay.viewportHeight + 240;
-    this.collapseQueue = elementsInBand(
-      this.pageElements,
-      top,
-      bottom,
-      this.scrollY + this.overlay.viewportHeight * 0.35,
-    );
-    this.collapseTimer = 0;
-    if (this.collapseQueue.length > 0) {
-      this.requestFrame();
-      return;
-    }
-    // No element map (harvesting off, or everything already down): bring the
-    // visible band apart by brute force instead of doing nothing.
-    for (let i = 0; i < 7; i++) {
-      this.fracture(
-        Math.random() * this.overlay.width,
-        this.scrollY + Math.random() * this.overlay.viewportHeight,
-        70 + Math.random() * 70,
-        { power: 140 },
-      );
-    }
-    this.shake(22, 0, 1);
-    this.sound.boom();
   }
 
   // ── Heat field (drives the post-processing shimmer) ───────────────────────
@@ -2044,14 +1986,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // the air is hot *now*, and anything that accumulated would smear.
     this.resetHeat();
     // One timestamp between consecutive steps: each subsystem's slice is the
-    // difference of adjacent stamps, so the whole breakdown costs eight
+    // difference of adjacent stamps, so the whole breakdown costs seven
     // `performance.now()` calls regardless of how much work ran.
     const updateStartedAt = performance.now();
     const toolWorkPending = this.stepTools(dt);
     this.stepToolArt(dt);
     const toolsDoneAt = performance.now();
-    this.stepCollapse(dt);
-    const collapseDoneAt = performance.now();
     this.fire.step(this, dt, this.lastTime);
     const flamesDoneAt = performance.now();
     this.destruction = Math.min(1, this.destruction + this.bugs.step(this, dt));
@@ -2098,8 +2038,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
       renderMs: Math.max(0, renderTotalMs - this.postFXFrameMs),
       postFXMs: this.postFXFrameMs,
       toolsMs: toolsDoneAt - updateStartedAt,
-      collapseMs: collapseDoneAt - toolsDoneAt,
-      flamesMs: flamesDoneAt - collapseDoneAt,
+      flamesMs: flamesDoneAt - toolsDoneAt,
       bugsMs: bugsDoneAt - flamesDoneAt,
       singularityMs: singularityDoneAt - bugsDoneAt,
       particlesMs: particlesDoneAt - singularityDoneAt,
@@ -2145,7 +2084,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       this.fire.count > 0 ||
       this.physics.active ||
       this.bugs.count > 0 ||
-      this.collapseQueue.length > 0 ||
       !!this._singularity ||
       this.pointerDown ||
       legacySelectedTick ||
@@ -2305,17 +2243,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     }
   }
 
-  /** Feed the collapse queue: one element every ~55 ms, so the page falls in a wave. */
-  private stepCollapse(dt: number) {
-    if (this.collapseQueue.length === 0) return;
-    this.collapseTimer -= dt;
-    while (this.collapseTimer <= 0 && this.collapseQueue.length > 0) {
-      this.collapseTimer += 0.055;
-      const el = this.collapseQueue.shift()!;
-      if (!el.taken) this.dropElement(el, el.x + el.w / 2, el.y - 40);
-    }
-  }
-
   private stepSingularity(dt: number) {
     const s = this._singularity;
     if (!s) {
@@ -2457,7 +2384,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       this.physics.count === 0 &&
       this.bugs.count === 0 &&
       !this._singularity &&
-      !this.aimCursor &&
       !artVisible;
     const drew = this.frameRender;
     if (idle) {
@@ -2543,11 +2469,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
     // The tool in hand, over everything it just did.
     if (artVisible) this.renderToolArt(ctx, time);
-
-    // The keyboard cursor, above everything: it is a control, not an effect,
-    // and a visitor steering by arrow keys has to be able to find it over a
-    // page that is on fire.
-    if (this.aimCursor) drawAimCursor(ctx, this.aimCursor, time);
 
     this.postFXFrameMs = this.present(time);
   }

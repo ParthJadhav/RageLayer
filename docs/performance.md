@@ -34,7 +34,7 @@ const engine = new RageLayerEngine({
     sampleIntervalMs: 1000,
     onSample(sample) {
       // fps, cpu p50/p95/p99/max, update/surface/render/postFX breakdown —
-      // with the update step split per subsystem (tools/collapse/flames/bugs/
+      // with the update step split per subsystem (tools/flames/bugs/
       // singularity/particles/physics), entity counts, capture/effects pixel
       // ratios, capture ms, quality tier, Chrome heap figures, plus:
       // sample.render  — avg fx buckets drawn per frame (wet/puffs/solids/hot),

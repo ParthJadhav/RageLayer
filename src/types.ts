@@ -272,8 +272,6 @@ export interface PerformanceFrameBreakdown {
   postFXMs: number;
   /** Tool ticks plus pointer tool-art posing (`stepTools` + `stepToolArt`). */
   toolsMs: number;
-  /** Element-by-element page collapse queue (`stepCollapse`). */
-  collapseMs: number;
   /** Fire spread, fuel consumption, and page erosion (`fire.step`). */
   flamesMs: number;
   /** Crawling bug simulation (`bugs.step`). */
@@ -694,8 +692,6 @@ export interface RageLayerEngineApi {
    * heading, image or card, not a random fragment. False if nothing is there.
    */
   demolish(x: number, y: number): boolean;
-  /** Bring the whole visible page down, element by element, over ~2 seconds. */
-  collapse(): void;
   /**
    * Add to the heat field that drives the post-processing shimmer. Flames do
    * this automatically; explosions and jets add their own.

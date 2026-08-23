@@ -67,7 +67,7 @@ Creates the overlay and starts capturing the page. Must run in a browser.
 | `effectsPixelRatio` | `number` | `1` | Effects/tool-art backing resolution, clamped to `0.5..2` and device DPR |
 | `surface` | `Partial<SurfaceParams> \| false` | on | WebGL surface shading of torn edges (`false` = raw 2D canvas) |
 | `textMask` | `boolean` | `true` | Damp refraction over text lines |
-| `harvestElements` | `boolean` | `true` | Measure page elements for demolition/collapse |
+| `harvestElements` | `boolean` | `true` | Measure page elements for demolition |
 | `captureContent` | `boolean` | `true` | Rasterize the real page (off = overlay-only damage) |
 | `captureMode` | `"auto" \| "snapshot" \| "live"` | `"auto"` | Snapshot by default; experimental live capture when the browser exposes it |
 | `liveRefreshMs` | `number` | `1000` | Live-mode re-capture cadence (0 = on demand) |
@@ -93,7 +93,6 @@ engine.clear();                 // cancel any held gesture, then repair everythi
 engine.undo() / engine.redo();  // cancel any held gesture; history must be enabled
 engine.checkpoint("label");     // explicit pre-script checkpoint
 engine.historyState;            // bounded stack state
-engine.collapse();              // bring the visible page down element by element
 engine.snapshot();              // Promise<Blob> PNG of the wreckage
 engine.dispose();               // remove every trace, restore the page
 
@@ -160,7 +159,6 @@ behave consistently across page markup and engine configurations.
 engine.fracture(x, y, 60, { power: 240 });  // shatter a disc into rigid debris
 engine.explode(x, y, 96, { power: 700 });   // …plus blast, fireball, fires
 engine.demolish(x, y);                      // knock the real element under the cursor loose
-engine.collapse();                          // bring the whole visible page down
 engine.setSingularity(s) / engine.singularity;
 engine.pullDebris(x, y, r, strength, dt);   // safe gravity-tool primitive
 engine.launchDebris(x, y, r, dx, dy, speed);
@@ -240,14 +238,14 @@ they always have.
 
 - `engine.strike(x, y, { holdMs? })` — use the active tool at a document point with no pointer
   device. Runs the same `onDown`/`onUp` pair a click produces and takes a history checkpoint, so
-  custom tools need no special handling to be keyboard-reachable. Returns `false` when no tool is
+  custom tools need no special handling to be driven this way. Returns `false` when no tool is
   selected or the engine is paused.
-- `engine.setAim(point | null)` / `engine.aim` — the on-canvas aiming cursor, drawn in document
-  space above the destruction.
 - `engine.historyEnabled` — whether undo/redo was turned on, as distinct from whether there is
   currently anything to undo. A toolbar needs this to show its undo controls from the start.
 
-See [Toolbars, i18n & keyboard](./toolbar.md) for the ready-made aiming UI.
+The built-in toolbars do not use `strike` — they offer no keyboard route onto the canvas, so a
+host that needs one builds it on this. See
+[Toolbars, i18n & keyboard](./toolbar.md#using-a-tool-without-a-pointer).
 
 ## Fallback behaviour
 

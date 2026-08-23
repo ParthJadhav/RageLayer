@@ -21,7 +21,6 @@ function measurement(overrides = {}) {
     renderMs: 0.5,
     postFXMs: 0.2,
     toolsMs: 0.2,
-    collapseMs: 0.05,
     flamesMs: 0.15,
     bugsMs: 0.1,
     singularityMs: 0.05,
@@ -117,7 +116,6 @@ describe("PerformanceMonitor extended telemetry", () => {
     const snap = monitor.snapshot;
     for (const key of [
       "toolsMs",
-      "collapseMs",
       "flamesMs",
       "bugsMs",
       "singularityMs",

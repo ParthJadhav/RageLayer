@@ -193,14 +193,4 @@ describe("keyboard-driven destruction", () => {
 
     expect(engine.historyState.canUndo).toBe(true);
   });
-
-  test("the aim cursor round-trips through the engine", () => {
-    const engine = createTestEngine();
-
-    expect(engine.aim).toBeNull();
-    engine.setAim({ x: 12, y: 34 });
-    expect(engine.aim).toEqual({ x: 12, y: 34 });
-    engine.setAim(null);
-    expect(engine.aim).toBeNull();
-  });
 });

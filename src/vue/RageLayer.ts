@@ -188,12 +188,6 @@ export const RageLayer = defineComponent({
 
       return h(Teleport, { to: "body" }, [
         h("div", { class: "rl-host", [RAGELAYER_IGNORE_ATTR]: "" }, [
-          // Live region for keyboard aiming feedback.
-          h(
-            "div",
-            { class: "rl-sr-only", role: "status", "aria-live": "polite" },
-            current.announcement,
-          ),
           current.flash ? h("div", { class: "rl-flash", role: "status" }, current.flash) : null,
           current.hint
             ? h("div", { key: "guide", class: "rl-guide", "aria-hidden": "true" }, current.hint)
