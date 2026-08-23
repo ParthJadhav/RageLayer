@@ -13,9 +13,12 @@ opening an engine requires a real browser document.
 | Mobile evergreen browsers | Supported with adaptive quality | Snapshot |
 
 Chrome stable runs the automated runtime and memory smoke suite. Firefox and Safari use the same
-standards-based Canvas 2D and `foreignObject` snapshot path, but are not yet automated in CI. If a
-browser cannot create WebGL/WebGL2 or WebAudio contexts, those enhancements switch off without
-disabling destruction.
+standards-based Canvas 2D and `foreignObject` snapshot path, and can be exercised locally with the
+Playwright-based `bun run perf:browsers` stress runner. If a browser cannot create WebGL/WebGL2 or
+WebAudio contexts, those enhancements switch off without disabling destruction. Browsers whose
+canvas→texture uploads are slow (Firefox and WebKit today) keep destruction fully enabled but skip
+the WebGL surface shading and bloom — see
+[the GPU upload probe](./performance.md#gpu-upload-probe).
 
 Required platform features:
 

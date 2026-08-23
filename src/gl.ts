@@ -109,6 +109,86 @@ export function maxTextureSize(gl: WebGL2RenderingContext): number {
   return gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
 }
 
+// ── Canvas→texture upload cost ──────────────────────────────────────────────
+
+/**
+ * Per-upload cost above which the per-frame canvas→GL pipelines lose more in
+ * transfer than they gain in shading, and the engine should present its plain
+ * 2D canvases instead. Chromium uploads canvas sources GPU-to-GPU (~0.01ms);
+ * Gecko and WebKit currently pay a fixed multi-millisecond toll *per call*,
+ * regardless of how small the rectangle is — and a frame can need eight or
+ * more of them, so even 1ms per call would not fit the budget.
+ */
+export const SLOW_UPLOAD_THRESHOLD_MS = 1.0;
+
+const UPLOAD_PROBE_SIZE = 256;
+const UPLOAD_PROBE_ITERATIONS = 3;
+
+let uploadCostMs: number | null = null;
+
+/** The probed per-upload cost, for telemetry. Null until any context probed. */
+export function measuredUploadCostMs(): number | null {
+  return uploadCostMs;
+}
+
+/** Test hook: forget the cached probe result. */
+export function resetUploadCostCache() {
+  uploadCostMs = null;
+}
+
+/**
+ * Measure what one `texSubImage2D` from a 2D canvas costs on this browser.
+ *
+ * The result is a property of the browser, not the context, so it is probed
+ * once per page and cached — the surface renderer and the post-FX stage both
+ * consult it, whichever initialises first pays. Runs a handful of small
+ * uploads with a `finish()` fence; on the engines where uploads are slow the
+ * cost is synchronous CPU conversion, so wall clock around the calls captures
+ * it even at 1ms timer resolution. Anything that throws (test stubs, lost
+ * contexts) reports fast: the caller keeps today's behaviour and real
+ * browsers do not throw here.
+ */
+export function canvasUploadCostMs(gl: WebGLRenderingContext | WebGL2RenderingContext): number {
+  if (uploadCostMs !== null) return uploadCostMs;
+  try {
+    const source = document.createElement("canvas");
+    source.width = UPLOAD_PROBE_SIZE;
+    source.height = UPLOAD_PROBE_SIZE;
+    const ctx = source.getContext("2d");
+    if (!ctx) return (uploadCostMs = 0);
+    ctx.fillRect(0, 0, UPLOAD_PROBE_SIZE, UPLOAD_PROBE_SIZE);
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      UPLOAD_PROBE_SIZE,
+      UPLOAD_PROBE_SIZE,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    // Warm-up upload so one-time path setup is not billed to the measurement.
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.finish();
+    const start = performance.now();
+    for (let i = 0; i < UPLOAD_PROBE_ITERATIONS; i++) {
+      // Touch the source so a browser cannot serve a cached snapshot.
+      ctx.fillRect(i, 0, 1, 1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    }
+    gl.finish();
+    uploadCostMs = (performance.now() - start) / UPLOAD_PROBE_ITERATIONS;
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.deleteTexture(tex);
+  } catch {
+    uploadCostMs = 0;
+  }
+  return uploadCostMs;
+}
+
 // ── GPU pass timing ─────────────────────────────────────────────────────────
 
 /** The constants both disjoint timer-query extensions share. */

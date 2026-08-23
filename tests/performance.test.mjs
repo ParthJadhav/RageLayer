@@ -171,7 +171,7 @@ describe("PerformanceMonitor extended telemetry", () => {
     expect(next.surface).toEqual({ uploads: 0, uploadPixels: 0, reconciles: 0, coverage: 0 });
     expect(next.opacity).toEqual({ samples: 0, pathTests: 0, flattens: 0 });
     expect(next.capture).toEqual({ recomposes: 0, recomposeMs: 0 });
-    expect(next.gpu).toEqual({ surfaceMs: 0, postFXMs: 0, available: false });
+    expect(next.gpu).toEqual({ surfaceMs: 0, postFXMs: 0, available: false, uploadCostMs: null });
   });
 
   test("gpu availability is sticky once a timer extension reports in", () => {

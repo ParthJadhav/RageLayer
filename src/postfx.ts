@@ -27,7 +27,7 @@
  * in the DOM. Nothing else in the engine knows the difference.
  */
 
-import { GpuTimer } from "./gl";
+import { canvasUploadCostMs, GpuTimer, SLOW_UPLOAD_THRESHOLD_MS } from "./gl";
 import type { PerfCounterSink } from "./performance";
 
 const VERT = `
@@ -249,6 +249,15 @@ export class PostFX {
       powerPreference: "high-performance",
     }) as WebGLRenderingContext | null;
     if (!gl) return;
+
+    // The chain re-uploads the whole fx canvas every frame; where that
+    // transfer is slow (Gecko/WebKit, per the probe) the bloom would cost
+    // several frames of budget on its own. Stay unavailable — the engine then
+    // presents the plain 2D fx canvas — and hand the context straight back.
+    if (canvasUploadCostMs(gl) > SLOW_UPLOAD_THRESHOLD_MS) {
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+      return;
+    }
 
     this.progBright = link(gl, FRAG_BRIGHT);
     this.progBlur = link(gl, FRAG_BLUR);
