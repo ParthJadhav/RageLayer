@@ -3,11 +3,11 @@
  *
  * Everything a RageLayer toolbar has to get right — the button list, the
  * capture-status chip, keyboard shortcuts that don't fire while the visitor is
- * typing, roving focus, keyboard aiming for people who can't use a pointer,
- * snapshot export — is behaviour, not markup. Keeping it here means the React
- * component, the Vue component and the custom element are all thin renderers
- * of the same state rather than three re-implementations that drift, and it
- * means a host writing its own toolbar gets the behaviour for free.
+ * typing, roving focus, snapshot export — is behaviour, not markup. Keeping it
+ * here means the React component, the Vue component and the custom element are
+ * all thin renderers of the same state rather than three re-implementations
+ * that drift, and it means a host writing its own toolbar gets the behaviour
+ * for free.
  *
  * The model owns no DOM. It reads and drives an engine, and notifies
  * subscribers whenever anything a view would render has changed.
@@ -15,7 +15,7 @@
 
 import type { RageLayerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
-import { formatString, type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
+import { type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
 import { toolIconDataUrl } from "./toolart";
 import { TOOLBAR_ICONS } from "./toolbar-icons";
 import type { CaptureStatus, Tool, ToolStyle } from "./types";
@@ -62,10 +62,6 @@ export interface ToolbarState {
   soundEnabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  /** Keyboard aiming position in document coordinates, or null when off. */
-  aim: { x: number; y: number } | null;
-  /** Live-region text; changes are announced to assistive technology. */
-  announcement: string;
 }
 
 export interface ToolbarModelOptions {
@@ -77,10 +73,6 @@ export interface ToolbarModelOptions {
   toolStyle?: ToolStyle;
   /** Called by the close action and by Escape with no tool selected. */
   onClose?(): void;
-  /** How far one arrow-key press moves the keyboard aim, in CSS px. */
-  aimStep?: number;
-  /** Milliseconds a keyboard strike holds the tool down. */
-  strikeHoldMs?: number;
 }
 
 const FLASH_MS = 1800;
@@ -104,8 +96,6 @@ export class ToolbarModel {
   private flash: string | null = null;
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
   private focusIndex = 0;
-  private aim: { x: number; y: number } | null = null;
-  private announcement = "";
   private destroyed = false;
   private cached: ToolbarState | null = null;
 
@@ -165,71 +155,6 @@ export class ToolbarModel {
     this.invalidate();
   }
 
-  // ── Keyboard aiming ───────────────────────────────────────────────────────
-
-  /**
-   * Aiming mode is what makes the toy usable without a pointing device. The
-   * cursor starts at the middle of the visible page rather than at the origin,
-   * so the first strike lands on content the visitor can see.
-   */
-  startAiming() {
-    if (this.aim) return;
-    this.aim = {
-      x: Math.round(window.scrollX + window.innerWidth / 2),
-      y: Math.round(window.scrollY + window.innerHeight / 2),
-    };
-    this.engine.setAim(this.aim);
-    this.announce(this.strings.keyboardCursorHint);
-    this.invalidate();
-  }
-
-  stopAiming() {
-    if (!this.aim) return;
-    this.aim = null;
-    this.engine.setAim(null);
-    this.invalidate();
-  }
-
-  moveAim(dx: number, dy: number) {
-    if (!this.aim) this.startAiming();
-    if (!this.aim) return;
-    const step = this.options.aimStep ?? 40;
-    this.aim = {
-      x: clamp(this.aim.x + dx * step, 0, this.engine.width),
-      y: clamp(this.aim.y + dy * step, 0, this.engine.height),
-    };
-    this.engine.setAim(this.aim);
-    // Keep the cursor on screen as it walks off the viewport, or arrowing
-    // downward silently aims at page the visitor cannot see.
-    scrollAimIntoView(this.aim);
-    this.announce(formatString(this.strings.keyboardMoved, { x: this.aim.x, y: this.aim.y }));
-    this.invalidate();
-  }
-
-  /** Use the selected tool at the keyboard cursor. */
-  strikeAtAim(): boolean {
-    if (!this.aim || !this.engine.tool) return false;
-    const used = this.engine.strike(this.aim.x, this.aim.y, {
-      holdMs: this.options.strikeHoldMs ?? 260,
-    });
-    if (used) {
-      const { name } = toolStrings(this.strings, this.engine.tool);
-      this.announce(
-        formatString(this.strings.keyboardStruck, { tool: name, x: this.aim.x, y: this.aim.y }),
-      );
-      // Using a tool changes no engine event on its own, so the announcement
-      // has to be published explicitly or the live region never updates.
-      this.invalidate();
-    }
-    return used;
-  }
-
-  private announce(message: string) {
-    // Repeating identical text is not re-announced by screen readers, so a
-    // zero-width space is appended to force a change when it repeats.
-    this.announcement = message === this.announcement ? `${message}​` : message;
-  }
-
   // ── Actions ───────────────────────────────────────────────────────────────
 
   /** Flatten the wreckage to PNG: clipboard where allowed, otherwise download. */
@@ -273,30 +198,6 @@ export class ToolbarModel {
     // repairs the page.
     if (event.isComposing || event.repeat || isTypingTarget(event.target)) return false;
 
-    if (this.aim) {
-      switch (event.key) {
-        case "ArrowLeft":
-          this.moveAim(-1, 0);
-          return true;
-        case "ArrowRight":
-          this.moveAim(1, 0);
-          return true;
-        case "ArrowUp":
-          this.moveAim(0, -1);
-          return true;
-        case "ArrowDown":
-          this.moveAim(0, 1);
-          return true;
-        case "Enter":
-        case " ":
-          this.strikeAtAim();
-          return true;
-        case "Escape":
-          this.stopAiming();
-          return true;
-      }
-    }
-
     if (event.key === "Escape") {
       if (this.engine.tool) this.selectTool(null);
       else this.options.onClose?.();
@@ -313,9 +214,6 @@ export class ToolbarModel {
     }
 
     switch (event.key.toLowerCase()) {
-      case "x":
-        this.engine.collapse();
-        return true;
       case "p":
         void this.saveSnapshot();
         return true;
@@ -324,11 +222,6 @@ export class ToolbarModel {
         return true;
       case "m":
         this.setSound(!this.engine.sound.enabled);
-        return true;
-      case "a":
-        // Aiming is only useful once a tool is in hand.
-        if (!this.engine.tool) return false;
-        this.startAiming();
         return true;
     }
     return false;
@@ -430,14 +323,6 @@ export class ToolbarModel {
     buttons.push(
       {
         kind: "action",
-        id: "collapse",
-        iconPath: TOOLBAR_ICONS.collapse,
-        label: s.collapse,
-        title: `${s.collapse} (X)`,
-        run: () => engine.collapse(),
-      },
-      {
-        kind: "action",
         id: "snapshot",
         iconPath: TOOLBAR_ICONS.snapshot,
         label: s.snapshot,
@@ -460,16 +345,6 @@ export class ToolbarModel {
         label: s.repair,
         title: `${s.repair} (R)`,
         run: () => engine.clear(),
-      },
-      {
-        kind: "action",
-        id: "aim",
-        iconPath: TOOLBAR_ICONS.aim,
-        label: s.keyboardCursor,
-        title: `${s.keyboardCursor} (A)`,
-        pressed: this.aim !== null,
-        disabled: activeToolId === null,
-        run: () => (this.aim ? this.stopAiming() : this.startAiming()),
       },
       {
         kind: "action",
@@ -497,27 +372,6 @@ export class ToolbarModel {
       soundEnabled,
       canUndo: history.canUndo,
       canRedo: history.canRedo,
-      aim: this.aim,
-      announcement: this.announcement,
     };
   }
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-/** Scroll the page so the keyboard cursor stays comfortably inside the viewport. */
-function scrollAimIntoView({ x, y }: { x: number; y: number }, margin = 80) {
-  const top = window.scrollY;
-  const bottom = top + window.innerHeight;
-  const left = window.scrollX;
-  const right = left + window.innerWidth;
-  let nextY = top;
-  let nextX = left;
-  if (y < top + margin) nextY = Math.max(0, y - margin);
-  else if (y > bottom - margin) nextY = y + margin - window.innerHeight;
-  if (x < left + margin) nextX = Math.max(0, x - margin);
-  else if (x > right - margin) nextX = x + margin - window.innerWidth;
-  if (nextX !== left || nextY !== top) window.scrollTo({ left: nextX, top: nextY });
 }

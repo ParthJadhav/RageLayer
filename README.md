@@ -28,9 +28,9 @@ combine effects across the page—then sweep everything back into place.
 - **A real toolbar on every stack.** A complete React component, a complete Vue component, and a
   `<rage-layer>` custom element for everything else — all three rendering one shared,
   framework-neutral toolbar model that you can also use to build your own.
-- **Operable without a mouse.** Keyboard aiming puts a cursor on the page that arrow keys steer
-  and Enter fires, so the tools themselves — not just the toolbar — are reachable from the
-  keyboard. Every string, including tool names, can be translated.
+- **Keyboard-driven and translatable.** The toolbar is fully keyboard-operable — roving focus,
+  digit shortcuts, undo/redo — and every string, including tool names, can be translated. The
+  canvas itself is pointer-only; `engine.strike()` is there if you want to change that.
 - **Typed and extensible.** Custom tools are plain TypeScript objects with access to the same
   rendering, physics, fire, and page-damage APIs as the built-ins.
 - **Designed to degrade well.** WebGL effects, page capture, audio, and physics fail or disable

@@ -15,8 +15,8 @@ const engine = mountRageLayer({
 });
 ```
 
-The white aiming mark remains in CSS-pixel space, so increasing the visual model does not make the
-tool less precise. The engine canvas already renders at its quality-budgeted device pixel ratio.
+Only the drawn art scales; the pointer hotspot is unmoved, so a larger model is no less precise.
+The engine canvas already renders at its quality-budgeted device pixel ratio.
 
 ## Accurate toolbar icons
 

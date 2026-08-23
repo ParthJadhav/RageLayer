@@ -532,7 +532,7 @@ const checks = [
 /**
  * Checks against `examples/vanilla`, which builds its toolbar out of
  * `ToolbarModel` and the host's own markup. Nothing else exercises the
- * published headless path, or keyboard aiming, in a real browser.
+ * published headless path in a real browser.
  */
 const exampleChecks = [
   {
@@ -567,51 +567,60 @@ const exampleChecks = [
     },
   },
   {
-    name: "the page can be destroyed with the keyboard alone",
+    name: "a tool selected by keyboard can be fired through engine.strike()",
     async run(run) {
-      const damageAtAim = `(() => {
-        const engine = window.__ddExampleEngine;
-        const { x, y } = engine.aim;
-        let gone = 0;
-        for (let i = 0; i < 24; i++) {
-          const angle = (i / 24) * Math.PI * 2;
-          if (engine.pageOpacityAt(x + Math.cos(angle) * 12, y + Math.sin(angle) * 12) < 0.3) gone++;
-        }
-        return gone;
-      })()`;
-      const onPage = `(() => {
-        const { x, y } = window.__ddExampleEngine.aim;
-        return window.__ddExampleEngine.pageOpacityAt(x, y) === 1;
-      })()`;
       const press = (key) =>
         run(
           `window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }))`,
         );
 
-      // Independent of whether the check above already opened the engine.
+      // Independent of whether the check above already opened the engine —
+      // it is filtered out under `--only`, and clicking twice would close it.
+      if (!(await run("Boolean(window.__ddExampleEngine)"))) {
+        await run("document.getElementById('launch').click()");
+      }
       await until(
         run,
         "Boolean(window.__ddExampleEngine)",
         "the example engine to mount",
         CAPTURE_TIMEOUT_MS,
       );
+      await until(
+        run,
+        "['snapshot', 'live'].includes(window.__ddExampleEngine.captureStatus)",
+        "the example page capture to settle",
+        CAPTURE_TIMEOUT_MS,
+      );
 
-      // Pick a tool by digit, then enter aiming — no pointer involved at all.
+      // Digit shortcuts still reach the model without a pointer. The canvas
+      // itself no longer has a keyboard route, so `strike` is what a host
+      // would build one on, and this is the only place it runs for real.
       await press("2");
-      await press("a");
-      assert(await run("Boolean(window.__ddExampleEngine?.aim)"), "aiming placed no cursor");
+      assert(
+        (await run("window.__ddExampleEngine.tool?.id ?? null")) === "gun",
+        "the digit shortcut did not select the second tool",
+      );
 
-      // The example page is short, so the viewport centre can start over the
-      // void below the content; walk up until the cursor is on page, exactly
-      // as a visitor steering by arrow keys would.
-      for (let i = 0; i < 12 && !(await run(onPage)); i++) await press("ArrowUp");
-      assert(await run(onPage), "could not steer the cursor onto the page");
+      // Aim at the heading rather than the viewport centre: the example page
+      // is short, so the middle of the viewport can sit over the void below
+      // the content, where there is nothing to destroy.
+      const target = await run(`(() => {
+        const box = (document.querySelector("h1") ?? document.body).getBoundingClientRect();
+        return {
+          x: Math.round(box.left + box.width / 2),
+          y: Math.round(scrollY + box.top + box.height / 2),
+        };
+      })()`);
+      const opacity = `window.__ddExampleEngine.pageOpacityAt(${target.x}, ${target.y})`;
 
-      const before = await run(damageAtAim);
-      for (let i = 0; i < 8; i++) await press("Enter");
+      assert((await run(opacity)) === 1, "the heading was already damaged before the strike");
+      assert(
+        await run(`window.__ddExampleEngine.strike(${target.x}, ${target.y}, { holdMs: 260 })`),
+        "strike() refused to run the selected tool",
+      );
       await run("new Promise((resolve) => setTimeout(resolve, 500))");
 
-      assert((await run(damageAtAim)) > before, "keyboard strikes destroyed nothing");
+      assert((await run(opacity)) === 0, "strike() left the page undamaged");
     },
   },
 ];
@@ -635,12 +644,11 @@ const customElementChecks = [
         const hammer = root.querySelector('button[aria-label="Hammer"]');
         hammer.focus();
         hammer.click();
-        root.querySelector('button[aria-label="Aim the tool with the arrow keys"]').click();
         return {
           label: toolbar.getAttribute('aria-label'),
           buttonCount: toolbar.querySelectorAll('button').length,
           focus: root.activeElement?.getAttribute('aria-label'),
-          aiming: Boolean(window.__ddElement.rageLayerEngine.aim),
+          selected: window.__ddElement.rageLayerEngine.tool?.id ?? null,
         };
       })()`);
 
@@ -650,7 +658,7 @@ const customElementChecks = [
         `the ready-made toolbar rendered ${result.buttonCount} buttons`,
       );
       assert(result.focus === "Hammer", `selection lost focus to "${result.focus}"`);
-      assert(result.aiming, "the shared aim action did not reach the engine");
+      assert(result.selected === "hammer", `the shared toolbar selected "${result.selected}"`);
     },
   },
   {

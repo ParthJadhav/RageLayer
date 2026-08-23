@@ -99,8 +99,7 @@ Need a smaller initial graph or different visual sizing? See [procedural 3D mode
 
 ## Keyboard (React toolbar)
 
-`1`–`9`/`0` select tools · `X` collapse the page · `P` save a PNG · `R` repair · `M` mute ·
-`Esc` deselect, then close.
+`1`–`9`/`0` select tools · `P` save a PNG · `R` repair · `M` mute · `Esc` deselect, then close.
 
 ## Where next
 

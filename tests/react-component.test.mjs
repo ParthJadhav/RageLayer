@@ -54,21 +54,6 @@ describe("shared toolbar state", () => {
     expect(document.querySelector(".rl-hint-pill").textContent).toContain(hammer.hint);
   });
 
-  test("renders the shared aiming action and enables it after tool selection", async () => {
-    await mount({ debugGlobal: true });
-    const engine = window.__rageLayer;
-    const aim = buttonNamed("Aim the tool with the arrow keys");
-    expect(aim.getAttribute("aria-disabled")).toBe("true");
-
-    await act(async () => buttonNamed(hammer.name).click());
-    expect(buttonNamed("Aim the tool with the arrow keys").getAttribute("aria-disabled")).toBe(
-      null,
-    );
-
-    await act(async () => buttonNamed("Aim the tool with the arrow keys").click());
-    expect(engine.aim).not.toBeNull();
-  });
-
   test("touching a tool updates the persistent instruction", async () => {
     await mount({ tools: [hammer, broom] });
 

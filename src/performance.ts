@@ -63,7 +63,6 @@ export interface FrameMeasurement {
   postFXMs: number;
   /** Per-subsystem slices of `updateMs`, measured between consecutive steps. */
   toolsMs: number;
-  collapseMs: number;
   flamesMs: number;
   bugsMs: number;
   singularityMs: number;
@@ -180,7 +179,6 @@ export class PerformanceMonitor implements PerfCounterSink {
   private readonly postFX = new Float32Array(MAX_FRAME_SAMPLES);
   // Per-subsystem slices of the update step, same ring discipline as above.
   private readonly tools = new Float32Array(MAX_FRAME_SAMPLES);
-  private readonly collapse = new Float32Array(MAX_FRAME_SAMPLES);
   private readonly flames = new Float32Array(MAX_FRAME_SAMPLES);
   private readonly bugs = new Float32Array(MAX_FRAME_SAMPLES);
   private readonly singularity = new Float32Array(MAX_FRAME_SAMPLES);
@@ -263,7 +261,6 @@ export class PerformanceMonitor implements PerfCounterSink {
         renderMs: 0,
         postFXMs: 0,
         toolsMs: 0,
-        collapseMs: 0,
         flamesMs: 0,
         bugsMs: 0,
         singularityMs: 0,
@@ -417,7 +414,6 @@ export class PerformanceMonitor implements PerfCounterSink {
     this.render[index] = measurement.renderMs;
     this.postFX[index] = measurement.postFXMs;
     this.tools[index] = measurement.toolsMs;
-    this.collapse[index] = measurement.collapseMs;
     this.flames[index] = measurement.flamesMs;
     this.bugs[index] = measurement.bugsMs;
     this.singularity[index] = measurement.singularityMs;
@@ -463,7 +459,6 @@ export class PerformanceMonitor implements PerfCounterSink {
       renderMs: average(this.render, this.samples),
       postFXMs: average(this.postFX, this.samples),
       toolsMs: average(this.tools, this.samples),
-      collapseMs: average(this.collapse, this.samples),
       flamesMs: average(this.flames, this.samples),
       bugsMs: average(this.bugs, this.samples),
       singularityMs: average(this.singularity, this.samples),

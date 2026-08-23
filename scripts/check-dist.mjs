@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 
@@ -89,6 +89,30 @@ for (const name of [
 }
 if (/\bmelt\s*\(/.test(rootTypes) || /["']ice["']/.test(rootTypes)) {
   throw new Error("dist/index.d.ts still declares freeze-specific melt/ice support");
+}
+
+// Removed in 2.0.0: keyboard aiming and the whole-page collapse. These are
+// class members and interface fields rather than module exports, so the export
+// guard above cannot see them — and `dist/index.d.ts` only re-exports the type
+// chunks, so scanning it alone would pass vacuously. Scan every emitted chunk.
+const typeChunks = (await readdir("dist", { recursive: true }))
+  .filter((name) => name.endsWith(".d.ts"))
+  .map((name) => `dist/${name}`);
+const removedMembers = [
+  [/\bsetAim\s*\(/, "engine.setAim()"],
+  [/^\s*(?:get\s+)?aim\s*[?]?\s*[:(]/m, "engine.aim / ToolbarState.aim"],
+  [/\bcollapse\s*\(\s*\)\s*:/, "engine.collapse()"],
+  [/\bcollapseMs\b/, "PerformanceFrameBreakdown.collapseMs"],
+  [/\b(?:keyboardCursor|keyboardCursorHint|keyboardMoved|keyboardStruck)\b/, "the aiming strings"],
+  [/\b(?:aimStep|strikeHoldMs)\b/, "the aiming ToolbarModel options"],
+  [/\b(?:startAiming|stopAiming|moveAim|strikeAtAim)\b/, "the ToolbarModel aiming methods"],
+  [/\bannouncement\b/, "ToolbarState.announcement"],
+];
+for (const file of typeChunks) {
+  const source = await readFile(file, "utf8");
+  for (const [pattern, label] of removedMembers) {
+    if (pattern.test(source)) throw new Error(`${file} still declares removed API: ${label}`);
+  }
 }
 
 // Engine-bearing entries include the vendored html-to-image capture chunk

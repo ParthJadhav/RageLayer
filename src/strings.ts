@@ -20,7 +20,6 @@ export interface RageLayerStrings {
   redo: string;
   undoHint: string;
   redoHint: string;
-  collapse: string;
   snapshot: string;
   muteSound: string;
   enableSound: string;
@@ -40,10 +39,6 @@ export interface RageLayerStrings {
   snapshotLiveUnavailable: string;
   snapshotLiveUnavailableTitle: string;
   /** Keyboard-driven destruction, announced to assistive technology. */
-  keyboardCursor: string;
-  keyboardCursorHint: string;
-  keyboardMoved: string;
-  keyboardStruck: string;
   /** Per-tool overrides, keyed by tool id. */
   tools?: Record<string, RageLayerToolStrings>;
 }
@@ -54,7 +49,6 @@ export const DEFAULT_STRINGS: RageLayerStrings = {
   redo: "Redo destruction",
   undoHint: "Cmd/Ctrl+Z",
   redoHint: "Cmd/Ctrl+Shift+Z",
-  collapse: "Collapse the whole page",
   snapshot: "Save a picture of the wreckage",
   muteSound: "Mute sound",
   enableSound: "Enable sound",
@@ -73,10 +67,6 @@ export const DEFAULT_STRINGS: RageLayerStrings = {
   snapshotLiveUnavailable: "Snapshot (live unavailable)",
   snapshotLiveUnavailableTitle:
     "Live capture was requested but this browser doesn't expose it. Enable chrome://flags/#enable-experimental-web-platform-features (or #canvas-draw-element) in Chrome to try it. Falling back to a snapshot: the page is frozen at activation; close to unfreeze.",
-  keyboardCursor: "Aim the tool with the arrow keys",
-  keyboardCursorHint: "Arrows move, Enter uses the tool, Esc leaves aiming",
-  keyboardMoved: "Aim at {x}, {y}",
-  keyboardStruck: "Used {tool} at {x}, {y}",
 };
 
 /** Merge host overrides over the defaults. Tool overrides merge per id. */

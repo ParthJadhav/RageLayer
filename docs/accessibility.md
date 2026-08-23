@@ -23,31 +23,28 @@ React bindings expose `isOpen` so host controls can do the same.
 The Vue component and the `<rage-layer>` custom element render the same toolbar with the
 same behaviour, so the list above is not React-only.
 
-## Using the tools without a pointer
+## Known limitation: the canvas is pointer-only
 
-The toolbar has always been keyboard-operable, but the canvas is a pointer surface — so until
-recently a keyboard-only visitor could select the hammer and then do nothing with it. Aiming mode
-closes that gap.
+The toolbar is keyboard-operable, but the canvas is not. A keyboard-only visitor can select the
+hammer and then has no built-in way to swing it.
 
-Press `A`, or the crosshair button, with a tool in hand:
+RageLayer shipped a keyboard aiming mode through 1.x — an arrow-steered reticle drawn on the
+canvas — and it was **removed in 2.0.0**. Nothing replaces it in the built-in toolbars.
 
-- a high-contrast reticle appears in the middle of the viewport;
-- arrow keys move it, and the page scrolls to keep it visible;
-- `Enter` or `Space` uses the tool where it is pointing;
-- `Esc` leaves aiming without closing the toolbar;
-- each move and each strike is announced in a polite live region.
+If keyboard operation matters for your host, `engine.strike(x, y)` is public and does the whole
+job: it runs the same `onDown`/`onUp` pair a click produces and takes a history checkpoint, so a
+keyboard-driven blow is undoable like any other, and custom tools need no special handling to be
+reachable through it. What a host has to supply is the part that was removed — a cursor to steer,
+somewhere to announce it, and the key handling. See
+[Toolbars, i18n & keyboard](./toolbar.md#using-a-tool-without-a-pointer).
 
-The cursor is drawn by the engine, in document space above the destruction, with a dark outline
-under a light stroke so it stays legible over a white page, a burnt one, and the void alike.
-
-A keyboard strike takes a history checkpoint like any other blow, so it can be undone. Custom
-tools need no special handling to be reachable this way — see `engine.strike()` in the
-[API reference](./api.md#keyboard-operation).
+Treat this as a reason to keep RageLayer strictly optional: it is a visual toy, and no part of your
+application's actual content or controls should sit behind it.
 
 ## Translation
 
-Every string the built-in toolbars produce, including all accessible names and the aiming
-announcements, can be replaced through the `strings` option. Tool names and hints are overridden
+Every string the built-in toolbars produce, including all accessible names, can be replaced
+through the `strings` option. Tool names and hints are overridden
 by tool id. See [Toolbars, i18n & keyboard](./toolbar.md#translating-and-rewording).
 
 ## Reduced motion

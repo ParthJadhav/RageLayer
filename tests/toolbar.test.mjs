@@ -99,17 +99,6 @@ describe("button list", () => {
 
     expect(engine.tool).toBeNull();
   });
-
-  test("the aim button is disabled until a tool is in hand", () => {
-    const { model } = makeToolbar();
-    const aimOf = () => model.state.buttons.find((button) => button.id === "aim");
-
-    expect(aimOf().disabled).toBe(true);
-
-    model.selectTool("hammer");
-
-    expect(aimOf().disabled).toBe(false);
-  });
 });
 
 describe("subscriptions", () => {
@@ -224,80 +213,6 @@ describe("keyboard shortcuts", () => {
 
   test("an unbound key is left to the page", () => {
     expect(makeToolbar().model.handleKeyDown(keyEvent("q"))).toBe(false);
-  });
-});
-
-describe("keyboard aiming", () => {
-  test("aiming starts in the middle of the viewport and drives the engine cursor", () => {
-    const { engine, model } = makeToolbar();
-    model.selectTool("hammer");
-
-    model.startAiming();
-
-    expect(model.state.aim).not.toBeNull();
-    expect(engine.aim).toEqual(model.state.aim);
-  });
-
-  test("arrows move the cursor and announce where it is", () => {
-    const { model } = makeToolbar();
-    model.selectTool("hammer");
-    model.startAiming();
-    const start = { ...model.state.aim };
-
-    model.handleKeyDown(keyEvent("ArrowRight"));
-
-    expect(model.state.aim.x).toBeGreaterThan(start.x);
-    expect(model.state.announcement).toContain(String(model.state.aim.x));
-  });
-
-  test("the cursor cannot be walked off the page", () => {
-    const { engine, model } = makeToolbar();
-    model.selectTool("hammer");
-    model.startAiming();
-
-    for (let i = 0; i < 200; i++) model.moveAim(-1, -1);
-
-    expect(model.state.aim).toEqual({ x: 0, y: 0 });
-
-    for (let i = 0; i < 400; i++) model.moveAim(1, 1);
-
-    expect(model.state.aim.x).toBe(engine.width);
-    expect(model.state.aim.y).toBe(engine.height);
-  });
-
-  test("Enter uses the tool at the cursor and damages the page", () => {
-    const { engine, model } = makeToolbar();
-    model.selectTool("gun");
-    model.startAiming();
-    const { x, y } = model.state.aim;
-    expect(engine.pageOpacityAt(x, y)).toBe(1);
-
-    expect(model.handleKeyDown(keyEvent("Enter"))).toBe(true);
-
-    expect(engine.pageOpacityAt(x, y)).toBe(0);
-    expect(model.state.announcement).toContain("Gun");
-  });
-
-  test("Escape leaves aiming without closing the toolbar", () => {
-    let closes = 0;
-    const { engine, model } = makeToolbar({ onClose: () => closes++ });
-    model.selectTool("hammer");
-    model.startAiming();
-
-    model.handleKeyDown(keyEvent("Escape"));
-
-    expect(model.state.aim).toBeNull();
-    expect(engine.aim).toBeNull();
-    expect(engine.tool?.id).toBe("hammer");
-    expect(closes).toBe(0);
-  });
-
-  test("arrow keys do nothing until aiming has been entered", () => {
-    const { model } = makeToolbar();
-    model.selectTool("hammer");
-
-    expect(model.handleKeyDown(keyEvent("ArrowRight"))).toBe(false);
-    expect(model.state.aim).toBeNull();
   });
 });
 

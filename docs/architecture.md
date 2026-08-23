@@ -50,7 +50,7 @@ src/
 ├── flames.ts        Wood fuel, contact heat, bounded fire spread and smoke emission
 ├── topology.ts      Surface connectivity: detached-region detection, stroke↔surface
 │                    clipping and shared scan-bound accumulation
-├── elements.ts      Pre-capture DOM measurement for demolition/collapse
+├── elements.ts      Pre-capture DOM measurement for demolition
 ├── textmask.ts      Text-line mask so refraction backs off over glyphs
 ├── decals.ts        Procedural persistent marks (cracks, holes, scorch, gashes, splats…)
 ├── sprites.ts       Lazily-baked gradient sprites for the hot particle paths
@@ -101,7 +101,7 @@ one giant physics step.
 
 ```
 frame:
-  update   selected tick + pending background tools → collapse → flames → bugs
+  update   selected tick + pending background tools → flames → bugs
            → singularity → particles → physics
   surface  dirty-rect texSubImage2D upload + scissored shader pass
   render   particles (4 blend buckets) → flames → mask-to-page-alpha → debris

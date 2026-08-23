@@ -84,7 +84,7 @@ drive it yourself.
 
 `ToolbarModel` gives you the button list and every behaviour a RageLayer toolbar needs: which tool
 is selected, whether undo is available, the capture-status chip, keyboard shortcuts that correctly
-ignore typing and IME composition, roving focus, keyboard aiming, and snapshot export. Its
+ignore typing and IME composition, roving focus, and snapshot export. Its
 `state.hint` is the current control's plain-language instruction; the built-in toolbars keep that
 instruction visible above the icons and update it on hover, focus, and keyboard navigation.
 
@@ -138,8 +138,6 @@ element.innerHTML = toolbarIconSvg(TOOLBAR_ICONS.snapshot); // markup
 | Key | Action |
 | --- | --- |
 | `1`–`9`, `0` | Select the first ten tools |
-| `A` | Enter keyboard aiming |
-| `X` | Collapse the page |
 | `P` | Save a picture of the wreckage |
 | `R` | Repair everything |
 | `M` | Toggle sound |
@@ -150,18 +148,13 @@ element.innerHTML = toolbarIconSvg(TOOLBAR_ICONS.snapshot); // markup
 Shortcuts never fire while the visitor is typing in an input, textarea, select or contenteditable,
 mid-IME-composition, or holding a key down.
 
-## Keyboard aiming
+## Using a tool without a pointer
 
-The toolbar has always been keyboard-operable, but the canvas is a pointer surface: without a
-mouse you could select the hammer and then do nothing with it. Aiming mode closes that gap.
+The built-in toolbars are keyboard-operable, but the canvas is a pointer surface, and the
+toolbars offer no keyboard route onto it. A visitor without a pointing device can select the
+hammer and then not swing it.
 
-Press `A` (or the crosshair button) with a tool in hand to place a high-contrast cursor in the middle of
-the viewport. Arrow keys move it, `Enter` or `Space` uses the tool there, and `Esc` leaves aiming
-without closing the toolbar. The page scrolls to follow the cursor, and every move and strike is
-announced in a live region.
-
-Underneath, this is `engine.strike()`, which is public and worth knowing about even if you build
-your own UI:
+If that matters for your host, `engine.strike()` is the public hook to build a route on:
 
 ```ts
 // Use the active tool at a document point, with no pointer involved.
@@ -169,15 +162,11 @@ engine.strike(x, y);
 
 // Tools that work while held — a flamethrower, a water hose — need a duration.
 engine.strike(x, y, { holdMs: 400 });
-
-// Draw the aiming cursor yourself, in document coordinates.
-engine.setAim({ x, y });
-engine.setAim(null);
 ```
 
 `strike` runs the same `onDown`/`onUp` pair a click produces and takes a history checkpoint, so a
 keyboard-driven blow is undoable exactly like any other. Custom tools need no special handling to
-be reachable this way.
+be reachable this way. Drawing a cursor for it is up to you — the engine no longer renders one.
 
 ## Translating and rewording
 
@@ -191,8 +180,6 @@ const french: Partial<RageLayerStrings> = {
   toolbarLabel: "Outils de destruction",
   repair: "Tout réparer",
   close: "Fermer",
-  keyboardCursor: "Viser avec les flèches",
-  keyboardStruck: "{tool} utilisé à {x}, {y}",
   tools: {
     hammer: { name: "Marteau", hint: "frappez — les zones solides résistent" },
     broom: { name: "Balai", hint: "balayez pour nettoyer" },
@@ -202,8 +189,8 @@ const french: Partial<RageLayerStrings> = {
 
 Pass it as `strings` to the React component, the Vue component, `element.configure()`, or
 `new ToolbarModel(engine, { strings })`. Anything you leave out keeps its English default, and any
-tool you do not name keeps its built-in name and hint. Placeholders in braces (`{tool}`, `{x}`,
-`{y}`) are substituted; unknown ones are left as written.
+tool you do not name keeps its built-in name and hint. No built-in string carries a placeholder,
+but `formatString` is exported for strings of your own that do; unknown names are left as written.
 
 `DEFAULT_STRINGS` is exported if you want to see the full list, and `resolveStrings()` merges
 overrides the same way the components do.

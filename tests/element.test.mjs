@@ -166,13 +166,6 @@ describe("accessibility", () => {
     expect(() => undo.click()).not.toThrow();
   });
 
-  test("a live region is present for keyboard aiming announcements", () => {
-    mount((node) => node.configure({ tools: [hammer], captureContent: false }));
-
-    const live = shadow().querySelector('[aria-live="polite"]');
-    expect(live).not.toBeNull();
-  });
-
   test("translated strings include the toolbar's accessible name", () => {
     mount((node) =>
       node.configure({

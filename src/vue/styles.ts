@@ -149,16 +149,6 @@ export const TOOLBAR_CSS = `
   font-size: 12px;
   white-space: nowrap;
 }
-.rl-sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 @media (prefers-reduced-motion: reduce) {
   .rl-bar { animation: none; }
   .rl-btn { transition: none; }

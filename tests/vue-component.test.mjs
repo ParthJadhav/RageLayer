@@ -81,12 +81,6 @@ describe("rendering", () => {
     expect(buttons().filter((button) => button.getAttribute("tabindex") === "0")).toHaveLength(1);
   });
 
-  test("a live region is present for keyboard aiming announcements", async () => {
-    await mount({ tools: [hammer], engineOptions: { captureContent: false } });
-
-    expect(document.querySelector('[aria-live="polite"]')).not.toBeNull();
-  });
-
   test("overridden strings reach the buttons", async () => {
     await mount({
       tools: [hammer],

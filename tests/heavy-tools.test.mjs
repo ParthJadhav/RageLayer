@@ -333,7 +333,6 @@ describe("advanced tools", () => {
       burn(x, y, radius);
     };
     engine.spawnParticle = (particle) => particles.push(particle);
-    engine.setAim({ x: 500, y: 300 });
 
     acid.tick(engine, 1 / 24, true, { x: 400, y: 300 });
 

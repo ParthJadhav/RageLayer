@@ -169,7 +169,7 @@ describe("elementsInBand", () => {
     expect(band.map((el) => el.y)).toEqual([100]);
   });
 
-  test("results are ordered by distance from the collapse front", () => {
+  test("results are ordered by distance from the front", () => {
     const band = elementsInBand(list, 0, 500, 110);
 
     expect(band[0].y).toBe(100);
