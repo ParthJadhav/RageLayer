@@ -7,7 +7,7 @@
  * a fix to the sandbox flags or the shutdown sequence lands everywhere at once.
  */
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -149,6 +149,12 @@ export function resolveChromePath() {
   );
 }
 
+function readChromeVersion(chromePath) {
+  const result = spawnSync(chromePath, ["--version"], { encoding: "utf8" });
+  const browser = result.status === 0 ? result.stdout.trim() : "";
+  return { Browser: browser || "Chromium" };
+}
+
 /**
  * Launch headless Chrome and attach to a page target.
  *
@@ -196,8 +202,8 @@ export async function launchChrome({ url, flags = [], cpuRate = 1 } = {}) {
   });
 
   try {
-    const version = await waitForDebugger(debugPort);
-    const socket = new WebSocket(version.webSocketDebuggerUrl);
+    const debuggerInfo = await waitForDebugger(debugPort);
+    const socket = new WebSocket(debuggerInfo.webSocketDebuggerUrl);
     await new Promise((opened, reject) => {
       socket.addEventListener("open", opened, { once: true });
       socket.addEventListener("error", reject, { once: true });
@@ -214,8 +220,8 @@ export async function launchChrome({ url, flags = [], cpuRate = 1 } = {}) {
       cdp,
       sessionId,
       targetId,
-      /** DevTools `/json/version` payload; `version.Browser` names the build. */
-      version,
+      /** Browser identity comes from the executable, not the DevTools HTTP response. */
+      version: readChromeVersion(chromePath),
       stderr: () => stderr,
       close: () => shutdown(socket, chrome, profileDir),
     };
@@ -276,9 +282,12 @@ export async function evaluate(cdp, sessionId, expression, { awaitPromise = true
  */
 export async function waitFor(cdp, sessionId, expression, { timeoutMs = 20_000, label } = {}) {
   const deadline = Date.now() + timeoutMs;
-  const guarded = `(() => { try { return Boolean(${expression}); } catch { return false; } })()`;
   while (Date.now() < deadline) {
-    if (await evaluate(cdp, sessionId, guarded)) return;
+    try {
+      if (await evaluate(cdp, sessionId, expression)) return;
+    } catch {
+      // Navigation can briefly leave no document; a failed poll means "not ready".
+    }
     await new Promise((wait) => setTimeout(wait, 50));
   }
   throw new Error(`Timed out waiting for ${label ?? expression}`);
