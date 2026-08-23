@@ -42,8 +42,10 @@ const options = {
   quality: readFlag("quality", "high"),
   captureMode: readFlag("capture-mode", "auto"),
   headed: hasFlag("headed"),
+  viewport: readFlag("viewport", "1280x720"),
   output: readFlag("output", join("artifacts", "perf", `cross-${stamp()}`)),
 };
+const [viewportWidth, viewportHeight] = options.viewport.split("x").map(Number);
 
 function stamp() {
   return new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
@@ -94,7 +96,7 @@ async function runBrowser(name, origin) {
   const results = [];
   try {
     const context = await browser.newContext({
-      viewport: { width: 1280, height: 720 },
+      viewport: { width: viewportWidth, height: viewportHeight },
       deviceScaleFactor: options.dpr,
     });
     const page = await context.newPage();
@@ -140,7 +142,7 @@ function summaryMarkdown(runs) {
     "# Cross-browser stress results",
     "",
     `Duration ${options.durationMs}ms per scenario, DPR ${options.dpr}, quality "${options.quality}", ` +
-      `viewport 1280×720, ${options.headed ? "headed" : "headless"}.`,
+      `viewport ${options.viewport}, ${options.headed ? "headed" : "headless"}.`,
     "",
     "| Scenario | " + runs.map((run) => run.label).join(" | ") + " |",
     "| --- | " + runs.map(() => "---").join(" | ") + " |",

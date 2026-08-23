@@ -144,6 +144,9 @@ export class ContentLayer {
    */
   private readonly damage = { x0: 0, y0: 0, x1: 0, y1: 0 };
   private hasDamage = false;
+  /** Damage accumulated since the mask cache last consumed it (device px). */
+  private readonly maskDamage = { x0: 0, y0: 0, x1: 0, y1: 0 };
+  private hasMaskDamage = false;
   /** Whether this layer keeps a refreshable base (see `wounds`). */
   live = false;
   dpr = 1;
@@ -262,6 +265,32 @@ export class ContentLayer {
     this.touchDisc(x, y, r, reconcile);
   }
 
+  /**
+   * Where inside the CSS-px rect might page pixels be missing? Appends 128px
+   * runs to `out` (x0, y0, x1, y1 each, clamped); false means the layer cannot
+   * answer and the whole rect must be treated as suspect. Over-approximate by
+   * design — see `OpacityMap.collectMaskRects`.
+   */
+  collectMaskRects(x0: number, y0: number, x1: number, y1: number, out: number[]): boolean {
+    return this.opacity.collectMaskRects(x0, y0, x1, y1, out);
+  }
+
+  /**
+   * Hand over (and reset) the surface damage accumulated since the last call,
+   * as a CSS-px rect written into `out`. Returns false when nothing changed.
+   * Sized for one consumer: the engine's cached hole band.
+   */
+  consumeMaskDamage(out: { x0: number; y0: number; x1: number; y1: number }): boolean {
+    if (!this.hasMaskDamage) return false;
+    this.hasMaskDamage = false;
+    const d = this.dpr;
+    out.x0 = this.maskDamage.x0 / d;
+    out.y0 = this.maskDamage.y0 / d;
+    out.x1 = this.maskDamage.x1 / d;
+    out.y1 = this.maskDamage.y1 / d;
+    return true;
+  }
+
   /** As `markSurface`, for a mark that runs along a segment (a stroke, a bolt). */
   markSurfaceSegment(x1: number, y1: number, x2: number, y2: number, r: number) {
     if (!this.ready) return;
@@ -300,6 +329,22 @@ export class ContentLayer {
       dmg.y0 = Math.min(dmg.y0, ny0);
       dmg.x1 = Math.max(dmg.x1, nx1);
       dmg.y1 = Math.max(dmg.y1, ny1);
+    }
+    // The mask keeps its own accumulator: `damage` is consumed by `present`
+    // every frame, while the engine's hole cache only reads when surface-bound
+    // effects are actually on screen.
+    const mask = this.maskDamage;
+    if (!this.hasMaskDamage) {
+      this.hasMaskDamage = true;
+      mask.x0 = nx0;
+      mask.y0 = ny0;
+      mask.x1 = nx1;
+      mask.y1 = ny1;
+    } else {
+      mask.x0 = Math.min(mask.x0, nx0);
+      mask.y0 = Math.min(mask.y0, ny0);
+      mask.x1 = Math.max(mask.x1, nx1);
+      mask.y1 = Math.max(mask.y1, ny1);
     }
     // The live buffers must always cover the damage rect — `recompose` reads
     // them through it — and a mark arrives in the same task as the draws it
@@ -810,8 +855,18 @@ export class ContentLayer {
       }
     }
     this.opacity.restoreState(checkpoint.surface);
+    this.noteMaskDamageAll();
     this.renderer.markAllDirty();
     return true;
+  }
+
+  /** The whole surface changed under the mask cache (repair, undo, restore). */
+  private noteMaskDamageAll() {
+    this.hasMaskDamage = true;
+    this.maskDamage.x0 = 0;
+    this.maskDamage.y0 = 0;
+    this.maskDamage.x1 = this.surface.width;
+    this.maskDamage.y1 = this.surface.height;
   }
 
   /**
@@ -1192,6 +1247,7 @@ export class ContentLayer {
     // them (and any recorded tee decals) instead of merely wiping them.
     this.releaseLayers();
     this.hasDamage = false;
+    this.noteMaskDamageAll();
     this.renderer.markAllDirty();
   }
 
