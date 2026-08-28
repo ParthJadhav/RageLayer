@@ -3,8 +3,8 @@ layout: home
 
 hero:
   name: RageLayer
-  text: Demolish any web page.
-  tagline: A framework-neutral canvas toy with real page capture, rigid-body debris, procedural tools, and drop-in React, Vue, and Svelte integrations.
+  text: Introducing RageLayer.
+  tagline: Demolish any web page with real page capture, rigid-body debris, procedural tools, and drop-in React, Vue, and Svelte integrations.
   image:
     src: /screenshots/aftermath.png
     alt: A web page smashed, burned, frozen, and painted by RageLayer

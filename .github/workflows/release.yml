@@ -5,10 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+permissions: {}
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,6 +16,10 @@ jobs:
     name: Version or publish
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +41,7 @@ jobs:
       # job's `id-token` for a short-lived publishing credential; no long-lived
       # npm token is stored in GitHub. See docs/releasing.md.
       - name: Use an npm that supports trusted publishing
-        run: npm install --global npm@latest
+        run: npm install --global npm@11.5.1
 
       - name: Install dependencies from lockfile
         run: bun install --frozen-lockfile

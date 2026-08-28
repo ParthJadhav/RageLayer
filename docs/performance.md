@@ -162,12 +162,12 @@ surface in real Chrome. It writes a clip per tool, a stitched `all-tools.mp4`, 1
 `node scripts/tool-demo.mjs --only acid-sprayer` for one tool, and `--cpu 6` to record what a slow
 machine sees.
 
-This is evidence for a person, not a gate. Nothing blocks on it, and the expectations printed beside
+This is local evidence for a person, not a gate. Nothing blocks on it, and the expectations printed beside
 each clip are measured context rather than pass/fail — whether a structural cut has finished
 reconciling at the instant a frame is sampled depends on the machine, not on the tool, and gating on
-that produced only false alarms. Console errors are the exception and still fail the run. On GitHub,
-trigger the **Tool demo** workflow by hand or label a pull request `tool-demo`; the reel lands as a
-downloadable artifact.
+that produced only false alarms. Console errors are the exception and still fail the run. The
+generated directory is ignored and must not be committed, uploaded to Actions, attached to a
+release, or linked from public documentation.
 
 ## Distribution budgets
 

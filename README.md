@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/RageLayer/api)
 [![MIT license](https://img.shields.io/badge/license-MIT-171310)](./LICENSE)
 
-Turn any web page into a destructible canvas. Smash, cut, corrode, burn, explode, undo, and
+Introducing RageLayer: turn any web page into a destructible canvas. Smash, cut, corrode, burn, explode, undo, and
 combine effects across the page—then sweep everything back into place.
 
 [**Try the live demo**](https://parthjadhav.github.io/RageLayer/demo/) ·
@@ -286,8 +286,9 @@ bun run docs:build    # production docs + live demo
 `test:browser` needs a Chrome binary; point `RAGELAYER_CHROME_PATH` at one if it is not on the default
 path. It is the only place page capture, the WebGL2 surface shader and the post-processing chain
 actually execute, so run it before changing any of them.
-`demo:tools` writes clips, stills and an `index.html` to `artifacts/tool-demo/` for a person to
-review — it is a demo, not a gate. Profiler flags and a controlled comparison workflow are
+`demo:tools` writes clips, stills and an `index.html` to the ignored `artifacts/tool-demo/`
+directory for local review only. Generated reels and stills are never uploaded or published.
+Profiler flags and a controlled comparison workflow are
 documented in [Performance and benchmarks](./docs/performance.md).
 
 Changes are released with Changesets. Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a
