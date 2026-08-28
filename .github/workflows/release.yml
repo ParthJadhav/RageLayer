@@ -34,14 +34,10 @@ jobs:
       - name: Set up Node.js for npm publishing
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          # This runtime includes npm 11.17.0, which supports trusted
+          # publishing without downloading another executable at release time.
+          node-version: 24.19.0
           registry-url: https://registry.npmjs.org
-
-      # Trusted publishing (OIDC) needs npm 11.5.1 or newer. npm exchanges the
-      # job's `id-token` for a short-lived publishing credential; no long-lived
-      # npm token is stored in GitHub. See docs/releasing.md.
-      - name: Use an npm that supports trusted publishing
-        run: npm install --global npm@11.5.1
 
       - name: Install dependencies from lockfile
         run: bun install --frozen-lockfile
