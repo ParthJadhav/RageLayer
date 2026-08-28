@@ -27,8 +27,10 @@ token, and the package disallows bypass-2FA token publishing.
 5. The workflow runs the complete package check, publishes to npm, creates the git tag and GitHub
    Release, downloads the published registry tarball, and attaches that exact `.tgz` artifact.
 
-Publication is gated on `bun run check` only. The tool demo reel is recorded on demand for human
-review and never blocks a release — see [the performance guide](./performance.md#tool-demo-reel).
+Publication is gated on `bun run check` only. The tool demo reel is recorded locally on demand for
+human review and never blocks a release — see [the performance guide](./performance.md#tool-demo-reel).
+Its generated output stays under the ignored `artifacts/` directory and must never be attached to a
+release, uploaded by a workflow, or linked from public release notes.
 
 Do not edit `CHANGELOG.md` or the package version manually; Changesets owns both.
 

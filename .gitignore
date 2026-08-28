@@ -11,6 +11,12 @@ docs/public/screenshots/
 benchmark-results*.json
 coverage/
 artifacts/
+# Generated demo/profile media is local review material. Keep these patterns
+# ignored even when a script is pointed outside the default artifacts/ tree.
+*.mp4
+*.webm
+*.cpuprofile
+*.trace.json
 # `bunx @puppeteer/browsers install chrome@<major>` drops a browser here when
 # reproducing a version-specific runtime failure locally.
 chrome/
