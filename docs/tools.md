@@ -1,7 +1,7 @@
 # Tool gallery
 
 Every screenshot below is generated from the current build by
-[`scripts/screenshots.mjs`](../scripts/screenshots.mjs), which drives the
+[`scripts/screenshots.mjs`](https://github.com/ParthJadhav/RageLayer/blob/main/scripts/screenshots.mjs), which drives the
 [demo page](./demo/) with real pointer input in headless Chrome.
 Regenerate them any time with `bun run screenshots`.
 
@@ -112,8 +112,7 @@ with any impact tool, shot, or swept up with the broom.
 ## Laser cutter
 
 Drag for a straight, constant-width heated kerf with red-hot glowing lips. Like the chainsaw, the
-laser removes structure
-along its entire path and drops any isolated piece as rigid debris; its edge stays clean instead of
+laser removes structure along its entire path and drops any isolated piece as rigid debris; its edge stays clean instead of
 chattering like a saw cut.
 
 ## Acid jar

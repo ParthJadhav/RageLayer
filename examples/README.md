@@ -1,7 +1,8 @@
 # Examples
 
-Minimal, runnable starters for each stack. They install `ragelayer` from the workspace
-root, so `bun run build` in the repository root before starting one.
+Minimal, runnable starters for each stack. Their lockfiles use the latest published
+`ragelayer`, while the local setup commands replace it with the package built from
+this checkout so changes under review are exercised too.
 
 | Example | Stack | Shows |
 | --- | --- | --- |

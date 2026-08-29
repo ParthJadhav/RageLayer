@@ -7,7 +7,7 @@ calls `dispose()` when its owner goes away.
 | Stack | First-class API | Entry point |
 | --- | --- | --- |
 | React / Next.js | Complete toolbar component + headless hook | `ragelayer/react` |
-| Vue / Nuxt | Composable | `ragelayer/vue` |
+| Vue / Nuxt | Complete toolbar component + headless composable | `ragelayer/vue` |
 | Svelte / SvelteKit | Launcher action + controller | `ragelayer/svelte` |
 | Astro, Angular, Solid, Qwik, vanilla | Lifecycle controller | `ragelayer` |
 
@@ -118,8 +118,9 @@ const open = ref(false);
 </template>
 ```
 
-It renders nothing until mounted in a browser and disposes its engine on unmount. For a custom UI,
-use the headless composable instead:
+It renders nothing until mounted in a browser and disposes its engine on unmount. Its toolbar
+enables undo/redo history by default; pass `:engine-options="{ history: false }"` to opt out. For a
+custom UI, use the headless composable instead:
 
 ```vue
 <script setup lang="ts">

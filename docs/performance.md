@@ -185,7 +185,7 @@ The memory gate fails on retained DOM nodes, documents, listeners, canvas backin
 simulation entities, tools, or performance callbacks, and bounds post-GC JS heap growth.
 
 Both run in CI on every PR (short benchmark smoke + leak gate) — see
-[`.github/workflows/ci.yml`](../.github/workflows/ci.yml).
+[`ci.yml`](https://github.com/ParthJadhav/RageLayer/blob/main/.github/workflows/ci.yml).
 
 ## Budgets worth knowing
 

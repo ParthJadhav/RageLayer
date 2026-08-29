@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { FlameField } from "../src/flames.ts";
 import {
   baseTools,
@@ -185,17 +185,22 @@ describe("flamethrower", () => {
   });
 
   test("contact heat creeps into nearby surviving wood without exceeding its cap", () => {
-    const engine = armed(flamethrower, { maxFlames: 6 });
-    engine.spawnFlame(400, 380, 1);
+    const random = spyOn(Math, "random").mockReturnValue(0.5);
+    try {
+      const engine = armed(flamethrower, { maxFlames: 6 });
+      engine.spawnFlame(400, 380, 1);
 
-    let crept = false;
-    for (let frame = 0; frame < 120; frame++) {
-      tick(engine);
-      crept ||= engine.flames.some((flame) => Math.hypot(flame.x - 400, flame.y - 380) > 12);
+      let crept = false;
+      for (let frame = 0; frame < 120; frame++) {
+        tick(engine);
+        crept ||= engine.flames.some((flame) => Math.hypot(flame.x - 400, flame.y - 380) > 12);
+      }
+
+      expect(crept).toBe(true);
+      expect(engine.flames.length).toBeLessThanOrEqual(6);
+    } finally {
+      random.mockRestore();
     }
-
-    expect(crept).toBe(true);
-    expect(engine.flames.length).toBeLessThanOrEqual(6);
   });
 });
 

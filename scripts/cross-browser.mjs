@@ -144,8 +144,8 @@ function summaryMarkdown(runs) {
     `Duration ${options.durationMs}ms per scenario, DPR ${options.dpr}, quality "${options.quality}", ` +
       `viewport ${options.viewport}, ${options.headed ? "headed" : "headless"}.`,
     "",
-    "| Scenario | " + runs.map((run) => run.label).join(" | ") + " |",
-    "| --- | " + runs.map(() => "---").join(" | ") + " |",
+    `| Scenario | ${runs.map((run) => run.label).join(" | ")} |`,
+    `| --- | ${runs.map(() => "---").join(" | ")} |`,
   ];
   const scenarios = runs[0]?.results.map((entry) => entry.scenario) ?? [];
   for (const scenario of scenarios) {

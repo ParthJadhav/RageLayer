@@ -13,7 +13,7 @@
 
 Confirm that public behavior has documentation and a Changeset, visual changes have demo/harness
 evidence, hot-path changes include benchmark context, and lifecycle changes pass the memory gate.
-When a tool's gesture, effect or art changed, label the pull request `tool-demo` and watch the
+When a tool's gesture, effect or art changes, run `bun run demo:tools` and review the local
 recorded reel — no automated check judges whether a tool still looks right.
 `bun run check` is the minimum merge gate; `bun run docs:build` must also pass when documentation or
 examples change.
