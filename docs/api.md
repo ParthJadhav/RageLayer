@@ -6,7 +6,7 @@ Twelve entry points:
 - `ragelayer/engine` — engine + public contracts, without built-in tool models
 - `ragelayer/tools` — seven everyday tools: Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, Broom
 - `ragelayer/tools/heavy` — five heavy tools: Demolition, Rocket Launcher, Lightning, Black Hole, Bugs
-- `ragelayer/tools/advanced` — four advanced tools: Gravity Gun, Laser Cutter, Acid Sprayer, Sticky Bombs
+- `ragelayer/tools/advanced` — three advanced tools: Laser Cutter, Acid Jar, Sticky Bombs
 - `ragelayer/lazy` — asynchronous base/heavy/advanced/complete tool loaders
 - `ragelayer/sdk` — typed custom-tool factories and utilities
 - `ragelayer/react` — toolbar component and headless hook

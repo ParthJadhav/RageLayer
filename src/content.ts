@@ -1058,22 +1058,27 @@ export class ContentLayer {
     };
     const ctx = this.ctx;
     if (clean) {
-      // A narrow, even heat-affected rim. Drawing it before removing the core
-      // leaves two crisp lips instead of the laser's old sequence of scorch
-      // blobs, whose random overlap made a straight drag look ragged.
+      // A layered heat-affected rim. Drawing it before removing the core leaves
+      // two crisp, red-hot lips instead of scorch blobs whose random overlap
+      // made a straight drag look ragged. The broad translucent red band is the
+      // glow; the orange inner strokes are the wood still holding heat.
       ctx.globalCompositeOperation = "source-atop";
-      ctx.strokeStyle = "rgba(64, 12, 5, 0.72)";
-      stroke(ctx, lineWidth + 5);
-      ctx.strokeStyle = "rgba(232, 70, 20, 0.62)";
-      stroke(ctx, lineWidth + 2);
+      ctx.strokeStyle = "rgba(34, 5, 2, 0.88)";
+      stroke(ctx, lineWidth + 13);
+      ctx.strokeStyle = "rgba(190, 18, 4, 0.42)";
+      stroke(ctx, lineWidth + 10);
+      ctx.strokeStyle = "rgba(255, 55, 8, 0.72)";
+      stroke(ctx, lineWidth + 6);
+      ctx.strokeStyle = "rgba(255, 176, 48, 0.92)";
+      stroke(ctx, lineWidth + 3);
     }
     ctx.globalCompositeOperation = "destination-out";
     stroke(ctx);
     if (!clean) ctx.fill(nicks);
     ctx.globalCompositeOperation = "source-over";
     // Torn cuts include the widest nick plus jitter; a precise kerf needs only
-    // enough room for its narrow heat rim.
-    const reach = clean ? lineWidth / 2 + 3 : lineWidth / 2 + 7;
+    // enough room for its layered heat rim.
+    const reach = lineWidth / 2 + 7;
     const box = {
       x0: Math.min(x1, x2) - reach,
       y0: Math.min(y1, y2) - reach,

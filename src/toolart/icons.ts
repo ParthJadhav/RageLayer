@@ -45,7 +45,7 @@ for (const [art, bounds] of [
   [hammerArt, [69, 32, 175, 148]],
   [gunArt, [61, 53, 119, 119]],
   [flamethrowerArt, [56, 54, 120, 125]],
-  [waterHoseArt, [62, 63, 165, 177]],
+  [waterHoseArt, [50, 63, 108, 118]],
   [chainsawArt, [59, 58, 157, 126]],
   [paintballArt, [59, 51, 119, 122]],
   [broomArt, [43, 0, 150, 80]],

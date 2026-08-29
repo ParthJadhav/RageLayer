@@ -37,6 +37,11 @@ const FUEL_CELL = 26;
 const MIN_LIMIT = 4;
 /** Smoke puffs per second at full intensity. Kept below the flame cadence so smoke reveals fire. */
 const SMOKE_PUFFS_PER_SECOND = 8;
+/** Seconds a well-fed flame holds before age alone starts winding it down. */
+const FED_FLAME_LIFETIME = 18;
+/** Bounds the expensive page-erosion cadence while letting a fire remain visible longer. */
+const SCORCH_INTERVAL_MIN = 0.42;
+const SCORCH_INTERVAL_JITTER = 0.18;
 
 /** The slice of the engine fire touches. */
 export interface FlameHost {
@@ -244,8 +249,9 @@ export class FlameField {
       // burning in place forever.
       const fuel = this.fuelAt(f.x, f.y);
       const starved = fuel < 0.06;
-      const target = f.age < 12 && !starved ? 0.35 + 0.65 * fuel : 0;
-      f.intensity += (target - f.intensity) * dt * (f.age < 12 && !starved ? 0.35 : 0.12);
+      const fed = f.age < FED_FLAME_LIFETIME && !starved;
+      const target = fed ? 0.35 + 0.65 * fuel : 0;
+      f.intensity += (target - f.intensity) * dt * (fed ? 0.35 : 0.12);
 
       // Fire consumes the page in stages: it catches (chars the surface),
       // burns (erodes into the material), deepens (heavy erosion, spent fuel),
@@ -256,7 +262,7 @@ export class FlameField {
         // Jittered rather than a flat 0.3s: with a fixed period every flame
         // lit in the same frame stays in lockstep forever, so all of them
         // repaint the (document-sized) content canvas on the same frame.
-        f.scorchCooldown = 0.26 + Math.random() * 0.14;
+        f.scorchCooldown = SCORCH_INTERVAL_MIN + Math.random() * SCORCH_INTERVAL_JITTER;
         const layer = host.content;
         if (layer?.ready) {
           const opacity = host.pageOpacityAt(f.x, f.y);

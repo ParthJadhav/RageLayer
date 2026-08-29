@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { advancedTools } from "../src/advanced-tools.ts";
+import { advancedTools, gravityGun } from "../src/advanced-tools.ts";
 import {
   blackHole,
   bugs,
@@ -49,7 +49,6 @@ describe("toolset hygiene", () => {
       "bugs",
     ]);
     expect(advancedTools.map(({ id }) => id)).toEqual([
-      "gravity-gun",
       "laser-cutter",
       "acid-sprayer",
       "sticky-bombs",
@@ -278,6 +277,25 @@ describe("advanced tools", () => {
     expect(engine.pageOpacityAt(350, 300)).toBeLessThan(0.3);
   });
 
+  test("the laser leaves a red-hot lip beside its clean kerf", () => {
+    const laser = advancedTools.find((tool) => tool.id === "laser-cutter");
+    const engine = armed(laser);
+
+    useTool(
+      engine,
+      [
+        [200, 300],
+        [500, 300],
+      ],
+      { frames: 1 },
+    );
+
+    const [red, green, blue, alpha] = readPixels(engine.content.surface, 350, 305, 1, 1);
+    expect(alpha).toBeGreaterThan(0);
+    expect(red).toBeGreaterThan(green);
+    expect(red).toBeGreaterThan(blue);
+  });
+
   test("the laser drops a fully isolated piece like the chainsaw", () => {
     const laser = advancedTools.find((tool) => tool.id === "laser-cutter");
     const engine = armed(laser);
@@ -336,10 +354,13 @@ describe("advanced tools", () => {
 
     acid.tick(engine, 1 / 24, true, { x: 400, y: 300 });
 
-    const bead = particles.find(({ kind }) => kind === "paint");
+    const bead = particles.find(({ kind }) => kind === "acid");
     expect(burns).toHaveLength(1);
     expect(bead).toBeDefined();
     expect({ x: bead.x, y: bead.y }).toEqual({ x: burns[0].x, y: burns[0].y });
+    expect(bead.maxLife).toBeGreaterThanOrEqual(1.8);
+    expect(bead.vy).toBeGreaterThan(0);
+    expect(bead.gravity).toBeGreaterThan(0);
   });
 
   test("acid creeps a little beyond the impact without recursively spreading", () => {
@@ -364,7 +385,7 @@ describe("advanced tools", () => {
       const nearestImpact = Math.min(
         ...impacts.map(({ x, y }) => Math.hypot(point.x - x, point.y - y)),
       );
-      expect(nearestImpact).toBeLessThanOrEqual(18.001);
+      expect(nearestImpact).toBeLessThanOrEqual(28.001);
     }
 
     // The spray aims away from the cursor, so assert actual page damage in its
@@ -411,11 +432,10 @@ describe("advanced tools", () => {
 
   test("a sticky-bomb fuse keeps running after another tool is selected", () => {
     const sticky = advancedTools.find((tool) => tool.id === "sticky-bombs");
-    const gravity = advancedTools.find((tool) => tool.id === "gravity-gun");
     const engine = armed(sticky);
     useTool(engine, [400, 300], { frames: 2 });
-    engine.registerTool(gravity);
-    engine.setTool(gravity.id);
+    engine.registerTool(gravityGun);
+    engine.setTool(gravityGun.id);
 
     tick(engine, 400);
 
@@ -438,8 +458,7 @@ describe("advanced tools", () => {
   });
 
   test("the gravity gun drags debris toward the cursor", () => {
-    const gravity = advancedTools.find((tool) => tool.id === "gravity-gun");
-    const engine = armed(gravity);
+    const engine = armed(gravityGun);
     // Inside the 260px grip radius, and off to one side so the pull is
     // distinguishable from the fall.
     engine.fracture(420, 300, 40);

@@ -6,7 +6,7 @@ built-ins.
 
 ## Advanced tools
 
-Import all four without pulling them into an engine-only integration:
+Import all three without pulling them into an engine-only integration:
 
 ```ts
 import { advancedTools } from "ragelayer/tools/advanced";
@@ -17,9 +17,8 @@ engine.registerTools(advancedTools);
 
 | Tool id | Behavior |
 |---|---|
-| `gravity-gun` | Pulls nearby rigid debris while held and launches the nearest chunk on release |
 | `laser-cutter` | Makes an immediate, constant-width structural cut and drops isolated pieces |
-| `acid-sprayer` | Keeps visual and structural hits aligned, then creeps a short distance around each deposit |
+| `acid-sprayer` | Pours fluid corrosion that runs down the page and persists after release |
 | `sticky-bombs` | Keeps up to eight attached charges and detonates each after a short fuse |
 
 Their models are procedural Canvas paths with measured icon silhouettes. No bitmap, glTF, OBJ, or
@@ -42,7 +41,6 @@ held tool from retriggering the same combo every frame.
 | Steam shock | fire + water | douses fire and throws steam |
 | Conductive surge | water + electricity | amplified sparks and released bugs |
 | Volatile corrosion | acid + fire | non-incendiary chemical blast |
-| Orbital bomb | gravity + explosion | stronger debris impulse |
 
 ```ts
 const engine = new RageLayerEngine({
@@ -81,13 +79,13 @@ retained canvas.
 
 ## Choosing the toolset
 
-Every lifecycle and framework API registers all sixteen built-in tools by default, and every
-toolbar shows all sixteen. Pass a `tools` array to narrow that:
+Every lifecycle and framework API registers all fifteen built-in tools by default, and every
+toolbar shows all fifteen. Pass a `tools` array to narrow that:
 
 ```ts
 import { hammer, broom } from "ragelayer/tools";
 
-mountRageLayer(); // all sixteen
+mountRageLayer(); // all fifteen
 mountRageLayer({ tools: [hammer, broom] });
 ```
 

@@ -14,8 +14,8 @@ describe("split and lazy toolsets", () => {
   test("base, heavy, and advanced sets are disjoint and compose the official order", () => {
     expect(baseTools).toHaveLength(7);
     expect(heavyTools).toHaveLength(5);
-    expect(advancedTools).toHaveLength(4);
-    expect(new Set([...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)]).size).toBe(16);
+    expect(advancedTools).toHaveLength(3);
+    expect(new Set([...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)]).size).toBe(15);
     expect(ids(defaultTools)).toEqual([
       ...ids(baseTools.slice(0, -1)),
       ...ids(heavyTools),
@@ -46,8 +46,8 @@ describe("split and lazy toolsets", () => {
     all.pop();
     expect(baseTools).toHaveLength(7);
     expect(heavyTools).toHaveLength(5);
-    expect(advancedTools).toHaveLength(4);
-    expect(defaultTools).toHaveLength(16);
+    expect(advancedTools).toHaveLength(3);
+    expect(defaultTools).toHaveLength(15);
   });
 });
 

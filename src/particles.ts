@@ -174,7 +174,8 @@ export class ParticleSystem {
       }
       // Runs trail behind whatever is sliding down the page — water rivulets
       // and paint drips both leave a tail as long as the distance they covered.
-      if (p.kind === "rivulet" || p.kind === "paint") p.len = (p.len ?? 0) + Math.max(0, p.vy) * dt;
+      if (p.kind === "rivulet" || p.kind === "paint" || p.kind === "acid")
+        p.len = (p.len ?? 0) + Math.max(0, p.vy) * dt;
 
       // Landing. Solid bits fall out of the page and clatter onto whatever is
       // below; settling them (rather than letting them sink forever) is most of

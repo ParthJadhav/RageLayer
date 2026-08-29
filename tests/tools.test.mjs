@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { FlameField } from "../src/flames.ts";
 import {
   baseTools,
   broom,
@@ -10,7 +11,7 @@ import {
   waterHose,
 } from "../src/tools.ts";
 import { WOOD } from "../src/wood.js";
-import { readPixels } from "./support/dom.mjs";
+import { makeCanvas, readPixels } from "./support/dom.mjs";
 import {
   createTestEngine,
   damageFraction,
@@ -158,6 +159,29 @@ describe("flamethrower", () => {
     tick(engine, 120);
 
     expect(damageFraction(engine, 400, 300, 30)).toBeGreaterThan(0);
+  });
+
+  test("a fed flame stays fully alight well past the old twelve-second cutoff", () => {
+    const fire = new FlameField();
+    const host = {
+      width: 800,
+      height: 600,
+      content: null,
+      damageCtx: makeCanvas(800, 600).getContext("2d"),
+      sound: { hiss() {}, pop() {} },
+      pageOpacityAt: () => 1,
+      spawnParticle() {},
+      signalInteraction: () => [],
+    };
+    fire.spawn(host, 400, 300, 1);
+
+    for (let frame = 0; frame < 16 * 20; frame++) {
+      fire.step(host, 0.05, (frame + 1) * 50);
+    }
+
+    const original = fire.list.find((flame) => flame.age >= 15.9);
+    expect(original).toBeDefined();
+    expect(original.intensity).toBeGreaterThan(0.3);
   });
 
   test("contact heat creeps into nearby surviving wood without exceeding its cap", () => {

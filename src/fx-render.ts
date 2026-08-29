@@ -143,6 +143,7 @@ export class FxPainter {
         case "splash":
         case "water":
         case "rivulet":
+        case "acid":
         case "stream":
           wet.push(p);
           break;
@@ -223,6 +224,33 @@ export class FxPainter {
         ctx.beginPath();
         ctx.ellipse(p.x, p.y, p.size * 0.8, p.size * 1.15, 0, 0, TAU);
         ctx.fill();
+        continue;
+      }
+      if (p.kind === "acid") {
+        const t = p.life / p.maxLife;
+        const alpha = 1 - t * 0.72;
+        const tail = p.len ?? 0;
+        // Acid is heavier and more cohesive than water: a continuous luminous
+        // run with a glossy core, rather than a translucent blue sprite.
+        ctx.save();
+        ctx.lineCap = "round";
+        ctx.strokeStyle = p.color ?? "#8de323";
+        ctx.lineWidth = p.size * 1.8;
+        ctx.globalAlpha = 0.72 * alpha;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - tail);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        ctx.strokeStyle = p.color2 ?? "#dcff63";
+        ctx.lineWidth = Math.max(0.8, p.size * 0.48);
+        ctx.globalAlpha = 0.82 * alpha;
+        ctx.stroke();
+        ctx.fillStyle = p.color ?? "#8de323";
+        ctx.globalAlpha = 0.9 * alpha;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.size * 0.9, p.size * 1.3, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
       }
     }
     // Droplets: hundreds of tiny same-colour ellipses. Same-colour source-over

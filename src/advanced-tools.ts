@@ -193,10 +193,10 @@ export const laserCutter: Tool = {
 };
 
 const ACID_DROPS_PER_SECOND = 24;
-const ACID_DEPOSIT_LIMIT = 32;
-const ACID_CREEP_LIFETIME = 1.2;
-const ACID_CREEP_PER_SECOND = 2.4;
-const ACID_CREEP_REACH = 18;
+const ACID_DEPOSIT_LIMIT = 48;
+const ACID_CREEP_LIFETIME = 3.2;
+const ACID_CREEP_PER_SECOND = 3;
+const ACID_CREEP_REACH = 28;
 const ACID_POWER = 1 - WOOD.corrosionResistance;
 const ACID_IMPACT_RADIUS = 3 + ACID_POWER * 4;
 
@@ -271,20 +271,23 @@ function reactAcid(engine: RageLayerEngineApi, x: number, y: number, radius: num
   drawAcidStain(engine, x, y, radius, seed);
   engine.signalInteraction("acid", x, y);
 
-  // The wet bead starts at the corrosion site and has no ballistic motion, so
-  // its visual never races beyond the structural effect it is meant to show.
+  // The wet head starts at the corrosion site, then clings and runs down the
+  // surviving surface. Its longer life and growing tail make the spray read
+  // as a viscous liquid instead of a sequence of short-lived green dots.
   engine.spawnParticle({
-    kind: "paint",
+    kind: "acid",
     x,
     y,
-    vx: 0,
-    vy: 0,
+    vx: (acidNoise(seed + 21) - 0.5) * 5,
+    vy: 5 + acidNoise(seed + 22) * 7,
     life: 0,
-    maxLife: 0.48,
-    size: Math.max(1.5, radius * 0.42),
+    maxLife: 1.8 + acidNoise(seed + 23) * 0.8,
+    size: Math.max(1.8, radius * 0.5),
     color: "#8de323",
     color2: "#dcff63",
-    gravity: 0,
+    gravity: 18,
+    drag: 0.35,
+    len: 0,
   });
   engine.spawnParticle({
     kind: "spark",
@@ -351,13 +354,13 @@ function creepAcid(engine: RageLayerEngineApi, state: AcidState, dt: number) {
     while (deposit.creepDebt >= 1) {
       deposit.creepDebt--;
       deposit.creepStep++;
-      // Golden-angle steps fill nearby gaps without branching into new sites.
-      // Radius is capped from the original impact, so corrosion can creep but
-      // can never recursively balloon across the page.
-      const angle = deposit.phase + deposit.creepStep * 2.399963;
-      const distance = Math.min(ACID_CREEP_REACH, 6 + deposit.creepStep * 4.5);
-      const x = deposit.x + Math.cos(angle) * distance;
-      const y = deposit.y + Math.sin(angle) * distance;
+      // A gravity-biased, gently meandering run reads as liquid on a vertical
+      // page. Every step stays capped from the original impact, so corrosion
+      // flows without recursively ballooning across the surface.
+      const distance = Math.min(ACID_CREEP_REACH, 5 + deposit.creepStep * 3.25);
+      const wobble = Math.sin(deposit.phase + deposit.creepStep * 1.35);
+      const x = deposit.x + wobble * distance * 0.32;
+      const y = deposit.y + distance * (0.78 + acidNoise(deposit.seed + deposit.creepStep) * 0.22);
       reactAcid(engine, x, y, ACID_IMPACT_RADIUS * 0.54, deposit.seed + deposit.creepStep * 101);
     }
     if (deposit.age >= ACID_CREEP_LIFETIME) state.deposits.splice(i, 1);
@@ -366,9 +369,9 @@ function creepAcid(engine: RageLayerEngineApi, state: AcidState, dt: number) {
 
 export const acidSprayer: Tool = {
   id: "acid-sprayer",
-  name: "Acid Sprayer",
-  icon: "🧪",
-  hint: "hold to corrode wood — acid creeps nearby",
+  name: "Acid Jar",
+  icon: "🫙",
+  hint: "hold to pour — acid runs and corrodes",
   art: acidSprayerArt,
   reset: (engine) => acidStates.reset(engine),
   hasPendingWork: (engine) => (acidStates.peek(engine)?.deposits.length ?? 0) > 0,
@@ -446,4 +449,4 @@ export const stickyBombs: Tool = {
   },
 };
 
-export const advancedTools: Tool[] = [gravityGun, laserCutter, acidSprayer, stickyBombs];
+export const advancedTools: Tool[] = [laserCutter, acidSprayer, stickyBombs];
