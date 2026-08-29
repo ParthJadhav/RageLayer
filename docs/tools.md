@@ -5,13 +5,13 @@ Every screenshot below is generated from the current build by
 [demo page](./demo/) with real pointer input in headless Chrome.
 Regenerate them any time with `bun run screenshots`.
 
-RageLayer ships 16 built-in tools in three entry-point groups:
+RageLayer ships 15 built-in tools in three entry-point groups:
 
 | Group | Count | Tools |
 |---|---:|---|
 | Base | 7 | Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, Broom |
 | Heavy | 5 | Demolition, Rocket Launcher, Lightning, Black Hole, Bugs |
-| Advanced | 4 | Gravity Gun, Laser Cutter, Acid Sprayer, Sticky Bombs |
+| Advanced | 3 | Laser Cutter, Acid Jar, Sticky Bombs |
 
 ## The demo page, pristine
 
@@ -109,21 +109,17 @@ with any impact tool, shot, or swept up with the broom.
 
 ![Bugs crawling across the surviving page](./screenshots/bugs.png)
 
-## Gravity gun
-
-Hold over wreckage to pull rigid chunks into orbit, then release to launch the nearest piece along
-the tool's aim. Using it around a sticky-bomb blast triggers the orbital-bomb combo.
-
 ## Laser cutter
 
-Drag for a straight, constant-width heated kerf. Like the chainsaw, the laser removes structure
+Drag for a straight, constant-width heated kerf with red-hot glowing lips. Like the chainsaw, the
+laser removes structure
 along its entire path and drops any isolated piece as rigid debris; its edge stays clean instead of
 chattering like a saw cut.
 
-## Acid sprayer
+## Acid jar
 
-Hold to spray along the direction of the drawn nozzle. The visible droplets, stains, and structural
-corrosion share the same impact points, then each deposit creeps a short, bounded distance nearby.
+Hold to pour along the direction of the jar's mouth. The wet run, stains, and structural corrosion
+share the same impact points, then flow downward within a short, bounded distance.
 Acid meeting fire causes a volatile-corrosion blast.
 
 ## Sticky bombs

@@ -22,7 +22,7 @@ The engine canvas already renders at its quality-budgeted device pixel ratio.
 
 Every built-in model carries a measured rest-pose silhouette. Icon baking uses those exact bounds,
 including narrow claws, bristles, tubes, and antennae, instead of guessing a common box. This also
-avoids a synchronous `getImageData()` readback for each of the 16 built-ins. Custom art keeps the
+avoids a synchronous `getImageData()` readback for each of the 15 built-ins. Custom art keeps the
 alpha-scan fallback, so it receives an accurate crop without additional metadata.
 
 The gun uses a full pistol silhouette with an open trigger guard, working slide, and cadence-matched
@@ -55,14 +55,14 @@ engine.registerTools(await loadHeavyTools());
 engine.setTool("blackhole");
 ```
 
-The four advanced models—Gravity Gun, Laser Cutter, Acid Sprayer, and Sticky Bombs—live in their own
+The three advanced models—Laser Cutter, Acid Jar, and Sticky Bombs—live in their own
 graph:
 
 ```ts
 import { loadAdvancedTools } from "ragelayer/lazy";
 
 engine.registerTools(await loadAdvancedTools());
-engine.setTool("gravity-gun");
+engine.setTool("acid-sprayer");
 ```
 
 The `engine` graph is budgeted independently from `tools`, `tools/heavy`, and `lazy` in CI. See

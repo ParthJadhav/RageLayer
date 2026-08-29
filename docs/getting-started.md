@@ -56,7 +56,7 @@ const rageLayer = createRageLayer({
 document.querySelector("#destroy")?.addEventListener("click", () => rageLayer.toggle());
 ```
 
-The controller registers all 16 tools and handles repeated open/close cycles. Build whatever UI
+The controller registers all 15 tools and handles repeated open/close cycles. Build whatever UI
 you like on top—the [live demo](./demo/) is a complete example with a hand-rolled toolbar.
 
 ## The toolset
@@ -83,13 +83,12 @@ you like on top—the [live demo](./demo/) is a complete example with a hand-rol
 | 🕳️ | Black hole | hold — lenses the page, eats debris, detonates on release |
 | 🐛 | Bug | click — releases a bug that gnaws trails through the page |
 
-### Advanced tools (4)
+### Advanced tools (3)
 
 | | Tool | Gesture |
 |---|---|---|
-| 🔫 | Gravity Gun | hold to pull debris, release to launch it |
 | 🔴 | Laser Cutter | drag — makes a clean structural cut and drops isolated pieces |
-| 🧪 | Acid Sprayer | hold — aligned corrosion creeps slightly around each deposit |
+| 🫙 | Acid Jar | hold — pours fluid corrosion that runs down the page |
 | 💣 | Sticky Bombs | click — attaches a timed charge |
 
 Screenshots and detailed behavior notes: [tool gallery](./tools.md).

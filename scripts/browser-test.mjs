@@ -171,14 +171,14 @@ const checks = [
         guide: document.querySelector('#rl-guide')?.textContent ?? '',
       }))()`);
 
-      assert(result.toolButtons === 16, `the first run exposed ${result.toolButtons} tools`);
+      assert(result.toolButtons === 15, `the first run exposed ${result.toolButtons} tools`);
       assert(
         result.registered === result.toolButtons,
         `${result.registered} tools are registered but ${result.toolButtons} have buttons`,
       );
       assert(result.pickers === 0, "the toolbar still hides tools behind a picker");
       assert(result.guide.includes("Pick a tool"), "the initial guide did not invite a choice");
-      assert(result.guide.includes("all 16"), "the initial guide did not explain its scope");
+      assert(result.guide.includes("all 15"), "the initial guide did not explain its scope");
     },
   },
   {

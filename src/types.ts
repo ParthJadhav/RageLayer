@@ -127,6 +127,8 @@ export type ParticleKind =
   | "rivulet"
   /** Wet paint sliding downward; stamps a permanent streak where it stops. */
   | "paint"
+  /** Viscous acid running down surviving material after it is poured. */
+  | "acid"
   /** Clean twinkle left behind by the broom. */
   | "sparkle"
   /** Matter being stretched into a black hole (drawn as a spiralling filament). */

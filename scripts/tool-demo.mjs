@@ -59,7 +59,6 @@ const TOOLS = [
   },
   { id: "blackhole", gesture: "blackhole", settleMs: 0, captureLive: true },
   { id: "bugs", gesture: "bugs", settleMs: 300 },
-  { id: "gravity-gun", gesture: "gravityGun", settleMs: 200 },
   { id: "laser-cutter", gesture: "laser", settleMs: 250 },
   { id: "acid-sprayer", gesture: "acid", settleMs: 0, evidence: "acidEvidence" },
   {
@@ -719,7 +718,7 @@ function observationsFor(toolId, metrics, live) {
         ),
         check(
           "The evidence image includes an active acid reaction",
-          (live.particleKinds.paint ?? 0) +
+          (live.particleKinds.acid ?? 0) +
             (live.particleKinds.spark ?? 0) +
             (live.particleKinds.smoke ?? 0) >
             0,

@@ -97,7 +97,7 @@ dependency — raw CDP over WebSocket):
 bun run benchmark          # idle, 1200 particles, 32 fires, 170 bodies, mixed — native CPU
 bun run benchmark:low-end  # the same at 6× CPU throttling
 bun run memory:check       # create/work/dispose cycles with forced GC — leak gate
-bun run profile:effects    # all 16 tools, fixed high quality
+bun run profile:effects    # all 15 tools, fixed high quality
 bun run profile:effects:low-end
 ```
 
@@ -157,7 +157,7 @@ and GPU measurements vary enough that a single run can point in the wrong direct
 ### Tool demo reel
 
 `bun run demo:tools` records every built-in tool performing its scenario on the same fixed wood
-surface in real Chrome. It writes a clip per tool, a stitched `all-tools.mp4`, 16 stills, and
+surface in real Chrome. It writes a clip per tool, a stitched `all-tools.mp4`, 15 stills, and
 `report.json` / `README.md` / a browsable `index.html` under `artifacts/tool-demo/`. Use
 `node scripts/tool-demo.mjs --only acid-sprayer` for one tool, and `--cpu 6` to record what a slow
 machine sees.
@@ -173,7 +173,7 @@ release, or linked from public documentation.
 
 `scripts/check-dist.mjs` follows every relative JavaScript import from each public entry and measures
 the complete graph. CI fails if any entry exceeds its reviewed allowance. Current measured graphs
-are approximately 103 KiB gzip for all 16 tools and systems, 72 KiB for the engine without built-in
+are approximately 103 KiB gzip for all 15 tools and systems, 72 KiB for the engine without built-in
 models, 20 KiB for base tools, 14 KiB for heavy tools, 10 KiB for advanced tools, and under 1 KiB
 for the standalone SDK. The lazy loader's initial entry is under 1 KiB gzip.
 

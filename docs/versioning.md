@@ -13,7 +13,7 @@ entry in `exports` is covered by this policy — there are no "internal" publish
 | `ragelayer/engine` | `RageLayerEngine` and public contracts, without built-in tool models |
 | `ragelayer/tools` | The seven base tools |
 | `ragelayer/tools/heavy` | The five heavy tools |
-| `ragelayer/tools/advanced` | The four advanced tools |
+| `ragelayer/tools/advanced` | The three advanced tools |
 | `ragelayer/lazy` | On-demand toolset loaders |
 | `ragelayer/sdk` | `defineTool()`, `createTool()`, rate limiter, icon metadata |
 | `ragelayer/react` | `RageLayer`, `useRageLayer` |

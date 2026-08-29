@@ -21,7 +21,7 @@ combine effects across the page—then sweep everything back into place.
   through content and fire burns text and images away.
 - **Pieces become physical objects.** Voronoi shards and measured DOM elements tumble, collide,
   and pile up through a built-in rigid-body solver.
-- **Sixteen procedural tools.** Seven everyday, five heavy, and four advanced tools—with no model
+- **Fifteen procedural tools.** Seven everyday, five heavy, and three advanced tools—with no model
   assets or network requests, exact icon silhouettes, and configurable scale.
 - **Systems that make tools interact.** Four spatial combos, one consistent wood-like physical
   response, bounded undo/redo history, and a typed stateful custom-tool SDK.
@@ -215,7 +215,7 @@ For isolated state, rate-limited effects, and exact custom icon bounds, use `def
 | `ragelayer/engine` | Engine and public contracts without built-in tool models |
 | `ragelayer/tools` | Seven everyday tools: Hammer, Gun, Flamethrower, Water Hose, Chainsaw, Paintball, and Broom |
 | `ragelayer/tools/heavy` | Five heavy tools: Demolition, Rocket Launcher, Lightning, Black Hole, and Bugs |
-| `ragelayer/tools/advanced` | Four advanced tools: Gravity Gun, Laser Cutter, Acid Sprayer, and Sticky Bombs |
+| `ragelayer/tools/advanced` | Three advanced tools: Laser Cutter, Acid Jar, and Sticky Bombs |
 | `ragelayer/lazy` | On-demand loaders for base, heavy, or complete toolsets |
 | `ragelayer/sdk` | Typed custom-tool factories, rate limiter, and icon metadata |
 | `ragelayer/react` | `RageLayer`, `useRageLayer` |
@@ -277,7 +277,7 @@ damage. See [capture and framework integration notes](./docs/integrations.md).
 bun install
 bun run check         # types, lint, unit tests + coverage floors, build, package validation
 bun run test:browser  # runtime suite in headless Chrome (real WebGL, real capture)
-bun run demo:tools    # record all 16 tools as a video reel for review
+bun run demo:tools    # record all 15 tools as a video reel for review
 bun run benchmark:low-end # fixed workloads with 6× CPU throttling
 bun run docs:dev      # local documentation site
 bun run docs:build    # production docs + live demo

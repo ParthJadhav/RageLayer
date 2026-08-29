@@ -60,7 +60,7 @@ src/
 ├── sprites.ts       Lazily-baked gradient sprites for the hot particle paths
 ├── tools.ts         Hammer, gun, flamethrower, hose, chainsaw, paintball, broom
 ├── heavy-tools.ts   Demolition, rocket, lightning, black hole, bugs
-├── advanced-tools.ts Gravity gun, laser cutter, acid sprayer, sticky bombs
+├── advanced-tools.ts Laser cutter, acid jar, sticky bombs
 ├── tool-kit.ts      Shared particle emissions and engine-keyed tool state
 ├── wood.ts          Fixed physical response for the destructible page surface
 ├── combos.ts        Bounded spatial interaction tracker and combo definitions
