@@ -1,5 +1,11 @@
 # RageLayer
 
+## 2.1.3
+
+### Patch Changes
+
+- [#29](https://github.com/ParthJadhav/RageLayer/pull/29) [`41bb2ff`](https://github.com/ParthJadhav/RageLayer/commit/41bb2ff3cb640d50e779b6af851c8a4bafd8b222) Thanks [@ParthJadhav](https://github.com/ParthJadhav)! - Polish the built-in destruction experience: keep fire alight longer, make acid pour and persist from a procedural jar, add red-hot laser-cut lips, fix the water-hose toolbar icon crop, and remove Gravity Gun from the default tool lineup.
+
 ## 2.1.2
 
 ### Patch Changes
