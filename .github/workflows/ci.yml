@@ -124,6 +124,55 @@ jobs:
             console.log('imported', dd.defaultTools.length, 'default tools on Node ' + process.version);
           "
 
+  framework-examples:
+    name: ${{ matrix.example }} example build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [nextjs, nuxt, sveltekit]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Download dist from the verify job
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: dist
+          path: dist
+
+      - name: Pack the reviewed checkout
+        id: package
+        run: |
+          filename="$(npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP" --json | jq -r '.[0].filename')"
+          echo "path=$RUNNER_TEMP/$filename" >> "$GITHUB_OUTPUT"
+
+      - name: Install example dependencies from lockfile
+        working-directory: examples/${{ matrix.example }}
+        run: bun install --frozen-lockfile
+
+      - name: Replace the registry package with the reviewed artifact
+        working-directory: examples/${{ matrix.example }}
+        run: |
+          npm install --no-save --package-lock=false --audit=false --fund=false "${{ steps.package.outputs.path }}"
+          cmp node_modules/ragelayer/dist/index.js ../../dist/index.js
+
+      - name: Build example
+        working-directory: examples/${{ matrix.example }}
+        run: bun run build
+
   browser:
     name: Chrome runtime suite
     runs-on: ubuntu-latest

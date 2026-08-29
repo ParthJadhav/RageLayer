@@ -10,13 +10,15 @@ Twelve entry points:
 - `ragelayer/lazy` — asynchronous base/heavy/advanced/complete tool loaders
 - `ragelayer/sdk` — typed custom-tool factories and utilities
 - `ragelayer/react` — toolbar component and headless hook
-- `ragelayer/vue` — lifecycle-safe Vue composable
+- `ragelayer/vue` — ready-made Vue toolbar component and lifecycle-safe composable
 - `ragelayer/svelte` — Svelte action and lifecycle controller
 - `ragelayer/element` — the `<rage-layer>` custom element for every other stack
 - `ragelayer/toolbar` — `ToolbarModel` and strings, to build your own toolbar
 
 Everything is fully typed; this page covers the surfaces you'll actually reach for. For the
-exhaustive list, see [`src/index.ts`](../src/index.ts) and [`src/types.ts`](../src/types.ts).
+exhaustive list, see
+[`src/index.ts`](https://github.com/ParthJadhav/RageLayer/blob/main/src/index.ts) and
+[`src/types.ts`](https://github.com/ParthJadhav/RageLayer/blob/main/src/types.ts).
 
 ## Lifecycle helpers
 

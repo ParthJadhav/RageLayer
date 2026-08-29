@@ -3,7 +3,7 @@
 RageLayer is a self-contained page-destruction toy: it rasterizes the live page into a
 destructible canvas, hides the real DOM (layout and scroll survive), and lets visitors smash,
 shoot, burn, soak, saw, paint, corrode, bomb — and then sweep it all up. Zero assets, zero
-runtime dependencies, framework-agnostic core with a drop-in React component.
+runtime dependencies, framework-agnostic core with drop-in React and Vue components.
 
 ![The demo page mid-destruction](./screenshots/aftermath.png)
 
@@ -17,8 +17,8 @@ npm install ragelayer
 
 Bun, pnpm and Yarn all work the same way (`bun add ragelayer`, …).
 
-The package ships modern ESM with TypeScript declarations. `react`/`react-dom` are **optional**
-peer dependencies — you only need them for the `ragelayer/react` entry.
+The package ships modern ESM with TypeScript declarations. `react`/`react-dom` and `vue` are
+**optional** peer dependencies — you only need the framework used by the entry you import.
 
 ## 60-second React setup
 

@@ -4,6 +4,7 @@
 bun run build      # from the repository root, to produce dist/
 cd examples/nuxt
 bun install
+npm install --no-save --package-lock=false --audit=false --fund=false ../..
 bun run dev
 ```
 

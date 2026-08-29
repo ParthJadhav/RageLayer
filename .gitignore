@@ -1,4 +1,8 @@
 node_modules/
+.next/
+.nuxt/
+.output/
+.svelte-kit/
 dist/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
