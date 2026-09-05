@@ -18,6 +18,30 @@ export default defineConfig({
       },
     ],
   ],
+  transformPageData(pageData) {
+    const slug = pageData.relativePath.replace(/\.md$/, "");
+    const migrated = new Set([
+      "accessibility",
+      "advanced",
+      "api",
+      "architecture",
+      "compatibility",
+      "getting-started",
+      "integrations",
+      "models",
+      "performance",
+      "toolbar",
+      "tools",
+      "troubleshooting",
+      "versioning",
+    ]);
+    if (!migrated.has(slug)) return;
+    pageData.frontmatter.head ??= [];
+    pageData.frontmatter.head.push([
+      "link",
+      { rel: "canonical", href: `https://www.parthjadhav.com/products/ragelayer/docs/${slug}` },
+    ]);
+  },
   sitemap: {
     hostname: "https://parthjadhav.github.io/RageLayer/",
   },

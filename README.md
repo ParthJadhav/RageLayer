@@ -2,16 +2,16 @@
 
 [![npm version](https://img.shields.io/npm/v/ragelayer?color=dc5a1f)](https://www.npmjs.com/package/ragelayer)
 [![CI](https://github.com/ParthJadhav/RageLayer/actions/workflows/ci.yml/badge.svg)](https://github.com/ParthJadhav/RageLayer/actions/workflows/ci.yml)
-[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://parthjadhav.github.io/RageLayer/api)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178c6)](https://www.parthjadhav.com/products/ragelayer/docs/api)
 [![MIT license](https://img.shields.io/badge/license-MIT-171310)](./LICENSE)
 
 Introducing RageLayer: turn any web page into a destructible canvas. Smash, cut, corrode, burn, explode, undo, and
 combine effects across the page—then sweep everything back into place.
 
 [**Try the live demo**](https://parthjadhav.github.io/RageLayer/demo/) ·
-[Documentation](https://parthjadhav.github.io/RageLayer/) ·
-[Tool gallery](https://parthjadhav.github.io/RageLayer/tools) ·
-[API reference](https://parthjadhav.github.io/RageLayer/api)
+[Documentation](https://www.parthjadhav.com/products/ragelayer/docs) ·
+[Tool gallery](https://www.parthjadhav.com/products/ragelayer/docs/tools) ·
+[API reference](https://www.parthjadhav.com/products/ragelayer/docs/api)
 
 ![A page after a RageLayer session](./docs/screenshots/aftermath.png)
 
@@ -301,4 +301,4 @@ Inspired by the classic Windows Desktop Destroyer toy and by
 
 ## License
 
-[MIT](./LICENSE) © Parth Jadhav
+[MIT](./LICENSE) © [Parth Jadhav](https://www.parthjadhav.com/)
