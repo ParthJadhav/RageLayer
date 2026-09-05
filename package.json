@@ -133,7 +133,7 @@
     "access": "public"
   },
   "overrides": {
-    "vite": "6.4.3"
+    "vite": "8.2.2"
   },
   "scripts": {
     "build": "tsdown",
@@ -220,7 +220,7 @@
     "react-dom": "^19.2.8",
     "tsdown": "^0.22.14",
     "typescript": "^7.0.2",
-    "vite": "6.4.3",
+    "vite": "8.2.2",
     "vitepress": "^1.6.4",
     "vue": "^3.5.42"
   }
