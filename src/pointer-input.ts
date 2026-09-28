@@ -90,14 +90,19 @@ export function createPointerInput(host: PointerInputHost): PointerInputControll
   function end(event?: PointerEvent) {
     if (!held) return;
     if (event && activePointerId !== null && event.pointerId !== activePointerId) return;
-    flush();
-    held = false;
-    artUpAt = host.nowSeconds();
-    const toolEvent = event ? toToolEvent(event) : { ...pointer, dx: 0, dy: 0, buttons: 0 };
-    host.getTool()?.onUp?.(host.engine, toolEvent);
-    host.silenceToolLoops();
-    releasePointerCapture();
-    host.requestFrame();
+    try {
+      flush();
+      held = false;
+      artUpAt = host.nowSeconds();
+      const toolEvent = event ? toToolEvent(event) : { ...pointer, dx: 0, dy: 0, buttons: 0 };
+      host.getTool()?.onUp?.(host.engine, toolEvent);
+    } finally {
+      held = false;
+      artUpAt = host.nowSeconds();
+      host.silenceToolLoops();
+      releasePointerCapture();
+      host.requestFrame();
+    }
   }
 
   /**
@@ -118,7 +123,8 @@ export function createPointerInput(host: PointerInputHost): PointerInputControll
   /** Drive the selected tool at a document point without a pointing device. */
   function strike(x: number, y: number, holdMs = 0): boolean {
     const tool = host.getTool();
-    if (!tool || host.isBlocked()) return false;
+    if (!tool || held || host.isBlocked()) return false;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(holdMs)) return false;
 
     flush();
     host.checkpoint(tool.id);
@@ -127,18 +133,29 @@ export function createPointerInput(host: PointerInputHost): PointerInputControll
     pointer.y = previous.y = y;
     artDownAt = host.nowSeconds();
     held = true;
-    tool.onDown?.(host.engine, event);
+    try {
+      tool.onDown?.(host.engine, event);
 
-    if (holdMs > 0) {
-      const dt = 1 / 60;
-      const steps = Math.min(600, Math.round(holdMs / (dt * 1000)));
-      for (let i = 0; i < steps; i++) tool.tick?.(host.engine, dt, true, pointer);
+      if (holdMs > 0) {
+        const dt = 1 / 60;
+        const steps = Math.min(600, Math.round(holdMs / (dt * 1000)));
+        for (let i = 0; i < steps; i++) {
+          if (!held || host.isBlocked() || host.getTool() !== tool) break;
+          tool.tick?.(host.engine, dt, true, pointer);
+        }
+      }
+
+      if (held && !host.isBlocked() && host.getTool() === tool) {
+        held = false;
+        artUpAt = host.nowSeconds();
+        tool.onUp?.(host.engine, { ...event, buttons: 0 });
+      }
+    } finally {
+      held = false;
+      artUpAt = host.nowSeconds();
+      host.silenceToolLoops();
+      host.requestFrame();
     }
-
-    held = false;
-    artUpAt = host.nowSeconds();
-    tool.onUp?.(host.engine, { ...event, buttons: 0 });
-    host.requestFrame();
     return true;
   }
 

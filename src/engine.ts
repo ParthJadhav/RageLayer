@@ -1,5 +1,6 @@
 import { SoundEngine } from "./audio";
 import { BugSwarm } from "./bugs-sim";
+import { runSafely } from "./callbacks";
 import { defaultCaptureFilter } from "./capture";
 import { CaptureController, type CaptureHost } from "./capture-controller";
 import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
@@ -509,7 +510,11 @@ export class RageLayerEngine implements RageLayerEngineApi {
       } finally {
         this.applyingCombo = false;
       }
-      for (const callback of this.comboListeners) callback(event);
+      for (const callback of [...this.comboListeners]) {
+        if (this.comboListeners.has(callback)) {
+          runSafely(() => callback(event), "Combo listener failed");
+        }
+      }
     }
     return events;
   }
@@ -544,7 +549,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
       if (cause === undefined) console.warn(`[RageLayer] ${message}`);
       else console.warn(`[RageLayer] ${message}`, cause);
     } else {
-      for (const callback of this.errorListeners) callback(this.lastError);
+      const error = this.lastError;
+      for (const callback of [...this.errorListeners]) {
+        if (this.errorListeners.has(callback)) {
+          runSafely(() => callback(error), "Error listener failed");
+        }
+      }
     }
     this.emit("error");
   }
@@ -605,6 +615,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
   }
 
   registerTool(tool: Tool) {
+    if (this.disposed) return;
     const previous = this.tools.get(tool.id);
     const replacingActive = previous === this.activeTool;
 
@@ -915,8 +926,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.overlay.container.replaceChildren();
     this.sound.dispose();
     this.history?.clear();
-    this.emit("dispose");
-    this.listeners.clear();
     this.monitor.dispose();
 
     // `dispose` must release the expensive state even when application code
@@ -946,7 +955,9 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.comboListeners.clear();
     this.errorListeners.clear();
     // Pending tool state must not survive disposal.
-    for (const tool of this.tools.values()) tool.reset?.(this);
+    for (const tool of this.tools.values()) {
+      runSafely(() => tool.reset?.(this), "Tool cleanup failed");
+    }
     this.tools.clear();
     this.activeTool = null;
     this.fire.dispose();
@@ -956,6 +967,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // engine is created later — `sprites()` rebuilds lazily.
     liveEngines = Math.max(0, liveEngines - 1);
     if (liveEngines === 0) clearSpriteCache();
+    this.emit("dispose");
+    this.listeners.clear();
   }
 
   // ── Content capture (the "destroy the real page" pipeline) ────────────────
@@ -1606,9 +1619,11 @@ export class RageLayerEngine implements RageLayerEngineApi {
   }
 
   private emit(event: EngineEvent) {
-    this.listeners.get(event)?.forEach((cb) => {
-      cb();
-    });
+    const listeners = this.listeners.get(event);
+    if (!listeners) return;
+    for (const callback of [...listeners]) {
+      if (listeners.has(callback)) runSafely(callback, `${event} listener failed`);
+    }
   }
 
   private applyQuality(tier: PerformanceQualityTier) {

@@ -44,6 +44,11 @@ rageLayer.subscribe((engine) => console.log(engine));
 registers the tools and returns a live engine immediately, so call it only in a browser. Construct
 `RageLayerEngine` directly when you want to register each tool yourself.
 
+If a custom tool fails during mounting, the helper disposes the partially initialized engine
+before rethrowing the error. The React, Vue, and custom-element components use the same cleanup.
+Lifecycle and engine event subscribers are isolated: a throwing subscriber is warned about without
+interrupting other subscribers or engine cleanup.
+
 ## `new RageLayerEngine(options?)`
 
 Creates the overlay and starts capturing the page. Must run in a browser.
@@ -241,7 +246,8 @@ they always have.
 - `engine.strike(x, y, { holdMs? })` — use the active tool at a document point with no pointer
   device. Runs the same `onDown`/`onUp` pair a click produces and takes a history checkpoint, so
   custom tools need no special handling to be driven this way. Returns `false` when no tool is
-  selected or the engine is paused.
+  selected, the engine is paused or disposed, a pointer gesture is already active, or any coordinate
+  or `holdMs` is nonfinite. Tool exceptions propagate to the caller after gesture and audio cleanup.
 - `engine.historyEnabled` — whether undo/redo was turned on, as distinct from whether there is
   currently anything to undo. A toolbar needs this to show its undo controls from the start.
 

@@ -44,6 +44,27 @@ afterEach(async () => {
 });
 
 describe("shared toolbar state", () => {
+  test("failed custom tool setup disposes the engine before propagating the error", async () => {
+    let failed;
+    await expect(
+      mount({
+        tools: [
+          {
+            id: "broken",
+            name: "Broken",
+            icon: "!",
+            hint: "test",
+            reset(engine) {
+              failed = engine;
+              throw new Error("tool setup failed");
+            },
+          },
+        ],
+      }),
+    ).rejects.toThrow("tool setup failed");
+    expect(failed.disposed).toBe(true);
+    expect(document.body.contains(failed.container)).toBe(false);
+  });
   test("renders translated labels and a visible tool instruction", async () => {
     await mount({ strings: { toolbarLabel: "Outils de destruction" } });
 

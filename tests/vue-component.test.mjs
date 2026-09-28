@@ -22,10 +22,11 @@ let host;
  * guard), and Vue applies that state change on the next tick — so every test
  * has to await one before the toolbar exists.
  */
-async function mount(props = {}) {
+async function mount(props = {}, onError) {
   host = document.createElement("div");
   document.body.appendChild(host);
   app = createApp({ render: () => h(RageLayer, props) });
+  if (onError) app.config.errorHandler = onError;
   app.mount(host);
   await nextTick();
   return app;
@@ -50,6 +51,31 @@ afterEach(() => {
 });
 
 describe("rendering", () => {
+  test("failed custom tool setup disposes the engine before reporting the error", async () => {
+    let failed;
+    const errors = [];
+    await mount(
+      {
+        engineOptions: { captureContent: false },
+        tools: [
+          {
+            id: "broken",
+            name: "Broken",
+            icon: "!",
+            hint: "test",
+            reset(engine) {
+              failed = engine;
+              throw new Error("tool setup failed");
+            },
+          },
+        ],
+      },
+      (error) => errors.push(error),
+    );
+    expect(errors.map((error) => error.message)).toEqual(["tool setup failed"]);
+    expect(failed.disposed).toBe(true);
+    expect(document.body.contains(failed.container)).toBe(false);
+  });
   test("a labelled toolbar is teleported into the body", async () => {
     await mount({ tools: [hammer], engineOptions: { captureContent: false } });
 

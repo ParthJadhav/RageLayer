@@ -28,8 +28,10 @@ export class DestructionHistory<T extends DestructionHistoryEntry> {
   private readonly maxPixels: number;
 
   constructor(options: HistoryOptions = {}) {
-    this.maxEntries = Math.max(1, Math.min(20, Math.round(options.maxEntries ?? 6)));
-    this.maxPixels = Math.max(1, Math.round(options.maxPixels ?? 24_000_000));
+    const entries = options.maxEntries ?? 6;
+    const pixels = options.maxPixels ?? 24_000_000;
+    this.maxEntries = Math.max(1, Math.min(20, Math.round(Number.isFinite(entries) ? entries : 6)));
+    this.maxPixels = Math.max(1, Math.round(Number.isFinite(pixels) ? pixels : 24_000_000));
   }
 
   get state(): HistoryState {
@@ -42,7 +44,7 @@ export class DestructionHistory<T extends DestructionHistoryEntry> {
   }
 
   canStore(pixelCost: number): boolean {
-    return pixelCost <= this.maxPixels;
+    return Number.isFinite(pixelCost) && pixelCost >= 0 && pixelCost <= this.maxPixels;
   }
 
   push(entry: T): boolean {
@@ -62,7 +64,7 @@ export class DestructionHistory<T extends DestructionHistoryEntry> {
       current.dispose();
       return null;
     }
-    if (current.pixelCost <= this.maxPixels) this.future.push(current);
+    if (this.canStore(current.pixelCost)) this.future.push(current);
     else current.dispose();
     this.enforceBudget();
     return previous;
@@ -74,7 +76,7 @@ export class DestructionHistory<T extends DestructionHistoryEntry> {
       current.dispose();
       return null;
     }
-    if (current.pixelCost <= this.maxPixels) this.past.push(current);
+    if (this.canStore(current.pixelCost)) this.past.push(current);
     else current.dispose();
     this.enforceBudget();
     return next;

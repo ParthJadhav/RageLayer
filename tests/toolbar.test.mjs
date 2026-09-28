@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { DEFAULT_STRINGS, formatString, resolveStrings, toolStrings } from "../src/strings.ts";
 import { ToolbarModel } from "../src/toolbar.ts";
 import { baseTools, broom, hammer } from "../src/tools.ts";
@@ -102,6 +102,32 @@ describe("button list", () => {
 });
 
 describe("subscriptions", () => {
+  test("a throwing observer cannot leave the other toolbar views stale", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { model } = makeToolbar();
+      model.subscribe((state) => {
+        if (state.activeToolId) throw new Error("view failed");
+      });
+      const seen = [];
+      model.subscribe((state) => seen.push(state.activeToolId));
+      model.selectTool("hammer");
+      expect(seen).toEqual([null, "hammer"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("reentrant selection cannot overwrite a newer toolbar state", () => {
+    const { model } = makeToolbar();
+    model.subscribe((state) => {
+      if (state.activeToolId === "hammer") model.selectTool("broom");
+    });
+    const seen = [];
+    model.subscribe((state) => seen.push(state.activeToolId));
+    model.selectTool("hammer");
+    expect(seen).toEqual([null, "broom"]);
+  });
   test("subscribers are called immediately and on change", () => {
     const { model } = makeToolbar();
     const seen = [];

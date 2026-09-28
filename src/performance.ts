@@ -1,3 +1,4 @@
+import { runSafely } from "./callbacks";
 import { measuredUploadCostMs } from "./gl";
 import type { PerfCounterName, PerfCounterSink } from "./perf-counters";
 import type {
@@ -498,7 +499,12 @@ export class PerformanceMonitor implements PerfCounterSink {
       captureMs: this.captureMs,
       memory: memorySnapshot(),
     };
-    for (const callback of this.callbacks) callback(this.latest);
+    const snapshot = this.latest;
+    for (const callback of [...this.callbacks]) {
+      if (this.callbacks.has(callback)) {
+        runSafely(() => callback(snapshot), "Performance listener failed");
+      }
+    }
 
     if (!this.adaptive || this.samples < 12) return null;
     const cpuOverload = cpu.p95 > targetBudget * 0.72;
