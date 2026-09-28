@@ -3,7 +3,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { defaultTools } from "../default-tools";
-import { RageLayerEngine } from "../engine";
+import type { RageLayerEngine } from "../engine";
+import { mountRageLayer } from "../mount";
 import type { RageLayerStrings } from "../strings";
 import { type ToolbarButton as ButtonState, ToolbarModel, type ToolbarState } from "../toolbar";
 import type { RageLayerEngineOptions, Tool, ToolStyle } from "../types";
@@ -110,12 +111,13 @@ export function RageLayer({
   const resolvedToolStyle = engineOptions?.toolStyle ?? toolStyle;
 
   useEffect(() => {
-    const engine = new RageLayerEngine({
+    const engine = mountRageLayer({
       soundEnabled: soundDefault,
       ...engineOptions,
       toolStyle: resolvedToolStyle,
+      tools: toolset,
+      initialTool: null,
     });
-    for (const tool of toolset) engine.registerTool(tool);
 
     const model = new ToolbarModel(engine, {
       tools: toolset,

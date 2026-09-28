@@ -22,7 +22,8 @@ import {
 
 import { RAGELAYER_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
-import { RageLayerEngine } from "../engine";
+import type { RageLayerEngine } from "../engine";
+import { mountRageLayer } from "../mount";
 import type { RageLayerStrings } from "../strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar";
 import type { RageLayerEngineOptions, Tool } from "../types";
@@ -55,14 +56,15 @@ export const RageLayer = defineComponent({
     };
 
     onMounted(() => {
-      acquireToolbarStyles();
-      const created = new RageLayerEngine({
+      const created = mountRageLayer({
         soundEnabled: props.soundDefault,
         history: true,
         ...props.engineOptions,
+        tools: toolset.value,
+        initialTool: null,
       });
-      for (const tool of toolset.value) created.registerTool(tool);
       engine.value = created;
+      acquireToolbarStyles();
 
       const created_model = new ToolbarModel(created, {
         tools: toolset.value,
@@ -87,9 +89,11 @@ export const RageLayer = defineComponent({
       unsubscribe = null;
       model.value?.destroy();
       model.value = null;
-      engine.value?.dispose();
-      engine.value = null;
-      releaseToolbarStyles();
+      if (engine.value) {
+        engine.value.dispose();
+        engine.value = null;
+        releaseToolbarStyles();
+      }
       if (previousFocus?.isConnected) previousFocus.focus();
       previousFocus = null;
     });

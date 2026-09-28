@@ -1,3 +1,4 @@
+import { runSafely } from "./callbacks";
 import { defaultTools } from "./default-tools";
 import { RageLayerEngine } from "./engine";
 import type { RageLayerEngineOptions, Tool } from "./types";
@@ -24,15 +25,18 @@ export function mountRageLayer(options: MountRageLayerOptions = {}) {
   const { tools: explicitTools, initialTool, ...engineOptions } = options;
   const tools = explicitTools ?? defaultTools;
   const selectedInitialTool = initialTool === undefined ? "hammer" : initialTool;
-  const engine = new RageLayerEngine(engineOptions);
-  for (const tool of tools) engine.registerTool(tool);
-
   if (selectedInitialTool !== null && !tools.some((tool) => tool.id === selectedInitialTool)) {
-    engine.dispose();
     throw new RangeError(`Unknown initial RageLayer tool: ${selectedInitialTool}`);
   }
-  engine.setTool(selectedInitialTool);
-  return engine;
+  const engine = new RageLayerEngine(engineOptions);
+  try {
+    for (const tool of tools) engine.registerTool(tool);
+    engine.setTool(selectedInitialTool);
+    return engine;
+  } catch (error) {
+    engine.dispose();
+    throw error;
+  }
 }
 
 export interface RageLayerController {
@@ -56,7 +60,13 @@ export function createRageLayer(options: MountRageLayerOptions = {}): RageLayerC
   const listeners = new Set<(engine: RageLayerEngine | null) => void>();
 
   const notify = () => {
-    for (const listener of listeners) listener(engine);
+    const current = engine;
+    for (const listener of [...listeners]) {
+      // A listener can synchronously open or close the controller. That newer
+      // notification must not be followed by the stale state from this loop.
+      if (engine !== current) break;
+      if (listeners.has(listener)) runSafely(() => listener(current), "Lifecycle listener failed");
+    }
   };
 
   const controller: RageLayerController = {
@@ -97,7 +107,7 @@ export function createRageLayer(options: MountRageLayerOptions = {}): RageLayerC
     },
     subscribe(listener) {
       listeners.add(listener);
-      listener(engine);
+      runSafely(() => listener(engine), "Lifecycle listener failed");
       return () => listeners.delete(listener);
     },
   };

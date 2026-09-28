@@ -42,6 +42,57 @@ function makeInput(tool, overrides = {}) {
 }
 
 describe("PointerInputController", () => {
+  test("a throwing release handler still releases pointer capture and silences audio", () => {
+    let silenced = 0;
+    let released = 0;
+    const { container, input } = makeInput(
+      {
+        onUp: () => {
+          throw new Error("release failed");
+        },
+      },
+      {
+        silenceToolLoops: () => silenced++,
+      },
+    );
+    container.releasePointerCapture = () => released++;
+    container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+    expect(() => input.end()).toThrow("release failed");
+    expect(input.held).toBe(false);
+    expect(silenced).toBe(1);
+    expect(released).toBe(1);
+  });
+  test("scripted strikes reject invalid coordinates and overlapping gestures", () => {
+    let downs = 0;
+    const { input, container } = makeInput({ onDown: () => downs++ });
+    for (const value of [NaN, Infinity, -Infinity]) {
+      expect(input.strike(value, 10)).toBe(false);
+      expect(input.strike(10, value)).toBe(false);
+      expect(input.strike(10, 10, value)).toBe(false);
+    }
+    expect(downs).toBe(0);
+    container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
+    expect(input.strike(20, 20)).toBe(false);
+    expect(input.held).toBe(true);
+    expect(downs).toBe(1);
+  });
+
+  test("a throwing scripted tool releases gesture state and audio loops", () => {
+    let silenced = 0;
+    const { input } = makeInput(
+      {
+        onDown: () => {
+          throw new Error("tool failed");
+        },
+      },
+      {
+        silenceToolLoops: () => silenced++,
+      },
+    );
+    expect(() => input.strike(10, 10)).toThrow("tool failed");
+    expect(input.held).toBe(false);
+    expect(silenced).toBe(1);
+  });
   test("buffers a path in order and bounds an event storm", () => {
     const moves = [];
     const { container, input } = makeInput({

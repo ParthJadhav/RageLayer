@@ -38,6 +38,20 @@ describe("custom tool SDK", () => {
     expect(limiter.take(0)).toBe(0);
   });
 
+  test("invalid scheduler configuration fails before creating poisoned state", () => {
+    for (const value of [NaN, Infinity, -Infinity]) {
+      expect(() => createRateLimiter(value)).toThrow(RangeError);
+      expect(() => createRateLimiter(10, value)).toThrow(RangeError);
+    }
+  });
+
+  test("invalid elapsed time does not poison the fractional accumulator", () => {
+    const limiter = createRateLimiter(10, 3);
+    expect(limiter.take(0.05)).toBe(0);
+    for (const value of [NaN, Infinity, -Infinity, -1]) expect(limiter.take(value)).toBe(0);
+    expect(limiter.take(0.05)).toBe(1);
+  });
+
   test("typed autonomous work shares the factory's isolated state", () => {
     const tool = createTool({
       id: "timer",

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { detectInitialQuality, PerformanceMonitor, QUALITY_PROFILES } from "../src/performance.ts";
 
 /** Controllable clock: the monitor samples `performance.now()` directly. */
@@ -48,6 +48,22 @@ function run(monitor, frames, intervalMs = 1000) {
 }
 
 describe("PerformanceMonitor percentiles", () => {
+  test("a throwing telemetry subscriber cannot interrupt frame recording", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const monitor = new PerformanceMonitor(undefined, "high");
+      const seen = [];
+      monitor.onSample(() => {
+        throw new Error("telemetry consumer failed");
+      });
+      monitor.onSample((snapshot) => seen.push(snapshot));
+      expect(() => run(monitor, [measurement()])).not.toThrow();
+      expect(seen).toHaveLength(1);
+      expect(seen[0].frames).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
   test("p50/p95/p99/max over a known distribution", () => {
     const monitor = new PerformanceMonitor(undefined, "high");
     // 100 distinct frame times 1..100 ms, shuffled deterministically so the

@@ -132,5 +132,7 @@ The SDK preserves inferred state types across `onDown`, `onMove`, `onUp`, `tick`
 `hasPendingWork`, `backgroundTick`, and `reset`. Pair the two background hooks for a fuse or
 projectile that must continue after another tool is selected; return `false` for held-only tools so
 their selected idle state can sleep. `createRateLimiter()` prevents a stalled frame from releasing
-an unbounded effect burst. Custom procedural models can register measured icon bounds with
+an unbounded effect burst. Its rate and maximum burst must be finite; nonfinite configuration throws
+`RangeError`. A nonfinite or nonpositive elapsed time returns zero without changing accumulated time.
+Custom procedural models can register measured icon bounds with
 `registerToolIconBounds()`.

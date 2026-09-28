@@ -79,11 +79,15 @@ export interface RateLimiter {
 
 /** Bounded fractional scheduler for particle sprays and other hold-to-use effects. */
 export function createRateLimiter(ratePerSecond: number, maxBurst = 8): RateLimiter {
+  if (!Number.isFinite(ratePerSecond) || !Number.isFinite(maxBurst)) {
+    throw new RangeError("Rate and maximum burst must be finite");
+  }
   const rate = Math.max(0, ratePerSecond);
   const limit = Math.max(1, Math.round(maxBurst));
   let debt = 0;
   return {
     take(dt) {
+      if (!Number.isFinite(dt) || dt <= 0) return 0;
       debt = Math.min(limit, debt + Math.max(0, dt) * rate);
       const count = Math.floor(debt);
       debt -= count;

@@ -13,6 +13,7 @@
  * subscribers whenever anything a view would render has changed.
  */
 
+import { runSafely } from "./callbacks";
 import type { RageLayerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
 import { type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
@@ -118,8 +119,10 @@ export class ToolbarModel {
 
   /** Subscribe to state changes. The callback runs immediately. */
   subscribe(listener: (state: ToolbarState) => void): () => void {
+    if (this.destroyed) return () => {};
     this.listeners.add(listener);
-    listener(this.state);
+    const state = this.state;
+    runSafely(() => listener(state), "Toolbar listener failed");
     return () => this.listeners.delete(listener);
   }
 
@@ -127,7 +130,10 @@ export class ToolbarModel {
     if (this.destroyed) return;
     this.cached = null;
     const next = this.state;
-    for (const listener of this.listeners) listener(next);
+    for (const listener of [...this.listeners]) {
+      if (this.destroyed || this.cached !== next) break;
+      if (this.listeners.has(listener)) runSafely(() => listener(next), "Toolbar listener failed");
+    }
   }
 
   private get tools(): readonly Tool[] {

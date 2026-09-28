@@ -72,6 +72,33 @@ describe("registration", () => {
 });
 
 describe("mounting", () => {
+  test("a failed custom tool setup leaves no hidden engine after reconfiguration", () => {
+    mount((node) => node.configure({ captureContent: false }));
+    const previous = element.rageLayerEngine;
+    let failed;
+    expect(() =>
+      element.configure({
+        captureContent: false,
+        tools: [
+          {
+            id: "broken",
+            name: "Broken",
+            icon: "!",
+            hint: "test",
+            reset(engine) {
+              failed = engine;
+              throw new Error("tool setup failed");
+            },
+          },
+        ],
+      }),
+    ).toThrow("tool setup failed");
+    expect(previous.disposed).toBe(true);
+    expect(failed.disposed).toBe(true);
+    expect(document.body.contains(failed.container)).toBe(false);
+    element.configure({ captureContent: false, tools: [hammer] });
+    expect(element.rageLayerEngine.getTools().map((tool) => tool.id)).toEqual(["hammer"]);
+  });
   test("connecting builds a labelled toolbar in a shadow root", () => {
     mount((node) => node.configure({ tools: [hammer], captureContent: false }));
 

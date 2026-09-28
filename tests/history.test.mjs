@@ -12,6 +12,34 @@ const entry = (label, pixelCost = 10) => ({
 });
 
 describe("DestructionHistory", () => {
+  test("nonfinite limits retain the default bounded history", () => {
+    for (const value of [NaN, Infinity, -Infinity]) {
+      const history = new DestructionHistory({ maxEntries: value, maxPixels: value });
+      for (let i = 0; i < 30; i++) history.push(entry(String(i)));
+      expect(history.state.undoDepth).toBe(6);
+      expect(history.canStore(24_000_001)).toBe(false);
+    }
+  });
+
+  test("invalid entry costs cannot disable the pixel budget on any stack", () => {
+    for (const cost of [-1, NaN, Infinity, -Infinity]) {
+      const history = new DestructionHistory({ maxPixels: 100 });
+      const invalid = entry("invalid", cost);
+      expect(history.push(invalid)).toBe(false);
+      expect(invalid.disposed).toBe(true);
+      history.push(entry("valid"));
+      const current = entry("invalid current", cost);
+      expect(history.undo(current)?.label).toBe("valid");
+      expect(current.disposed).toBe(true);
+      expect(history.state.canRedo).toBe(false);
+      history.push(entry("valid"));
+      history.undo(entry("current"));
+      const redo = entry("invalid redo", cost);
+      expect(history.redo(redo)?.label).toBe("current");
+      expect(redo.disposed).toBe(true);
+      expect(history.state.canUndo).toBe(false);
+    }
+  });
   test("moves current states between bounded undo and redo stacks", () => {
     const history = new DestructionHistory({ maxEntries: 2, maxPixels: 1_000_000 });
     const a = entry("a");

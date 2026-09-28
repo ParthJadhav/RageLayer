@@ -16,7 +16,8 @@
 
 import { RAGELAYER_IGNORE_ATTR } from "./capture";
 import { defaultTools } from "./default-tools";
-import { RageLayerEngine } from "./engine";
+import type { RageLayerEngine } from "./engine";
+import { mountRageLayer } from "./mount";
 import type { RageLayerStrings } from "./strings";
 import { type ToolbarButton, ToolbarModel, type ToolbarState } from "./toolbar";
 import { toolbarIconElement } from "./toolbar-icons";
@@ -267,12 +268,13 @@ export class RageLayerElement extends ElementBase {
 
     const tools = this.config.tools ?? defaultTools;
 
-    const engine = new RageLayerEngine({
+    const engine = mountRageLayer({
       soundEnabled: this.hasAttribute("sound"),
       history: true,
       ...this.config,
+      tools,
+      initialTool: null,
     });
-    for (const tool of tools) engine.registerTool(tool);
     const initialTool = this.getAttribute("initial-tool");
     if (initialTool) engine.setTool(initialTool);
     this.engine = engine;
