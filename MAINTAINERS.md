@@ -43,3 +43,10 @@ Two traps in that pin. VitePress 1.x cannot build on vite 8: the render step cal
 "rendering pages". And a local `bun run docs:build` can pass anyway when a stale `node_modules`
 still carries `esbuild` from an earlier install — verify the bump on a clean install, or let CI do
 it, because that is the environment that decides.
+
+## React Doctor
+
+`bun run check` includes `bun run doctor`, which runs `npx react-doctor@latest` over the full
+project and requires a complete 100/100 score. It saves the JSON report in
+`node_modules/.cache/react-doctor/report.json`. Network or incomplete scans fail the gate;
+fix findings and rerun rather than accepting a partial score.

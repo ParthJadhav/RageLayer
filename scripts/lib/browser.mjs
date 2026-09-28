@@ -171,8 +171,10 @@ function readChromeVersion(chromePath) {
 export async function launchChrome({ url, flags = [], cpuRate = 1 } = {}) {
   const chromePath = resolveChromePath();
   const isHeadlessShell = /headless[-_]shell/.test(chromePath);
-  const debugPort = await freePort();
-  const profileDir = await mkdtemp(join(tmpdir(), "ragelayer-"));
+  const [debugPort, profileDir] = await Promise.all([
+    freePort(),
+    mkdtemp(join(tmpdir(), "ragelayer-")),
+  ]);
 
   const chrome = spawn(
     chromePath,

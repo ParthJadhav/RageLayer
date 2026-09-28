@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { RageLayerEngine } from "../engine";
-import { createRageLayer, type MountRageLayerOptions, type RageLayerController } from "../mount";
+import { createRageLayer, type MountRageLayerOptions } from "../mount";
 
 export interface UseRageLayerResult {
   engine: RageLayerEngine | null;
@@ -14,22 +14,21 @@ export interface UseRageLayerResult {
 
 /** Headless React binding for applications that provide their own controls. */
 export function useRageLayer(options: MountRageLayerOptions = {}): UseRageLayerResult {
-  const controllerRef = useRef<RageLayerController | null>(null);
-  if (!controllerRef.current) controllerRef.current = createRageLayer(options);
+  // Creating the controller is inert; only open() mounts the engine.
+  const [controller] = useState(() => createRageLayer(options));
   const [engine, setEngine] = useState<RageLayerEngine | null>(null);
 
   useEffect(() => {
-    const controller = controllerRef.current!;
     const unsubscribe = controller.subscribe(setEngine);
     return () => {
       unsubscribe();
       controller.close();
     };
-  }, []);
+  }, [controller]);
 
-  const open = useCallback(() => controllerRef.current!.open(), []);
-  const close = useCallback(() => controllerRef.current!.close(), []);
-  const toggle = useCallback(() => controllerRef.current!.toggle(), []);
+  const open = useCallback(() => controller.open(), [controller]);
+  const close = useCallback(() => controller.close(), [controller]);
+  const toggle = useCallback(() => controller.toggle(), [controller]);
 
   return { engine, isOpen: engine !== null, open, close, toggle };
 }

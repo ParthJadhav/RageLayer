@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { act, createElement } from "react";
+import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RageLayer } from "../src/react/RageLayer.tsx";
+import { useRageLayer } from "../src/react/useRageLayer.ts";
 import { broom, hammer } from "../src/tools.ts";
 import { setViewport } from "./support/dom.mjs";
 
@@ -76,4 +77,47 @@ describe("shared toolbar state", () => {
     expect(document.querySelector('[role="toolbar"]')).toBeNull();
     expect(window.__rageLayer).toBeUndefined();
   });
+});
+
+test("the headless hook survives StrictMode and rerenders, then disposes on unmount", async () => {
+  let session;
+  function Controls({ options }) {
+    session = useRageLayer(options);
+    return null;
+  }
+  host = document.createElement("div");
+  document.body.append(host);
+  root = createRoot(host);
+  const render = () =>
+    root.render(
+      createElement(
+        StrictMode,
+        null,
+        createElement(Controls, { options: { captureContent: false, tools: [hammer] } }),
+      ),
+    );
+  await act(async () => render());
+  expect(session.isOpen).toBe(false);
+  expect(session.engine).toBeNull();
+  const open = session.open;
+  let engine;
+  await act(async () => {
+    engine = session.open();
+  });
+  expect(session.engine).toBe(engine);
+  expect(session.isOpen).toBe(true);
+  await act(async () => render());
+  expect(session.open).toBe(open);
+  expect(session.engine).toBe(engine);
+  expect(session.open()).toBe(engine);
+  await act(async () => session.close());
+  expect(session.isOpen).toBe(false);
+  expect(engine.disposed).toBe(true);
+  await act(async () => {
+    engine = session.toggle();
+  });
+  expect(session.isOpen).toBe(true);
+  await act(async () => root.unmount());
+  root = undefined;
+  expect(engine.disposed).toBe(true);
 });
