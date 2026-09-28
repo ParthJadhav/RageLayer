@@ -104,9 +104,10 @@
         "acid-sprayer", "sticky-bombs", "broom",
       ];
       const actualToolIds = defaultTools.map((tool) => tool.id);
+      const actualToolIdSet = new Set(actualToolIds);
       if (
         actualToolIds.length !== toolIds.length ||
-        toolIds.some((toolId) => !actualToolIds.includes(toolId))
+        toolIds.some((toolId) => !actualToolIdSet.has(toolId))
       ) {
         throw new Error(`Unexpected built-in tools: ${actualToolIds.join(", ")}`);
       }

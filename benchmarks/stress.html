@@ -491,7 +491,7 @@
         const longTasks = [];
         const snapshots = [];
         const offSnapshot = engine.onPerformance((snapshot) =>
-          snapshots.push(JSON.parse(JSON.stringify(snapshot))),
+          snapshots.push(structuredClone(snapshot)),
         );
         const observer = new PerformanceObserver((list) => {
           for (const entry of list.getEntries()) longTasks.push(entry.duration);

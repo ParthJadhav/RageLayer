@@ -753,7 +753,8 @@ try {
     "document.documentElement.dataset.ready === 'true'",
     { label: "the demo page to finish booting" },
   );
-  await waitFor(browser.cdp, browser.sessionId, "window.engine && window.engine.content", {
+  // Return readiness only; serializing the capture object can stall CDP on its pixel buffers.
+  await waitFor(browser.cdp, browser.sessionId, "Boolean(window.engine?.content)", {
     label: "the page capture to complete",
   });
   await run(HARNESS);

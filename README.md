@@ -275,7 +275,8 @@ damage. See [capture and framework integration notes](./docs/integrations.md).
 
 ```sh
 bun install
-bun run check         # types, lint, unit tests + coverage floors, build, package validation
+bun run check         # types, lint, tests + coverage, build, package validation, Doctor 100
+bun run doctor        # complete React Doctor scan; requires 100/100 and network access
 bun run test:browser  # runtime suite in headless Chrome (real WebGL, real capture)
 bun run demo:tools    # record all 15 tools as a video reel for review
 bun run benchmark:low-end # fixed workloads with 6× CPU throttling
