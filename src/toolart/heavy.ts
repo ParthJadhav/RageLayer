@@ -417,12 +417,7 @@ function drawBug(ctx: Ctx, x: number, y: number, ang: number, scale: number) {
   ctx.restore();
 }
 
-/*
- * Exact alpha silhouettes of the rest poses above, measured at the icon bake's
- * 64px origin. Besides protecting narrow details (claws, bristles, antennae)
- * from clipping, they spare every built-in toolbar icon a 256×256
- * `getImageData` readback. Re-measure when a drawing changes.
- */
+// Measured icon silhouettes; see the note in ./base.ts. Re-measure when a drawing changes.
 registerToolIconBounds(demolitionArt, [61, 24, 160, 91]);
 registerToolIconBounds(rocketArt, [52, 51, 155, 120]);
 registerToolIconBounds(lightningArt, [63, 63, 139, 147]);

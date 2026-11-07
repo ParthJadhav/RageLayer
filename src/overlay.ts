@@ -36,7 +36,7 @@ const VOID_STOPS = [
   [100, "#060504"],
 ] as const;
 
-/** Paint the void onto a 2D canvas the same way the void layer shows it on screen. */
+/** Paint the void onto a 2D canvas in the void layer's colours, for snapshots. */
 export function paintVoid(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
   for (const [percent, color] of VOID_STOPS) bg.addColorStop(percent / 100, color);
