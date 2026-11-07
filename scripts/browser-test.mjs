@@ -126,7 +126,11 @@ const checks = [
     name: "the live DOM is captured into a destructible surface",
     async run(run) {
       const status = await run("__dd.engine.captureStatus");
-      assert(status === "snapshot", `capture status was "${status}", expected "snapshot"`);
+      // Chrome 157+ ships the live capture API, so "auto" mode may pick it.
+      assert(
+        status === "snapshot" || status === "live",
+        `capture status was "${status}", expected "snapshot" or "live"`,
+      );
       assert(await run("Boolean(__dd.engine.content)"), "no content layer after capture");
       assert(
         await run("__dd.engine.pageOpacityAt(400, 400) === 1"),
