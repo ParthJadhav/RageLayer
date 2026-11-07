@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
-import { effectScope } from "vue";
 import { useRageLayer as useReactRageLayer } from "../src/react/useRageLayer.ts";
 import { rageLayer } from "../src/svelte/index.ts";
-import { useRageLayer as useVueRageLayer } from "../src/vue/index.ts";
+import "./support/dom.mjs";
+
+// Bun shares one module cache across test files, and @vue/runtime-dom captures
+// `document` when it first evaluates; a static import of a CommonJS package
+// runs before this file's other imports. Loaded without a DOM, Vue would keep a
+// null document and break every later Vue component test whenever this file
+// happens to run first.
+const { effectScope } = await import("vue");
+const { useRageLayer: useVueRageLayer } = await import("../src/vue/index.ts");
 
 class FakeElement extends EventTarget {
   attributes = new Map();
