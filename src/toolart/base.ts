@@ -5,6 +5,7 @@
  * than stored).
  */
 
+import { registerToolIconBounds } from "../icon-bounds";
 import { TAU } from "../math";
 import type { ToolArtFn } from "../types";
 import {
@@ -705,3 +706,17 @@ export const broomArt: ToolArtFn = (ctx, s) => {
   }
   ctx.restore();
 };
+
+/*
+ * Exact alpha silhouettes of the rest poses above, measured at the icon bake's
+ * 64px origin. Besides protecting narrow details (claws, bristles, antennae)
+ * from clipping, they spare every built-in toolbar icon a 256×256
+ * `getImageData` readback. Re-measure when a drawing changes.
+ */
+registerToolIconBounds(hammerArt, [69, 32, 175, 148]);
+registerToolIconBounds(gunArt, [61, 53, 119, 119]);
+registerToolIconBounds(flamethrowerArt, [56, 54, 120, 125]);
+registerToolIconBounds(waterHoseArt, [50, 63, 108, 118]);
+registerToolIconBounds(chainsawArt, [59, 58, 157, 126]);
+registerToolIconBounds(paintballArt, [59, 51, 119, 122]);
+registerToolIconBounds(broomArt, [43, 0, 150, 80]);

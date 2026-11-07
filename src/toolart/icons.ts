@@ -5,19 +5,9 @@
  * renders large, finds the true alpha bounds, and fits that crop into the icon.
  */
 
-import { registerToolIconBounds, toolIconBounds } from "../icon-bounds";
+import { toolIconBounds } from "../icon-bounds";
 import { REST_AIM_X, REST_AIM_Y } from "../math";
 import type { ToolArtFn, ToolArtState } from "../types";
-import {
-  broomArt,
-  chainsawArt,
-  flamethrowerArt,
-  gunArt,
-  hammerArt,
-  paintballArt,
-  waterHoseArt,
-} from "./base";
-import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./heavy";
 
 /**
  * The rest pose every icon is baked from: mid-idle, nothing pressed. Since the
@@ -34,29 +24,6 @@ const ICON_STATE: ToolArtState = {
   aimX: REST_AIM_X,
   aimY: REST_AIM_Y,
 };
-
-/**
- * Exact alpha silhouettes for the built-in rest poses, measured at the icon
- * bake's 64px origin. Besides protecting narrow details (claws, bristles,
- * antennae) from clipping, this avoids a 256×256 `getImageData` readback for
- * every built-in toolbar icon. Custom art still gets the accurate scan path.
- */
-for (const [art, bounds] of [
-  [hammerArt, [69, 32, 175, 148]],
-  [gunArt, [61, 53, 119, 119]],
-  [flamethrowerArt, [56, 54, 120, 125]],
-  [waterHoseArt, [50, 63, 108, 118]],
-  [chainsawArt, [59, 58, 157, 126]],
-  [paintballArt, [59, 51, 119, 122]],
-  [broomArt, [43, 0, 150, 80]],
-  [demolitionArt, [61, 24, 160, 91]],
-  [rocketArt, [52, 51, 155, 120]],
-  [lightningArt, [63, 63, 139, 147]],
-  [blackHoleArt, [44, 44, 127, 123]],
-  [bugsArt, [60, 53, 114, 112]],
-] as const) {
-  registerToolIconBounds(art, bounds);
-}
 
 /** Reopening an identical toolbar should not rasterize and PNG-encode built-ins again. */
 const iconCache = new WeakMap<ToolArtFn, Map<number, string>>();

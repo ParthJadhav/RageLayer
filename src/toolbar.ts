@@ -16,7 +16,7 @@
 import type { RageLayerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
 import { type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
-import { toolIconDataUrl } from "./toolart";
+import { toolIconDataUrl } from "./toolart/icons";
 import { TOOLBAR_ICONS } from "./toolbar-icons";
 import type { CaptureStatus, Tool, ToolStyle } from "./types";
 

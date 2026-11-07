@@ -11,7 +11,7 @@ import {
   hammerArt,
   paintballArt,
   waterHoseArt,
-} from "./toolart";
+} from "./toolart/base";
 import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
 import type { RageLayerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
 import { WOOD } from "./wood";
