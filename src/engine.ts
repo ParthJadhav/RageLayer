@@ -884,8 +884,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.physics.clear();
     this.postfx?.dispose();
     this.postfx = null;
-    this.overlay.container.remove();
-    this.overlay.container.replaceChildren();
+    this.overlay.dispose();
     this.sound.dispose();
     this.history?.clear();
     this.emit("dispose");
@@ -895,10 +894,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // `dispose` must release the expensive state even when application code
     // intentionally keeps the engine object for inspection. In particular, a
     // detached high-DPI canvas keeps its whole pixel backing until it is reset.
-    this.overlay.damageCanvas.width = 0;
-    this.overlay.damageCanvas.height = 0;
-    this.overlay.fxCanvas.width = 0;
-    this.overlay.fxCanvas.height = 0;
     if (this.heatCanvas) {
       this.heatCanvas.width = 0;
       this.heatCanvas.height = 0;
@@ -1633,7 +1628,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     outgoing.replaceWith(incoming);
     this.postfxActive = next;
     if (!next) postfx?.clear();
-    this.overlay.fxOffsetX = this.overlay.fxOffsetY = -1;
+    this.overlay.invalidateFxTransform();
   }
 
   private docSize() {
