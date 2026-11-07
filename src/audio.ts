@@ -7,13 +7,22 @@ interface LoopVoice {
   frequency: number;
   q?: number;
   playbackRate?: number;
+  /** Re-randomise the filter frequency within `[base, base + span)` on every update. */
+  jitter?: { base: number; span: number };
   /** Sounds only while a tool is held, so a released or cancelled gesture fades it. */
   held: boolean;
 }
 
 /** How each continuous loop is filtered out of the shared noise buffer. */
 const LOOP_VOICES: Record<LoopName, LoopVoice> = {
-  fire: { filter: "lowpass", frequency: 500, playbackRate: 0.35, held: false },
+  // Random crackle keeps the fire organic.
+  fire: {
+    filter: "lowpass",
+    frequency: 500,
+    playbackRate: 0.35,
+    jitter: { base: 350, span: 500 },
+    held: false,
+  },
   water: { filter: "highpass", frequency: 2500, held: true },
   saw: { filter: "bandpass", frequency: 1400, q: 6, playbackRate: 1.6, held: true },
   flamethrower: { filter: "bandpass", frequency: 700, q: 0.4, playbackRate: 0.6, held: true },
@@ -341,9 +350,13 @@ export class SoundEngine implements SoundApi {
       entry.stopTimer = null;
     }
     entry.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
-    if (name === "fire") {
-      // Random crackle: jitter the filter to keep the loop organic.
-      entry.filter.frequency.setTargetAtTime(350 + Math.random() * 500, ctx.currentTime, 0.05);
+    const { jitter } = LOOP_VOICES[name];
+    if (jitter) {
+      entry.filter.frequency.setTargetAtTime(
+        jitter.base + Math.random() * jitter.span,
+        ctx.currentTime,
+        0.05,
+      );
     }
   }
 

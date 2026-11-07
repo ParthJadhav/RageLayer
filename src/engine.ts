@@ -253,6 +253,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
    * opaque-black fill; a cold field skips the per-frame `fillRect` entirely.
    */
   private heatDirty = true;
+  private singularityHum = false;
   private _singularity: Singularity | null = null;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
@@ -2000,13 +2001,17 @@ export class RageLayerEngine implements RageLayerEngineApi {
       // Clearing is idempotent and cheap; the renderer repaints the warped
       // region once so the page straightens back out.
       this.contentLayer?.setWarp(null);
-      this.sound.loop("void", 0);
+      // Only on the frame the singularity ends: the gravity gun drives the
+      // same loop while held, and an unconditional fade would mute it.
+      if (this.singularityHum) this.sound.loop("void", 0);
+      this.singularityHum = false;
       return;
     }
     s.charge = Math.min(1, s.charge + dt * 1.8);
     const r = s.radius * s.charge;
     this.sound.loop("void", 0.45 * s.charge);
 
+    this.singularityHum = true;
     // Spacetime around the hole: gravitational lensing + frame-dragging swirl
     // in the surface shader. Pure re-shading — no texture upload — so driving
     // it every frame costs only the warped rectangle's fill rate.
