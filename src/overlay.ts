@@ -189,11 +189,6 @@ export class Overlay {
     target.appendChild(this.container);
   }
 
-  /** Whether anything has ever been painted on the damage canvas. */
-  get damageReady(): boolean {
-    return this.damaged;
-  }
-
   /** Reveal (or hide) the void backdrop behind the page. */
   showVoid(visible: boolean) {
     this.voidLayer.style.display = visible ? "block" : "none";

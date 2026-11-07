@@ -291,25 +291,30 @@ describe("roving focus", () => {
 describe("toolbar session", () => {
   test("closing stops shortcuts, disposes the engine, and returns focus", () => {
     const origin = document.createElement("button");
-    document.body.append(origin);
+    const field = document.createElement("input");
+    document.body.append(origin, field);
     origin.focus();
     const session = openToolbarSession({
       engineOptions: { captureContent: false, postFX: false, harvestElements: false },
       tools: baseTools,
     });
-    expect(session.engine.tool).toBeNull();
+    try {
+      expect(session.engine.tool).toBeNull();
+      window.dispatchEvent(keyEvent("1"));
+      expect(session.engine.tool?.id).toBe(baseTools[0].id);
 
-    window.dispatchEvent(keyEvent("1"));
-    expect(session.engine.tool?.id).toBe(baseTools[0].id);
+      field.focus();
+      session.close();
 
-    document.body.append(document.createElement("input"));
-    document.body.lastElementChild.focus();
-    session.close();
-
-    expect(session.engine.container.isConnected).toBe(false);
-    expect(document.activeElement).toBe(origin);
-    const stillHeard = keyEvent("2");
-    window.dispatchEvent(stillHeard);
-    expect(stillHeard.defaultPrevented).toBe(false);
+      expect(session.engine.container.isConnected).toBe(false);
+      expect(document.activeElement).toBe(origin);
+      const unheard = keyEvent("2");
+      window.dispatchEvent(unheard);
+      expect(unheard.defaultPrevented).toBe(false);
+    } finally {
+      session.close();
+      origin.remove();
+      field.remove();
+    }
   });
 });
