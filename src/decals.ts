@@ -46,21 +46,26 @@ const STAMPS_PER_SPRITE = 12;
 const MAX_STAMP_HALF = 160;
 let stampCache: WeakMap<HTMLCanvasElement, Map<number, HTMLCanvasElement>> | null = null;
 /**
- * Device scale (dpr) per context, read once — `getTransform` allocates a
- * DOMMatrix, which the per-frame scorch path cannot afford. Damage targets
- * keep a fixed dpr transform for their lifetime, and `hypot(a, b)` makes the
- * read indifferent to any rotation active at the time.
+ * Device scale (dpr) per context — `getTransform` allocates a DOMMatrix, which
+ * the per-frame scorch path cannot afford. A target only changes its dpr by
+ * resizing its canvas (which also resets the transform), so the cached read is
+ * keyed on the canvas size too. `hypot(a, b)` makes the read indifferent to any
+ * rotation active at the time.
  */
-let ctxScale: WeakMap<CanvasRenderingContext2D, number> | null = null;
+let ctxScale: WeakMap<
+  CanvasRenderingContext2D,
+  { scale: number; width: number; height: number }
+> | null = null;
 
 function deviceScale(ctx: CanvasRenderingContext2D): number {
-  let scale = (ctxScale ??= new WeakMap()).get(ctx);
-  if (scale === undefined) {
+  const { width, height } = ctx.canvas;
+  let cached = (ctxScale ??= new WeakMap()).get(ctx);
+  if (cached === undefined || cached.width !== width || cached.height !== height) {
     const m = ctx.getTransform();
-    scale = Math.hypot(m.a, m.b) || 1;
-    ctxScale.set(ctx, scale);
+    cached = { scale: Math.hypot(m.a, m.b) || 1, width, height };
+    ctxScale.set(ctx, cached);
   }
-  return scale;
+  return cached.scale;
 }
 
 /**
@@ -188,7 +193,6 @@ export function drawCrack(
 
   for (let i = 0; i < branches; i++) {
     const angle = (i / branches) * TAU + rand(-0.6, 0.6);
-    // Bias lengthens the cracks pointing away from the previous impact.
     const pull = bias === undefined ? 1 : 1 + 0.85 * Math.cos(angle - bias);
     const total = span * rand(0.5, 1) * pull;
     const segs = 6;
@@ -203,11 +207,9 @@ export function drawCrack(
       a += rand(-0.55, 0.55);
       px += Math.cos(a) * segLen;
       py += Math.sin(a) * segLen;
-      // The inner half is the wide fault; the outer half thins into a hairline.
       const path = s < segs / 2 ? trunk : fine;
       path.lineTo(px, py);
       if (s === Math.floor(segs / 2) - 1) fine.moveTo(px, py);
-      // Forks: a crack splits and the fork wanders off on its own.
       if (Math.random() < 0.4) {
         const forkA = a + rand(0.5, 1.1) * (Math.random() < 0.5 ? 1 : -1);
         const forkLen = segLen * rand(0.5, 1.2);
@@ -219,7 +221,6 @@ export function drawCrack(
   fractureStroke(ctx, trunk, rand(1.6, 2.6) * scale, 0.72, 0.16);
   fractureStroke(ctx, fine, rand(0.7, 1.1) * scale, 0.55, 0.1);
 
-  // Pulverized centre: chips of displaced plaster around the point of impact.
   for (let i = 0; i < 9; i++) {
     const a = Math.random() * TAU;
     const d = rand(2, 13) * scale;
@@ -231,47 +232,6 @@ export function drawCrack(
   ctx.restore();
 }
 
-/**
- * Radial fracture for brittle sheets such as glass and ice.
- *
- * Unlike the wandering plaster faults above, a brittle impact carries straight
- * rays away from the contact point and joins them with uneven circumferential
- * cracks. There is deliberately no opaque dent or powder halo: neither belongs
- * on a transparent pane and both obscure the fracture geometry.
- */
-export function drawBrittleFracture(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius = 42,
-) {
-  const reach = Math.max(12, radius);
-  const radial = new Path2D();
-  const ring = new Path2D();
-
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.translate(x, y);
-  ctx.rotate(Math.random() * TAU);
-
-  for (let index = 0; index < 10; index++) {
-    const angle = (index / 10) * TAU + rand(-0.12, 0.12);
-    const length = reach * rand(0.72, 1.08);
-    radial.moveTo(Math.cos(angle) * 3, Math.sin(angle) * 3);
-    radial.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
-    const ringRadius = reach * rand(0.44, 0.58);
-    const px = Math.cos(angle) * ringRadius;
-    const py = Math.sin(angle) * ringRadius;
-    if (index === 0) ring.moveTo(px, py);
-    else ring.lineTo(px, py);
-  }
-  ring.closePath();
-
-  fractureStroke(ctx, radial, 1.3, 0.72, 0.38);
-  fractureStroke(ctx, ring, 0.75, 0.48, 0.3);
-  ctx.restore();
-}
-
 /** Layered bullet hole: dark core, ragged rim, short plaster cracks around it. */
 export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
   ctx.save();
@@ -279,7 +239,6 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.translate(x, y);
   ctx.rotate(Math.random() * TAU);
 
-  // Pale impact halo — powdered page around the entry wound.
   stamp(ctx, sprites().dust, 0, 0, 26 * scale, 26 * scale, 0.16);
   ctx.globalAlpha = 1;
 
@@ -298,7 +257,6 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   }
   fractureStroke(ctx, radial, rand(0.9, 1.7) * scale, 0.6, 0.16);
 
-  // Ragged rim — grey ring of overlapping blobs.
   for (let i = 0; i < 10; i++) {
     const angle = (i / 10) * TAU;
     const r = rand(4.5, 6.5) * scale;
@@ -308,11 +266,9 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.fill();
   }
 
-  // Dark core with soft edge.
   stamp(ctx, sprites().bulletCore, 0, 0, 6 * scale, 6 * scale, 0.98);
   ctx.globalAlpha = 1;
 
-  // Glint on the rim.
   ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
   ctx.beginPath();
   ctx.arc(-2 * scale, -3 * scale, 1.2 * scale, 0, TAU);
@@ -380,59 +336,6 @@ export function drawBurnChannel(ctx: CanvasRenderingContext2D, points: number[])
 }
 
 /**
- * A shallow elastic or metallic depression. Unlike `drawCrack`, this keeps the
- * surface continuous: rubber compresses and sheet metal buckles before either
- * material tears.
- */
-export function drawDent(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.translate(x, y);
-  ctx.scale(1, 0.64);
-  const shade = ctx.createRadialGradient(0, 0, radius * 0.08, 0, 0, radius);
-  shade.addColorStop(0, "rgba(4, 7, 10, 0.34)");
-  shade.addColorStop(0.58, "rgba(12, 15, 18, 0.16)");
-  shade.addColorStop(0.78, "rgba(255, 255, 255, 0.1)");
-  shade.addColorStop(1, "rgba(255, 255, 255, 0)");
-  ctx.fillStyle = shade;
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(5, 7, 9, 0.3)";
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.arc(0, 0, radius * 0.72, Math.PI * 0.12, Math.PI * 0.88);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/** A continuous abrasion where a cutting edge skids across a surface it cannot sever. */
-export function drawSurfaceScore(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(18, 20, 22, 0.58)";
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.lineWidth = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1 + 1.25);
-  ctx.lineTo(x2, y2 + 1.25);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/**
  * One chainsaw gash segment between two points.
  *
  * The cut is torn, not sliced: curled tabs peel back along alternating sides,
@@ -483,13 +386,11 @@ export function drawGash(
     );
     ctx.fillStyle = `rgba(228, 222, 212, ${rand(0.3, 0.62)})`;
     ctx.fill();
-    // Shadowed underside of the curl.
     ctx.strokeStyle = `rgba(16, 12, 9, ${rand(0.35, 0.6)})`;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // Dark torn core.
   ctx.strokeStyle = "rgba(12, 9, 7, 0.9)";
   ctx.lineWidth = rand(5, 9);
   ctx.lineCap = "round";
@@ -498,7 +399,6 @@ export function drawGash(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Jagged fibres: short ticks perpendicular to the cut.
   const ticks = Math.max(2, Math.floor(len / 4));
   ctx.strokeStyle = "rgba(214, 206, 194, 0.34)";
   ctx.lineWidth = 1;
@@ -577,7 +477,6 @@ export function drawSplat(
     ctx.fill();
   }
 
-  // Opaque core.
   ctx.fillStyle = base;
   ctx.globalAlpha = 0.94;
   for (let i = 0; i < 7; i++) {
@@ -588,7 +487,6 @@ export function drawSplat(
     ctx.fill();
   }
 
-  // Satellite droplets flung outward, with teardrop tails aimed back at impact.
   const sats = 12 + Math.floor(Math.random() * 10);
   for (let i = 0; i < sats; i++) {
     const a = Math.random() * TAU;
@@ -641,7 +539,6 @@ export function drawPaintStreak(
   ctx.beginPath();
   ctx.ellipse(x, y - length / 2, width * 0.5, length / 2, 0, 0, TAU);
   ctx.fill();
-  // Bead at the bottom, where the run pooled and stopped.
   ctx.beginPath();
   ctx.arc(x, y, width * 0.85, 0, TAU);
   ctx.fill();

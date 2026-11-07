@@ -189,6 +189,19 @@ export function canvasUploadCostMs(gl: WebGLRenderingContext | WebGL2RenderingCo
   return uploadCostMs;
 }
 
+/** Whether per-frame canvas→GL pipelines lose more in transfer than they gain. Probes once. */
+export function canvasUploadsAreSlow(gl: WebGLRenderingContext | WebGL2RenderingContext): boolean {
+  return canvasUploadCostMs(gl) > SLOW_UPLOAD_THRESHOLD_MS;
+}
+
+/**
+ * Whether an earlier probe showed canvas uploads to be fast. Without WebGL
+ * nothing ever probes, and those environments count as slow.
+ */
+export function uploadsProbedFast(): boolean {
+  return uploadCostMs !== null && uploadCostMs <= SLOW_UPLOAD_THRESHOLD_MS;
+}
+
 // ── GPU pass timing ─────────────────────────────────────────────────────────
 
 /** The constants both disjoint timer-query extensions share. */

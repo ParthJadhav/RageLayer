@@ -3,6 +3,7 @@
  * ring and specimen jar. Same conventions as `./base`.
  */
 
+import { registerToolIconBounds } from "../icon-bounds";
 import { TAU } from "../math";
 import type { ToolArtFn } from "../types";
 import {
@@ -415,3 +416,10 @@ function drawBug(ctx: Ctx, x: number, y: number, ang: number, scale: number) {
   ctx.stroke();
   ctx.restore();
 }
+
+// Measured icon silhouettes; see the note in ./base.ts. Re-measure when a drawing changes.
+registerToolIconBounds(demolitionArt, [61, 24, 160, 91]);
+registerToolIconBounds(rocketArt, [52, 51, 155, 120]);
+registerToolIconBounds(lightningArt, [63, 63, 139, 147]);
+registerToolIconBounds(blackHoleArt, [44, 44, 127, 123]);
+registerToolIconBounds(bugsArt, [60, 53, 114, 112]);

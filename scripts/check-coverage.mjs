@@ -40,9 +40,7 @@ const BROWSER_ONLY = new Map([
  * the global line ratchet enforced; skip only the corrupted per-file line
  * value until Bun merges instances correctly.
  */
-const BUN_LCOV_LINE_EXEMPT = new Map([
-  ["src/pointer-input.ts", "direct unit and engine tests; duplicated transpiled-module line map"],
-]);
+const BUN_LCOV_LINE_EXEMPT = new Map();
 
 function parseLcov(text) {
   const files = [];

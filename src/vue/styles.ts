@@ -7,9 +7,11 @@
  * not install it twice, and the last one to unmount takes it away again.
  */
 
+import { sharedStyle } from "../shared-style";
+
 export const BAR_CLASS = "rl-bar";
 
-export const TOOLBAR_CSS = `
+const TOOLBAR_CSS = `
 .rl-host {
   position: fixed;
   inset: auto 0 max(16px, env(safe-area-inset-bottom)) 0;
@@ -170,22 +172,8 @@ export const TOOLBAR_CSS = `
 }
 `;
 
-let refCount = 0;
-let element: HTMLStyleElement | null = null;
-
-export function acquireToolbarStyles() {
-  if (typeof document === "undefined") return;
-  refCount++;
-  if (element) return;
-  element = document.createElement("style");
-  element.dataset.rageLayer = "toolbar";
-  element.textContent = TOOLBAR_CSS;
-  document.head.appendChild(element);
-}
-
-export function releaseToolbarStyles() {
-  if (refCount > 0) refCount--;
-  if (refCount > 0 || !element) return;
-  element.remove();
-  element = null;
-}
+export const { acquire: acquireToolbarStyles, release: releaseToolbarStyles } = sharedStyle(
+  "data-rage-layer",
+  "toolbar",
+  TOOLBAR_CSS,
+);

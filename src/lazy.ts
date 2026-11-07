@@ -1,3 +1,4 @@
+import { officialToolOrder } from "./tool-order";
 import type { Tool } from "./types";
 
 /** Load the seven everyday tools without downloading the heavy ordnance module. */
@@ -12,7 +13,7 @@ export async function loadHeavyTools(): Promise<Tool[]> {
   return [...heavyTools];
 }
 
-/** Load gravity, precision cutting, corrosion, and sticky explosives on demand. */
+/** Load precision cutting, corrosion, and sticky explosives on demand. */
 export async function loadAdvancedTools(): Promise<Tool[]> {
   const { advancedTools } = await import("./advanced-tools");
   return [...advancedTools];
@@ -25,5 +26,5 @@ export async function loadDefaultTools(): Promise<Tool[]> {
     import("./heavy-tools"),
     import("./advanced-tools"),
   ]);
-  return [...baseTools.slice(0, -1), ...heavyTools, ...advancedTools, baseTools.at(-1)!];
+  return officialToolOrder(baseTools, heavyTools, advancedTools);
 }

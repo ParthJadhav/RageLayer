@@ -1,5 +1,40 @@
 import type { SoundApi } from "./types";
 
+type LoopName = Parameters<SoundApi["loop"]>[0];
+
+interface LoopVoice {
+  filter: BiquadFilterType;
+  frequency: number;
+  q?: number;
+  playbackRate?: number;
+  /** Re-randomise the filter frequency within `[base, base + span)` on every update. */
+  jitter?: { base: number; span: number };
+  /** Sounds only while a tool is held, so a released or cancelled gesture fades it. */
+  held: boolean;
+}
+
+/** How each continuous loop is filtered out of the shared noise buffer. */
+const LOOP_VOICES: Record<LoopName, LoopVoice> = {
+  // Random crackle keeps the fire organic.
+  fire: {
+    filter: "lowpass",
+    frequency: 500,
+    playbackRate: 0.35,
+    jitter: { base: 350, span: 500 },
+    held: false,
+  },
+  water: { filter: "highpass", frequency: 2500, held: true },
+  saw: { filter: "bandpass", frequency: 1400, q: 6, playbackRate: 1.6, held: true },
+  flamethrower: { filter: "bandpass", frequency: 700, q: 0.4, playbackRate: 0.6, held: true },
+  // Sub-bass rumble: a singularity should be felt more than heard.
+  void: { filter: "lowpass", frequency: 110, q: 8, playbackRate: 0.2, held: true },
+};
+
+/** The loops a held tool drives, as opposed to the ambient crackle of a burning page. */
+export const HELD_TOOL_LOOPS = (Object.keys(LOOP_VOICES) as LoopName[]).filter(
+  (name) => LOOP_VOICES[name].held,
+);
+
 /**
  * Fully procedural sound effects — no audio assets, so the package stays a
  * zero-download dependency. Everything is synthesized from noise buffers and
@@ -293,6 +328,9 @@ export class SoundEngine implements SoundApi {
     }
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
+    // `loop` is reachable from untyped custom tools; an unknown name keeps the
+    // generic saw voice it always fell back to instead of throwing mid-frame.
+    const voice = LOOP_VOICES[name] ?? LOOP_VOICES.saw;
     if (!entry) {
       const source = ctx.createBufferSource();
       source.buffer = this.noiseBuffer;
@@ -300,30 +338,10 @@ export class SoundEngine implements SoundApi {
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      if (name === "fire") {
-        filter.type = "lowpass";
-        filter.frequency.value = 500;
-        source.playbackRate.value = 0.35;
-      } else if (name === "water") {
-        filter.type = "highpass";
-        filter.frequency.value = 2500;
-      } else if (name === "void") {
-        // Sub-bass rumble: a singularity should be felt more than heard.
-        filter.type = "lowpass";
-        filter.frequency.value = 110;
-        filter.Q.value = 8;
-        source.playbackRate.value = 0.2;
-      } else if (name === "flamethrower") {
-        filter.type = "bandpass";
-        filter.frequency.value = 700;
-        filter.Q.value = 0.4;
-        source.playbackRate.value = 0.6;
-      } else {
-        filter.type = "bandpass";
-        filter.frequency.value = 1400;
-        filter.Q.value = 6;
-        source.playbackRate.value = 1.6;
-      }
+      filter.type = voice.filter;
+      filter.frequency.value = voice.frequency;
+      if (voice.q !== undefined) filter.Q.value = voice.q;
+      if (voice.playbackRate !== undefined) source.playbackRate.value = voice.playbackRate;
       source.connect(filter).connect(gain).connect(this.master);
       source.start();
       entry = { source, gain, filter, stopTimer: null };
@@ -334,9 +352,13 @@ export class SoundEngine implements SoundApi {
       entry.stopTimer = null;
     }
     entry.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
-    if (name === "fire") {
-      // Random crackle: jitter the filter to keep the loop organic.
-      entry.filter.frequency.setTargetAtTime(350 + Math.random() * 500, ctx.currentTime, 0.05);
+    const { jitter } = voice;
+    if (jitter) {
+      entry.filter.frequency.setTargetAtTime(
+        jitter.base + Math.random() * jitter.span,
+        ctx.currentTime,
+        0.05,
+      );
     }
   }
 

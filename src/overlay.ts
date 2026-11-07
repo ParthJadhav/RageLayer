@@ -24,9 +24,25 @@
  */
 
 import { pickPixelRatio, RAGELAYER_IGNORE_ATTR } from "./capture";
+import { blit, sprites } from "./sprites";
 
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
 export const FX_MARGIN = 120;
+
+/** The void behind the page, so holes read as holes and not as transparency. */
+const VOID_STOPS = [
+  [0, "#17130f"],
+  [55, "#0c0a08"],
+  [100, "#060504"],
+] as const;
+
+/** Paint the void onto a 2D canvas in the void layer's colours, for snapshots. */
+export function paintVoid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
+  for (const [percent, color] of VOID_STOPS) bg.addColorStop(percent / 100, color);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+}
 
 /** The document band the fx canvas currently covers. */
 export interface FxView {
@@ -117,8 +133,9 @@ export class Overlay {
       position: "absolute",
       inset: "0",
       display: "none",
-      background:
-        "radial-gradient(ellipse 120% 60% at 50% 0%, #17130f 0%, #0c0a08 55%, #060504 100%)",
+      background: `radial-gradient(ellipse 120% 60% at 50% 0%, ${VOID_STOPS.map(
+        ([percent, color]) => `${color} ${percent}%`,
+      ).join(", ")})`,
     } satisfies Partial<CSSStyleDeclaration>);
     this.container.appendChild(this.voidLayer);
 
@@ -170,11 +187,6 @@ export class Overlay {
 
   mount(target: HTMLElement) {
     target.appendChild(this.container);
-  }
-
-  /** Whether anything has ever been painted on the damage canvas. */
-  get damageReady(): boolean {
-    return this.damaged;
   }
 
   /** Reveal (or hide) the void backdrop behind the page. */
@@ -248,7 +260,6 @@ export class Overlay {
     this.fxCanvas.height = Math.round(height * dpr);
     this.fxCanvas.style.width = `${width}px`;
     this.fxCanvas.style.height = `${height}px`;
-    // Force the transform to be re-applied against the new size.
     this.invalidateFxTransform();
     return true;
   }
@@ -271,6 +282,65 @@ export class Overlay {
   /** Wipe the overlay decals, if any were ever drawn. */
   clearDamage() {
     if (this.damaged) this.damageCtx.clearRect(0, 0, this.width, this.height);
+  }
+
+  /** Rub decals out under a soft round brush, if any were ever drawn. */
+  eraseDamage(x: number, y: number, radius: number, alpha: number) {
+    if (!this.damaged) return;
+    const ctx = this.damageCtx;
+    ctx.globalCompositeOperation = "destination-out";
+    blit(ctx, sprites().erase, x, y, radius, alpha);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** Backing-store pixels a damage snapshot holds; 0 when nothing was drawn. */
+  get damagePixelCost(): number {
+    return this.damaged ? this.damageCanvas.width * this.damageCanvas.height : 0;
+  }
+
+  /** Copy the decals for a history checkpoint, or null when nothing was drawn. */
+  snapshotDamage(): HTMLCanvasElement | null {
+    if (!this.damaged) return null;
+    const copy = document.createElement("canvas");
+    copy.width = this.damageCanvas.width;
+    copy.height = this.damageCanvas.height;
+    copy.getContext("2d")?.drawImage(this.damageCanvas, 0, 0);
+    return copy;
+  }
+
+  /** Copy the decals in a document rect onto `ctx` at (0, 0), if any were drawn. */
+  drawDamageInto(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    if (!this.damaged) return;
+    const d = this.dpr;
+    ctx.drawImage(this.damageCanvas, x * d, y * d, w * d, h * d, 0, 0, w, h);
+  }
+
+  /** Replace the decals with a `snapshotDamage` copy, or clear them for null. */
+  restoreDamage(snapshot: HTMLCanvasElement | null) {
+    if (!snapshot) {
+      this.clearDamage();
+      return;
+    }
+    this.ensureDamage();
+    const ctx = this.damageCtx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.damageCanvas.width, this.damageCanvas.height);
+    ctx.drawImage(snapshot, 0, 0);
+    ctx.restore();
+  }
+
+  /**
+   * Clear every fx backing-store pixel and re-apply the document transform
+   * the last `positionFx` set, without a per-frame save/restore.
+   */
+  clearFx() {
+    const ctx = this.fxCtx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.fxCanvas.width, this.fxCanvas.height);
+    const dpr = this.fxDpr;
+    ctx.setTransform(dpr, 0, 0, dpr, -this.fxOffsetX * dpr, -this.fxOffsetY * dpr);
   }
 
   /** The next `positionFx` re-applies the transform even if nothing scrolled. */

@@ -24,7 +24,6 @@ import { TAU } from "./math";
 // of, synchronously) instead of allocating a literal per ember and puff.
 import { scratchParticle } from "./particles";
 import type { ContentApi, Flame, Particle, SoundApi } from "./types";
-import { WOOD } from "./wood.js";
 
 /**
  * Wood-fuel grid resolution, CSS px per cell. Coarse cells are enough — the
@@ -148,7 +147,6 @@ export class FlameField {
   /** Returns true when a new flame was actually lit (the caller repaints). */
   spawn(host: FlameHost, x: number, y: number, intensity = 0.35): boolean {
     this.fuel.ensure(host.width, host.height);
-    intensity *= WOOD.flammability;
     if (intensity <= 0.015) return false;
     // Fire needs a page to burn. Where the content is mostly gone the void
     // shows through, and the void is not a place — a flame floating on it
@@ -156,8 +154,6 @@ export class FlameField {
     // ground barely holds a flame's footprint, and the render mask would clip
     // most of it away anyway.
     if (host.content?.ready && host.pageOpacityAt(x, y) < 0.35) return false;
-    // Merge into a nearby flame instead of stacking duplicates. Same shape as
-    // the dowse scan: axis reject, then squared distance — no square root.
     for (const f of this.list) {
       const reach = f.radius * 0.6;
       const dx = f.x - x;
@@ -309,12 +305,12 @@ export class FlameField {
             // Stage 2 — burning: the char deepens and erosion begins.
             layer.char(f.x, f.y + 2, f.radius * 0.85, 0.16);
             layer.burn(f.x, f.y + 2, f.radius * 0.22);
-            this.consumeFuel(host, f.x, f.y, (9 + 13 * f.intensity) * WOOD.burnRate);
+            this.consumeFuel(host, f.x, f.y, 9 + 13 * f.intensity);
           } else {
             // Stage 3 — deepening: the fire is inside the material now, eating
             // fast toward breakthrough, and the rim glows with thrown embers.
             layer.burn(f.x, f.y + 2, f.radius * (0.3 + f.intensity * 0.35));
-            this.consumeFuel(host, f.x, f.y, (13 + 16 * f.intensity) * WOOD.burnRate);
+            this.consumeFuel(host, f.x, f.y, 13 + 16 * f.intensity);
             if (Math.random() < 0.5) {
               const a = Math.random() * TAU;
               const p = scratchParticle(
@@ -356,8 +352,6 @@ export class FlameField {
         let localHeat = f.intensity * (0.55 + fuel * 0.45);
         for (const neighbour of this.list) {
           if (neighbour === f) continue;
-          // Only flames actually in contact contribute, so reject the rest
-          // before the square root: axis test first, then squared distance.
           const reach = f.radius + neighbour.radius * 1.4;
           const dx = neighbour.x - f.x;
           if (dx > reach || dx < -reach) continue;
@@ -474,7 +468,6 @@ export class FlameField {
       }
 
       if (f.intensity <= 0.02) {
-        // Died — final char + a puff of smoke.
         if (host.content?.ready) {
           host.content.char(f.x, f.y, f.radius, 0.35);
         } else {

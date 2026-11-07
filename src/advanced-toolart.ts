@@ -235,6 +235,7 @@ export const stickyBombArt: ToolArtFn = (ctx, state) => {
   ctx.restore();
 };
 
+// Measured icon silhouettes; see the note in ./toolart/base.ts.
 registerToolIconBounds(gravityGunArt, [40, 45, 140, 150]);
 registerToolIconBounds(laserCutterArt, [34, 40, 135, 140]);
 registerToolIconBounds(acidSprayerArt, [55, 57, 119, 139]);

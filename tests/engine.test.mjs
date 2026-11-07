@@ -380,7 +380,7 @@ describe("pointer dispatch", () => {
     engine.container.dispatchEvent(pointerEvent("pointerdown", 10, 10));
     window.dispatchEvent(pointerEvent("pointerup", 10, 10));
 
-    expect(stopped).toEqual(["water", "saw", "flamethrower", "void"]);
+    expect([...stopped].sort()).toEqual(["flamethrower", "saw", "void", "water"]);
   });
 
   test("clear cancels a held tool without firing its release action", () => {

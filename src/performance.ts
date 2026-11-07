@@ -273,9 +273,21 @@ export class PerformanceMonitor implements PerfCounterSink {
     return Math.max(30, Math.min(120, Math.round(1_000 / this.displayIntervalMs)));
   }
 
-  /** True while the high tier is holding full quality at a 60 fps cap. */
-  get rateCap60(): boolean {
-    return this.rateCapped;
+  /**
+   * The shortest gap between rendered frames at a tier. The 60 fps rate cap
+   * borrows the balanced tier's frame skip: full visual quality, half the
+   * cadence on >90 Hz displays.
+   */
+  minFrameIntervalMs(tier: PerformanceQualityTier): number {
+    return tier === "high" && this.rateCapped
+      ? QUALITY_PROFILES.balanced.minFrameIntervalMs
+      : QUALITY_PROFILES[tier].minFrameIntervalMs;
+  }
+
+  /** The frame rate a tier is judged against: native only for uncapped high. */
+  targetFps(tier: PerformanceQualityTier): number {
+    const native = this.nativeTargetFps;
+    return tier === "high" && !this.rateCapped ? native : Math.min(60, native);
   }
 
   onSample(callback: (snapshot: PerformanceSnapshot) => void): () => void {
@@ -364,11 +376,6 @@ export class PerformanceMonitor implements PerfCounterSink {
   setCaptureDuration(durationMs: number) {
     if (this.disposed) return;
     this.captureMs = durationMs;
-  }
-
-  setQualityReason(reason: string) {
-    if (this.disposed) return;
-    this.qualityReason = reason;
   }
 
   observeRaf(now: number) {

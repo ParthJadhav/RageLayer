@@ -221,7 +221,7 @@ describe("PerformanceMonitor rate-vs-quality ladder", () => {
       Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
     );
     expect(rec).toBeNull();
-    expect(monitor.rateCap60).toBe(true);
+    expect(monitor.minFrameIntervalMs("high")).toBe(QUALITY_PROFILES.balanced.minFrameIntervalMs);
     run(
       monitor,
       Array.from({ length: 15 }, () => measurement({ frameMs: 2, targetFps: 60 })),
@@ -236,7 +236,7 @@ describe("PerformanceMonitor rate-vs-quality ladder", () => {
       monitor,
       Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
     );
-    expect(monitor.rateCap60).toBe(true);
+    expect(monitor.minFrameIntervalMs("high")).toBe(QUALITY_PROFILES.balanced.minFrameIntervalMs);
     // While capped the engine reports targetFps 60; 14ms breaks that too.
     clock = 1002;
     let rec = null;
@@ -257,7 +257,7 @@ describe("PerformanceMonitor rate-vs-quality ladder", () => {
       monitor,
       Array.from({ length: 30 }, () => measurement({ frameMs: 8, targetFps: 120 })),
     );
-    expect(monitor.rateCap60).toBe(true);
+    expect(monitor.minFrameIntervalMs("high")).toBe(QUALITY_PROFILES.balanced.minFrameIntervalMs);
     // Cool against 60fps but NOT against 8.4ms native (p95 5 > 8.4 * 0.45):
     // five cool windows must leave the cap in place.
     for (let window = 0; window < 5; window++) {
@@ -267,7 +267,7 @@ describe("PerformanceMonitor rate-vs-quality ladder", () => {
         1000 * (window + 2) + 100,
       );
     }
-    expect(monitor.rateCap60).toBe(true);
+    expect(monitor.minFrameIntervalMs("high")).toBe(QUALITY_PROFILES.balanced.minFrameIntervalMs);
     // Deep headroom (2ms against an 8.4ms native budget) releases it.
     for (let window = 0; window < 5; window++) {
       run(
@@ -276,7 +276,7 @@ describe("PerformanceMonitor rate-vs-quality ladder", () => {
         1000 * (window + 8) + 100,
       );
     }
-    expect(monitor.rateCap60).toBe(false);
+    expect(monitor.minFrameIntervalMs("high")).toBe(QUALITY_PROFILES.high.minFrameIntervalMs);
     run(
       monitor,
       Array.from({ length: 15 }, () => measurement({ frameMs: 2, targetFps: 120 })),

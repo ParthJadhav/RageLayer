@@ -16,7 +16,7 @@
 import type { RageLayerEngine } from "./engine";
 import { copyBlobToClipboard, downloadBlob, snapshotFilename } from "./share";
 import { type RageLayerStrings, resolveStrings, toolStrings } from "./strings";
-import { toolIconDataUrl } from "./toolart";
+import { toolIconDataUrl } from "./toolart/icons";
 import { TOOLBAR_ICONS } from "./toolbar-icons";
 import type { CaptureStatus, Tool, ToolStyle } from "./types";
 
@@ -104,7 +104,6 @@ export class ToolbarModel {
     this.options = options;
     this.strings = resolveStrings(options.strings);
 
-    // Every engine event that changes something a toolbar renders.
     for (const event of ["toolchange", "statuschange", "historychange", "clear"] as const) {
       this.detachers.push(engine.on(event, () => this.invalidate()));
     }

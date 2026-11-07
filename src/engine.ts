@@ -1,6 +1,6 @@
-import { SoundEngine } from "./audio";
+import { HELD_TOOL_LOOPS, SoundEngine } from "./audio";
 import { BugSwarm } from "./bugs-sim";
-import { defaultCaptureFilter } from "./capture";
+import { defaultCaptureFilter, MAX_CAPTURE_HEIGHT } from "./capture";
 import { CaptureController, type CaptureHost } from "./capture-controller";
 import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
 import type { ContentCheckpoint, ContentLayer } from "./content";
@@ -18,11 +18,18 @@ import {
   shardBudget,
   voronoiCells,
 } from "./fracture";
-import { drawAccretionDisc, drawEventHorizon, drawFlame, FxPainter } from "./fx-render";
-import { measuredUploadCostMs, SLOW_UPLOAD_THRESHOLD_MS } from "./gl";
+import {
+  drawAccretionDisc,
+  drawEventHorizon,
+  drawFlame,
+  FxPainter,
+  SPAGHETTI_COOL,
+  SPAGHETTI_WARM,
+} from "./fx-render";
+import { uploadsProbedFast } from "./gl";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
-import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
-import { Overlay } from "./overlay";
+import { isParked, PARKED_POINTER, REST_AIM_X, REST_AIM_Y, TAU } from "./math";
+import { Overlay, paintVoid } from "./overlay";
 import { ParticleSystem, type ParticleWorld, scratchParticle } from "./particles";
 import {
   detectInitialQuality,
@@ -47,7 +54,6 @@ import type {
   Flame,
   FractureOptions,
   Particle,
-  PerformanceQuality,
   PerformanceQualityTier,
   PerformanceSnapshot,
   RageLayerEngineApi,
@@ -61,7 +67,6 @@ import { WOOD } from "./wood";
 /** Engines currently alive in this document — refcount for the sprite cache. */
 let liveEngines = 0;
 
-const MAX_CAPTURE_HEIGHT = 12000;
 /** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
 const HEAT_SCALE = 8;
 /**
@@ -180,16 +185,14 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private artVY = 0;
   private readonly artAimX = REST_AIM_X;
   private readonly artAimY = REST_AIM_Y;
-  private artPrev: Vec2 = { x: -1000, y: -1000 };
+  private artPrev: Vec2 = { x: PARKED_POINTER, y: PARKED_POINTER };
   private raf = 0;
   /** True after the loop deliberately stopped, so its next wake starts from a fresh clock. */
   private frameClockSleeping = true;
   private lastTime = 0;
   private lastRenderedAt = 0;
   private monitor: PerformanceMonitor;
-  private qualityMode: PerformanceQuality;
   private qualityTier: PerformanceQualityTier;
-  private qualityProfile: QualityProfile;
   /** Resolved once at mount from the explicit option or the OS preference. */
   private reducedMotion = false;
   /**
@@ -250,6 +253,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   private heatDirty = true;
   private _singularity: Singularity | null = null;
+  private singularityHum = false;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
   /** Countdown to the next page element the singularity rips loose. */
@@ -273,13 +277,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
       options.reducedMotion === true ||
       (options.reducedMotion !== false &&
         (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false));
-    this.qualityMode = options.quality ?? "auto";
-    this.qualityTier = detectInitialQuality(this.qualityMode);
-    this.qualityProfile = QUALITY_PROFILES[this.qualityTier];
+    const qualityMode = options.quality ?? "auto";
+    this.qualityTier = detectInitialQuality(qualityMode);
     this.monitor = new PerformanceMonitor(
       options.performance,
       this.qualityTier,
-      this.qualityMode === "auto",
+      qualityMode === "auto",
     );
     this.opts = resolveEngineOptions(options);
     this.physics = new PhysicsWorld({
@@ -287,8 +290,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       iterations: this.qualityProfile.physicsIterations,
     });
     this.applyEntityLimits();
-    // Asked for live on a browser without the flag: record it up front so the
-    // toolbar can say *why* it is in snapshot mode.
     // Registered before the constructor's `captureContent()` call, so a host
     // that passes `onError` sees capture failures — the most likely failure of
     // all, and the one that happens before it could subscribe afterwards.
@@ -416,6 +417,10 @@ export class RageLayerEngine implements RageLayerEngineApi {
   get content(): ContentApi | null {
     return this.contentLayer?.ready ? this.contentLayer : null;
   }
+  private get qualityProfile(): QualityProfile {
+    return QUALITY_PROFILES[this.qualityTier];
+  }
+
   get performanceSnapshot(): PerformanceSnapshot {
     return this.monitor.snapshot;
   }
@@ -685,13 +690,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
   private createHistoryEntry(label?: string): EngineHistoryEntry {
     const content = this.contentLayer?.createCheckpoint() ?? null;
-    let damage: HTMLCanvasElement | null = null;
-    if (this.overlay.damageReady) {
-      damage = document.createElement("canvas");
-      damage.width = this.overlay.damageCanvas.width;
-      damage.height = this.overlay.damageCanvas.height;
-      damage.getContext("2d")?.drawImage(this.overlay.damageCanvas, 0, 0);
-    }
+    const damage = this.overlay.snapshotDamage();
     const fuel = this.fire.snapshotFuel();
     const pixelCost =
       (content?.pixelCost ?? 0) +
@@ -719,9 +718,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private estimateHistoryPixelCost(): number {
     return (
       (this.contentLayer?.checkpointPixelCost ?? 0) +
-      (this.overlay.damageReady
-        ? this.overlay.damageCanvas.width * this.overlay.damageCanvas.height
-        : 0) +
+      this.overlay.damagePixelCost +
       this.fieldPixelCost()
     );
   }
@@ -736,21 +733,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     try {
       if (entry.content) this.contentLayer?.restoreCheckpoint(entry.content);
       else this.contentLayer?.restoreAll();
-      if (entry.damage) {
-        this.overlay.ensureDamage();
-        this.overlay.damageCtx.save();
-        this.overlay.damageCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.overlay.damageCtx.clearRect(
-          0,
-          0,
-          this.overlay.damageCanvas.width,
-          this.overlay.damageCanvas.height,
-        );
-        this.overlay.damageCtx.drawImage(entry.damage, 0, 0);
-        this.overlay.damageCtx.restore();
-      } else if (this.overlay.damageReady) {
-        this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
-      }
+      this.overlay.restoreDamage(entry.damage);
       this.fire.restoreFuel(entry.fuel);
       this.destruction = entry.destruction;
       for (let i = 0; i < this.pageElements.length; i++) {
@@ -774,8 +757,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // page, without synthesizing an onUp action such as a singularity collapse.
     this.pointerInput.cancel();
     if (!this.restoringHistory) this.checkpoint("clear");
-    if (this.overlay.damageReady)
-      this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+    this.overlay.clearDamage();
     this.contentLayer?.restoreAll();
     this.fire.clear();
     this.particles.clear();
@@ -843,28 +825,19 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const sx = this.scrollX;
     const sy = Math.max(0, Math.min(this.scrollY, this.overlay.height - h));
 
-    // The void behind the page, so holes read as holes and not as transparency.
-    const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
-    bg.addColorStop(0, "#17130f");
-    bg.addColorStop(0.55, "#0c0a08");
-    bg.addColorStop(1, "#060504");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+    paintVoid(ctx, w, h);
 
     const layer = this.contentLayer;
     if (layer?.ready) {
       const d = layer.dpr;
       ctx.drawImage(layer.canvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
     }
-    if (this.overlay.damageReady) {
-      const d = this.overlay.dpr;
-      ctx.drawImage(this.overlay.damageCanvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
-    }
+    this.overlay.drawDamageInto(ctx, sx, sy, w, h);
     // The effects layer is viewport-parked, so its source rect is relative to
     // wherever `positionFx` last left it.
     const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
     if (this.fxPainted && presented.width > 0) {
-      const d = this.overlay.dpr;
+      const d = this.overlay.fxDpr;
       ctx.drawImage(
         presented,
         (sx - this.overlay.fxOffsetX) * d,
@@ -911,8 +884,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.physics.clear();
     this.postfx?.dispose();
     this.postfx = null;
-    this.overlay.container.remove();
-    this.overlay.container.replaceChildren();
+    this.overlay.dispose();
     this.sound.dispose();
     this.history?.clear();
     this.emit("dispose");
@@ -922,10 +894,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // `dispose` must release the expensive state even when application code
     // intentionally keeps the engine object for inspection. In particular, a
     // detached high-DPI canvas keeps its whole pixel backing until it is reset.
-    this.overlay.damageCanvas.width = 0;
-    this.overlay.damageCanvas.height = 0;
-    this.overlay.fxCanvas.width = 0;
-    this.overlay.fxCanvas.height = 0;
     if (this.heatCanvas) {
       this.heatCanvas.width = 0;
       this.heatCanvas.height = 0;
@@ -989,16 +957,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // Sweeping is the one thing that un-wrecks the page, so it walks the
     // vignette back too.
     this.destruction = Math.max(0, this.destruction - 0.004);
-    // Repair the real content from the pristine snapshot...
     this.contentLayer?.restore(x, y, radius);
-    // ...and sweep any overlay decals (also the fallback path). Nothing to
-    // sweep if the damage canvas was never painted on.
-    if (!this.overlay.damageReady) return;
-    const ctx = this.overlay.damageCtx;
-    ctx.globalCompositeOperation = "destination-out";
-    blit(ctx, sprites().erase, x, y, radius, 1);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    this.overlay.eraseDamage(x, y, radius, 1);
   }
 
   /**
@@ -1008,13 +968,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   washSurface(x: number, y: number, radius: number, strength = 1) {
     this.contentLayer?.wash(x, y, radius, strength);
-    if (this.overlay.damageReady) {
-      const ctx = this.overlay.damageCtx;
-      ctx.globalCompositeOperation = "destination-out";
-      blit(ctx, sprites().erase, x, y, radius, Math.min(1, strength));
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = "source-over";
-    }
+    this.overlay.eraseDamage(x, y, radius, Math.min(1, strength));
     this.markSurface(x, y, radius);
     this.signalInteraction("water", x, y);
   }
@@ -1148,7 +1102,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   }
 
   fracture(x: number, y: number, radius: number, options: FractureOptions = {}): number {
-    // Anything crawling in the struck region is crushed along with it.
     if (this.bugs.count > 0) this.squashBugs(x, y, radius);
     const src = this.chunkSource;
     if (!src) return 0;
@@ -1171,7 +1124,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
         cell,
         {
           density: 0.0018 * WOOD.density,
-          restitution: Math.max(0.14, WOOD.restitution),
+          restitution: 0.14,
           friction: 0.62,
           ttl: options.ttl ?? 10 + Math.random() * 8,
         },
@@ -1218,7 +1171,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     if (options.fracture !== false) {
       this.fracture(x, y, radius * 0.9, { power: power * 0.8, count: shardBudget(radius, 1.7) });
     }
-    // Everything already loose gets thrown, including debris from earlier hits.
     this.physics.blast(x, y, radius * 2.2, power * 1.1);
     this.particles.blast(x, y, radius, power * 2.2);
     this.contentLayer?.char(x, y, radius * 1.7, 0.55);
@@ -1599,10 +1551,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
   /** Loops driven by a held tool, distinct from persistent ambient fire. */
   private silenceToolLoops() {
-    this.sound.loop("water", 0);
-    this.sound.loop("saw", 0);
-    this.sound.loop("flamethrower", 0);
-    this.sound.loop("void", 0);
+    for (const name of HELD_TOOL_LOOPS) this.sound.loop(name, 0);
   }
 
   private emit(event: EngineEvent) {
@@ -1614,7 +1563,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private applyQuality(tier: PerformanceQualityTier) {
     if (tier === this.qualityTier) return;
     this.qualityTier = tier;
-    this.qualityProfile = QUALITY_PROFILES[tier];
 
     this.applyEntityLimits();
     this.setPostFXEnabled(this.opts.postFX && this.qualityProfile.postFX);
@@ -1640,16 +1588,24 @@ export class RageLayerEngine implements RageLayerEngineApi {
     postfx.counters = this.monitor;
     this.heatCanvas = document.createElement("canvas");
     this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
-    postfx.resize(
-      this.overlay.fxCanvas.width,
-      this.overlay.fxCanvas.height,
-      this.overlay.fxWidth,
-      this.overlay.fxHeight,
+    this.fitPostFXToOverlay();
+  }
+
+  /** Match the post-FX chain and its heat field to the fx canvas geometry. */
+  private fitPostFXToOverlay() {
+    const overlay = this.overlay;
+    this.postfx?.resize(
+      overlay.fxCanvas.width,
+      overlay.fxCanvas.height,
+      overlay.fxWidth,
+      overlay.fxHeight,
     );
-    this.heatCanvas.width = Math.max(1, Math.round(this.overlay.fxWidth / HEAT_SCALE));
-    this.heatCanvas.height = Math.max(1, Math.round(this.overlay.fxHeight / HEAT_SCALE));
-    // A resized canvas is transparent again; the next `resetHeat` must fill it.
-    this.heatDirty = true;
+    if (this.heatCanvas) {
+      this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
+      this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
+      // A resized canvas is transparent again; the next `resetHeat` must fill it.
+      this.heatDirty = true;
+    }
   }
 
   private setPostFXEnabled(enabled: boolean) {
@@ -1671,7 +1627,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     outgoing.replaceWith(incoming);
     this.postfxActive = next;
     if (!next) postfx?.clear();
-    this.overlay.fxOffsetX = this.overlay.fxOffsetY = -1;
+    this.overlay.invalidateFxTransform();
   }
 
   private docSize() {
@@ -1698,20 +1654,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   private resize() {
     const { width, height } = this.docSize();
-    const overlay = this.overlay;
-    overlay.resize(width, height, this.opts.effectsPixelRatio);
-    this.postfx?.resize(
-      overlay.fxCanvas.width,
-      overlay.fxCanvas.height,
-      overlay.fxWidth,
-      overlay.fxHeight,
-    );
-    if (this.heatCanvas) {
-      this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
-      this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
-      // A resized canvas is transparent again; the next `resetHeat` must fill it.
-      this.heatDirty = true;
-    }
+    this.overlay.resize(width, height, this.opts.effectsPixelRatio);
+    this.fitPostFXToOverlay();
   }
 
   private onScroll = () => {
@@ -1760,12 +1704,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.raf = 0;
     this.frameClockSleeping = false;
     this.monitor.observeRaf(now);
-    // The 60 fps rate cap borrows the balanced tier's frame-skip interval:
-    // full visual quality, half the cadence on >90 Hz displays.
-    const minFrameInterval =
-      this.qualityTier === "high" && this.monitor.rateCap60
-        ? QUALITY_PROFILES.balanced.minFrameIntervalMs
-        : this.qualityProfile.minFrameIntervalMs;
+    const minFrameInterval = this.monitor.minFrameIntervalMs(this.qualityTier);
     if (minFrameInterval > 0 && now - this.lastRenderedAt < minFrameInterval) {
       this.requestFrame();
       return;
@@ -1841,11 +1780,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.updateLoops();
 
     const frameMs = performance.now() - frameStartedAt;
-    const nativeTarget = this.monitor.nativeTargetFps;
-    const targetFps =
-      this.qualityTier === "high" && !this.monitor.rateCap60
-        ? nativeTarget
-        : Math.min(60, nativeTarget);
     const recommendation = this.monitor.record({
       cadenceMs: dt * 1_000,
       frameMs,
@@ -1869,9 +1803,9 @@ export class RageLayerEngine implements RageLayerEngineApi {
       quality: this.qualityTier,
       pixelRatio: this.overlay.dpr,
       effectsPixelRatio: this.overlay.fxDpr,
-      targetFps,
+      targetFps: this.monitor.targetFps(this.qualityTier),
     });
-    if (recommendation && this.qualityMode === "auto") this.applyQuality(recommendation);
+    if (recommendation) this.applyQuality(recommendation);
 
     if (this.hasActiveWork(toolWorkPending)) this.requestFrame();
     else this.frameClockSleeping = true;
@@ -1972,12 +1906,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   private stepToolArt(dt: number) {
     const p = this.pointer;
-    if (p.x <= -999) {
+    if (isParked(p)) {
       this.artVX = this.artVY = 0;
-      this.artPrev.x = this.artPrev.y = -1000;
+      this.artPrev.x = this.artPrev.y = PARKED_POINTER;
       return;
     }
-    if (this.artPrev.x > -999 && dt > 0) {
+    if (!isParked(this.artPrev) && dt > 0) {
       const k = Math.min(1, dt * 14);
       this.artVX += ((p.x - this.artPrev.x) / dt - this.artVX) * k;
       this.artVY += ((p.y - this.artPrev.y) / dt - this.artVY) * k;
@@ -2065,12 +1999,16 @@ export class RageLayerEngine implements RageLayerEngineApi {
       // Clearing is idempotent and cheap; the renderer repaints the warped
       // region once so the page straightens back out.
       this.contentLayer?.setWarp(null);
-      this.sound.loop("void", 0);
+      // Only on the frame the singularity ends: the gravity gun drives the
+      // same loop while held, and an unconditional fade would mute it.
+      if (this.singularityHum) this.sound.loop("void", 0);
+      this.singularityHum = false;
       return;
     }
     s.charge = Math.min(1, s.charge + dt * 1.8);
     const r = s.radius * s.charge;
     this.sound.loop("void", 0.45 * s.charge);
+    this.singularityHum = true;
 
     // Spacetime around the hole: gravitational lensing + frame-dragging swirl
     // in the surface shader. Pure re-shading — no texture upload — so driving
@@ -2100,7 +2038,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       if (nearest) this.dropElement(nearest, s.x, s.y);
     }
 
-    // Bugs unlucky enough to crawl inside the horizon are simply gone.
     this.bugs.vanish(s.x, s.y, r);
 
     // Eat the page. Throttled because each bite repaints a document-sized
@@ -2111,7 +2048,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       this.contentLayer.punch(s.x, s.y, r * 0.92);
     }
 
-    // Loose particles spiral in.
     this.particles.attract(s.x, s.y, s.power, r * 0.55, dt);
 
     // A held singularity is a vacuum for wreckage: everything the page has
@@ -2157,7 +2093,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
         maxLife: 0.5 + Math.random() * 0.7,
         size: 1.4 + Math.random() * 2.6,
         gravity: 0,
-        color: Math.random() < 0.4 ? "#c98bff" : "#ffb066",
+        color: Math.random() < 0.4 ? SPAGHETTI_COOL : SPAGHETTI_WARM,
       });
     }
     this.heat(s.x, s.y, r * 2.4, 0.55 * s.charge);
@@ -2193,7 +2129,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // can stay as the last retained canvas image without keeping rAF alive.
     // Held gestures and live effects still animate through `hasActiveWork`.
     const artVisible =
-      this.opts.toolStyle === "3d" && !!this.activeTool?.art && this.pointer.x > -999;
+      this.opts.toolStyle === "3d" && !!this.activeTool?.art && !isParked(this.pointer);
     const idle =
       this.particles.count === 0 &&
       this.fire.count === 0 &&
@@ -2207,13 +2143,13 @@ export class RageLayerEngine implements RageLayerEngineApi {
       // Nothing to draw: clear once after the last active frame, then leave the
       // canvas (and the compositor) completely alone while idle.
       if (this.fxPainted) {
-        this.clearFxCanvas(ctx);
+        this.overlay.clearFx();
         if (this.postfxActive) this.postfx?.clear();
         this.fxPainted = false;
       }
       return;
     }
-    this.clearFxCanvas(ctx);
+    this.overlay.clearFx();
     this.fxPainted = true;
 
     // Bugs crawl *on* the page, under every particle and piece of debris.
@@ -2276,29 +2212,15 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const sing = this._singularity;
     if (sing) drawEventHorizon(ctx, sing);
 
-    // Additive pass: the accretion disc, then every glowing particle.
     ctx.globalCompositeOperation = "lighter";
     if (sing) drawAccretionDisc(ctx, sing, time);
     this.fx.drawHot(ctx, time);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
 
-    // The tool in hand, over everything it just did.
     if (artVisible) this.renderToolArt(ctx, time);
 
     this.postFXFrameMs = this.present(time);
-  }
-
-  /** Clear every backing-store pixel regardless of the document-space transform. */
-  private clearFxCanvas(ctx: CanvasRenderingContext2D) {
-    // Re-apply `positionFx`'s document-space transform directly instead of
-    // paying a save/restore state push per frame. Callers only run after
-    // `positionFx`, so the overlay's parked offsets are always current.
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const overlay = this.overlay;
-    const dpr = overlay.fxDpr;
-    ctx.setTransform(dpr, 0, 0, dpr, -overlay.fxOffsetX * dpr, -overlay.fxOffsetY * dpr);
   }
 
   /** Scratch for `maskFxToPage`'s per-frame hole-run query; reused, never grows hot. */
@@ -2362,8 +2284,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // optimal and the hole cache below is pure overhead; a slow probe marks
     // the browsers whose canvas the `destination-in` family deopts. An
     // unprobed environment (no WebGL at all) is treated as slow.
-    const uploadCost = measuredUploadCostMs();
-    if (uploadCost !== null && uploadCost <= SLOW_UPLOAD_THRESHOLD_MS) {
+    if (uploadsProbedFast()) {
       ctx.globalCompositeOperation = "destination-in";
       ctx.drawImage(
         layer.surface,

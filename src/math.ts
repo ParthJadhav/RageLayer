@@ -22,6 +22,17 @@ export const TAU = Math.PI * 2;
 export const REST_AIM_X = -0.55;
 export const REST_AIM_Y = -0.835;
 
+/**
+ * Where the pointer sits while it is off the page (left, cancelled, or a
+ * background tick with no pointer at all): far outside anything drawable.
+ */
+export const PARKED_POINTER = -1000;
+
+/** Whether a pointer position is the parked one rather than a real point. */
+export function isParked(point: { x: number }): boolean {
+  return point.x === PARKED_POINTER;
+}
+
 /** Uniform random in `[min, max)`. */
 export function rand(min: number, max: number): number {
   return min + Math.random() * (max - min);

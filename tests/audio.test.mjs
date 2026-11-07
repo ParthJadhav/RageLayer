@@ -107,6 +107,16 @@ describe("looped audio lifecycle", () => {
     sound.dispose();
   });
 
+  test("a loop name outside the built-in set plays the generic voice", () => {
+    const sound = new SoundEngine();
+    sound.enabled = true;
+    // Untyped custom tools can pass any name; it must not throw mid-frame.
+    expect(() => sound.loop("drill", 0.2)).not.toThrow();
+    expect(window.AudioContext.sources).toHaveLength(1);
+    expect(sound.loops.size).toBe(1);
+    sound.dispose();
+  });
+
   test("disposing during a fade cancels delayed teardown", async () => {
     const sound = new SoundEngine();
     sound.enabled = true;

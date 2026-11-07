@@ -103,12 +103,10 @@ export function harvestElements(
     if (area < MIN_AREA || rect.w < MIN_SIDE || rect.h < MIN_SIDE) return;
     // A single element covering most of the page is the page, not furniture.
     if (area > rootArea * 0.55) return;
-    // Wrapper test: an element whose child fills it adds no new granularity.
     for (const child of children) {
       const cr = rects.get(child);
       if (cr && cr.w * cr.h > area * WRAPPER_CHILD_RATIO) return;
     }
-    // Something has to actually be visible inside it.
     if (children.length === 0 && !el.textContent?.trim()) return;
     candidates.push(el);
   };

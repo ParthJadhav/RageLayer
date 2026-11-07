@@ -1,3 +1,4 @@
+import { isParked, PARKED_POINTER } from "./math";
 import type { PointerInputController, PointerInputHost } from "./pointer-input-host";
 import type { ToolPointerEvent, Vec2 } from "./types";
 
@@ -7,7 +8,6 @@ import type { ToolPointerEvent, Vec2 } from "./types";
  * total displacement without letting an event storm allocate indefinitely.
  */
 const POINTER_RING_CAP = 32;
-const PARKED_POINTER = -1000;
 
 /**
  * Own the complete pointer gesture lifecycle for an engine.
@@ -77,8 +77,8 @@ export function createPointerInput(host: PointerInputHost): PointerInputControll
       const move = pendingMoves[i];
       moveScratch.x = move.x;
       moveScratch.y = move.y;
-      moveScratch.dx = previous.x < -100 ? 0 : move.x - previous.x;
-      moveScratch.dy = previous.y < -100 ? 0 : move.y - previous.y;
+      moveScratch.dx = isParked(previous) ? 0 : move.x - previous.x;
+      moveScratch.dy = isParked(previous) ? 0 : move.y - previous.y;
       moveScratch.buttons = move.buttons;
       previous.x = move.x;
       previous.y = move.y;
@@ -149,8 +149,8 @@ export function createPointerInput(host: PointerInputHost): PointerInputControll
     const toolEvent = {
       x,
       y,
-      dx: previous.x < -100 ? 0 : x - previous.x,
-      dy: previous.y < -100 ? 0 : y - previous.y,
+      dx: isParked(previous) ? 0 : x - previous.x,
+      dy: isParked(previous) ? 0 : y - previous.y,
       buttons: event.buttons,
     };
     previous.x = x;

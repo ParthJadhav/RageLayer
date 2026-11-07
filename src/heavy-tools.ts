@@ -12,9 +12,9 @@
 
 import { emojiCursor } from "./cursors";
 import { drawBurnChannel } from "./decals";
-import { emit, rand, TAU } from "./math";
+import { emit, isParked, PARKED_POINTER, rand, TAU } from "./math";
 import { createEngineState } from "./tool-kit";
-import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart";
+import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart/heavy";
 import type { RageLayerEngineApi, Tool, Vec2 } from "./types";
 import { WOOD } from "./wood";
 
@@ -49,7 +49,7 @@ export const blackHole: Tool = {
     const state = blackHoleStates.get(engine);
     const s = engine.singularity;
     if (!s) return;
-    if (!held || pointer.x <= -100) {
+    if (!held || isParked(pointer)) {
       collapseSingularity(engine);
       return;
     }
@@ -134,8 +134,6 @@ export const rocketLauncher: Tool = {
       life: 0,
       smokeDebt: 0,
     });
-    // Launch signature: a flash at the muzzle, backblast smoke out the rear
-    // of the tube, and the recoil shoving the page the other way.
     engine.spawnParticle({
       kind: "flash",
       x: e.x,
@@ -185,8 +183,6 @@ export const rocketLauncher: Tool = {
       r.y += r.vy * dt;
 
       const angle = Math.atan2(r.vy, r.vx);
-      // The rocket is drawn entirely out of particles: a hot core, a motor
-      // flare behind it, and a smoke column that hangs in the air afterwards.
       engine.spawnParticle({
         kind: "flash",
         x: r.x,
@@ -256,7 +252,7 @@ export const rocketLauncher: Tool = {
     }
   },
   backgroundTick(engine, dt) {
-    rocketLauncher.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+    rocketLauncher.tick?.(engine, dt, false, { x: PARKED_POINTER, y: PARKED_POINTER });
   },
 };
 
@@ -368,7 +364,6 @@ export const lightning: Tool = {
       const branch = boltPath(bx, by, bx + Math.cos(a) * len, by + Math.sin(a) * len, 7, 48);
       drawBolt(engine, branch, 5, 0.15);
       drawBolt(engine, branch, 2, 0.2);
-      // Sub-forks off the branch's midpoint.
       if (Math.random() < 0.7) {
         const j = Math.floor(branch.length / 4) * 2;
         const fa = a + rand(-1.1, 1.1);
@@ -404,8 +399,6 @@ export const lightning: Tool = {
         engine.content?.cut(main[i], main[i + 1], main[i + 2], main[i + 3]);
       }
 
-      // Ground crawlers: short arcs that skitter outward from the strike point
-      // along the surface, the way a strike grounds itself in every direction.
       for (let c = 0; c < 6 + Math.round(WOOD.conductivity * 4); c++) {
         const a = rand(0, TAU);
         const len = rand(40, 130);
@@ -421,8 +414,6 @@ export const lightning: Tool = {
       }
     }
 
-    // Sky flash — the whole viewport blinks — then, if the bolt found page to
-    // strike, the crater.
     engine.spawnParticle({
       kind: "flash",
       x: e.x,
@@ -441,18 +432,14 @@ export const lightning: Tool = {
         // seed fires duplicated the persistent flame population on every hit.
         incendiary: false,
       });
-      // Fires scattered up the strike path — the bolt lit everything it touched.
       for (let i = 8; i < main.length - 2; i += 4) {
         if (Math.random() < 0.45) engine.spawnFlame(main[i], main[i + 1], 0.4);
       }
       engine.heat(e.x, e.y, 260, 1);
     }
-    // Thunder either way — but a bolt that found nothing to hit shakes the
-    // page with sound alone, not with an impact.
     engine.shake(grounded ? 26 : 10, 0, 1);
     engine.sound.zap();
 
-    // Queue the flicker: two restrikes down the same channel.
     restrikes.push(
       { pts: main, delay: 0.07 + rand(0, 0.05), impactX: e.x, impactY: e.y, grounded },
       { pts: main, delay: 0.17 + rand(0, 0.07), impactX: e.x, impactY: e.y, grounded },
@@ -485,7 +472,7 @@ export const lightning: Tool = {
     }
   },
   backgroundTick(engine, dt) {
-    lightning.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+    lightning.tick?.(engine, dt, false, { x: PARKED_POINTER, y: PARKED_POINTER });
   },
 };
 
@@ -550,7 +537,6 @@ export const bugs: Tool = {
   cursor: emojiCursor("🐛"),
   art: bugsArt,
   onDown(engine, e) {
-    // One click, one meaning: squash what's underfoot, otherwise release one.
     if (engine.squashBugs(e.x, e.y, 24) === 0) {
       engine.spawnBugs(e.x, e.y, 1);
     }

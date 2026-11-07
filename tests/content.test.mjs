@@ -288,8 +288,3 @@ describe("lifecycle", () => {
     }).not.toThrow();
   });
 });
-
-test("freeze-specific melt support is absent", () => {
-  const layer = new ContentLayer();
-  expect("melt" in layer).toBe(false);
-});

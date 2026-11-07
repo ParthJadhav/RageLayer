@@ -16,10 +16,11 @@
 
 import { RAGELAYER_IGNORE_ATTR } from "./capture";
 import { defaultTools } from "./default-tools";
-import { RageLayerEngine } from "./engine";
+import type { RageLayerEngine } from "./engine";
 import type { RageLayerStrings } from "./strings";
-import { type ToolbarButton, ToolbarModel, type ToolbarState } from "./toolbar";
+import type { ToolbarButton, ToolbarModel, ToolbarState } from "./toolbar";
 import { toolbarIconElement } from "./toolbar-icons";
+import { openToolbarSession, rovingFocusTarget, type ToolbarSession } from "./toolbar-session";
 import type { RageLayerEngineOptions, Tool } from "./types";
 
 export const TAG_NAME = "rage-layer";
@@ -210,14 +211,12 @@ const ElementBase: typeof HTMLElement =
 export class RageLayerElement extends ElementBase {
   static observedAttributes = ["initial-tool", "sound"];
 
-  private engine: RageLayerEngine | null = null;
-  private model: ToolbarModel | null = null;
+  private session: ToolbarSession | null = null;
   private unsubscribe: (() => void) | null = null;
   private bar!: HTMLDivElement;
   private guide!: HTMLDivElement;
   private buttons: HTMLButtonElement[] = [];
   private restoringFocus = false;
-  private previousFocus: HTMLElement | null = null;
   private config: RageLayerElementConfig = {};
 
   /** Set richer options than attributes can express, before connecting. */
@@ -230,7 +229,11 @@ export class RageLayerElement extends ElementBase {
   }
 
   get rageLayerEngine(): RageLayerEngine | null {
-    return this.engine;
+    return this.session?.engine ?? null;
+  }
+
+  private get model(): ToolbarModel | null {
+    return this.session?.model ?? null;
   }
 
   connectedCallback() {
@@ -265,35 +268,23 @@ export class RageLayerElement extends ElementBase {
     this.guide.setAttribute("aria-hidden", "true");
     root.replaceChildren(style, this.guide, this.bar);
 
-    const tools = this.config.tools ?? defaultTools;
-
-    const engine = new RageLayerEngine({
-      soundEnabled: this.hasAttribute("sound"),
-      history: true,
-      ...this.config,
-    });
-    for (const tool of tools) engine.registerTool(tool);
-    const initialTool = this.getAttribute("initial-tool");
-    if (initialTool) engine.setTool(initialTool);
-    this.engine = engine;
-
-    const model = new ToolbarModel(engine, {
+    const { tools = defaultTools, strings, ...engineOptions } = this.config;
+    const session = openToolbarSession({
+      engineOptions: { soundEnabled: this.hasAttribute("sound"), history: true, ...engineOptions },
       tools,
-      strings: this.config.strings,
-      toolStyle: this.config.toolStyle,
+      strings,
       onClose: () => this.dispatchEvent(new CustomEvent("ragelayer-close", { bubbles: true })),
     });
-    this.model = model;
-    this.bar.setAttribute("aria-label", model.state.toolbarLabel);
+    const initialTool = this.getAttribute("initial-tool");
+    if (initialTool) session.engine.setTool(initialTool);
+    this.session = session;
+    this.bar.setAttribute("aria-label", session.model.state.toolbarLabel);
 
-    this.unsubscribe = model.subscribe((state) => this.render(state));
+    this.unsubscribe = session.model.subscribe((state) => this.render(state));
     this.bar.addEventListener("keydown", this.onBarKeyDown);
-    window.addEventListener("keydown", this.onWindowKeyDown);
 
-    // Focus moves into the toolbar so keyboard operation can begin at once,
-    // and returns to wherever it came from when the element goes away.
-    this.previousFocus =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    // Focus moves into the toolbar so keyboard operation can begin at once;
+    // closing the session returns it to wherever it came from.
     this.buttons[0]?.focus();
   }
 
@@ -301,34 +292,17 @@ export class RageLayerElement extends ElementBase {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.bar?.removeEventListener("keydown", this.onBarKeyDown);
-    window.removeEventListener("keydown", this.onWindowKeyDown);
-    this.model?.destroy();
-    this.model = null;
-    this.engine?.dispose();
-    this.engine = null;
     this.buttons = [];
-    if (this.previousFocus?.isConnected) this.previousFocus.focus();
-    this.previousFocus = null;
+    this.session?.close();
+    this.session = null;
   }
 
-  private onWindowKeyDown = (event: KeyboardEvent) => {
-    if (this.model?.handleKeyDown(event)) event.preventDefault();
-  };
-
-  /** Arrow keys move focus within the bar; they never leave it. */
   private onBarKeyDown = (event: KeyboardEvent) => {
     const model = this.model;
     if (!model) return;
-    const count = this.buttons.length;
-    if (count === 0) return;
     const current = this.buttons.indexOf(event.target as HTMLButtonElement);
     if (current < 0) return;
-
-    let next: number | null = null;
-    if (event.key === "ArrowLeft") next = current - 1;
-    else if (event.key === "ArrowRight") next = current + 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = count - 1;
+    const next = rovingFocusTarget(event.key, current, this.buttons.length);
     if (next === null) return;
 
     event.preventDefault();
@@ -336,7 +310,7 @@ export class RageLayerElement extends ElementBase {
     // document-level shortcut handler.
     event.stopPropagation();
     model.setFocusIndex(next);
-    this.buttons[((next % count) + count) % count]?.focus();
+    this.buttons[next]?.focus();
   };
 
   private render(state: ToolbarState) {

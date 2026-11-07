@@ -13,6 +13,7 @@
  */
 
 import { TAU } from "./math";
+import type { FxView } from "./overlay";
 import { blit, blitRect, blitStreak, sprites } from "./sprites";
 import type { Flame, Particle, Singularity } from "./types";
 
@@ -71,13 +72,13 @@ function dustClusterPath(): Path2D | null {
   return dustCluster;
 }
 
-/** The document band the fx canvas currently covers. */
-export interface FxView {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
+/**
+ * The two tints of accretion-disc "spaghetti". The cool one draws with the
+ * water streak and the warm one with the hot streak, so the disc reads as
+ * having temperature structure rather than one glowing smear.
+ */
+export const SPAGHETTI_COOL = "#c98bff";
+export const SPAGHETTI_WARM = "#ffb066";
 
 export class FxPainter {
   /** Per-frame render buckets, reused to keep the render path allocation-free. */
@@ -130,9 +131,9 @@ export class FxPainter {
 
   /** Sort the visible particles into the four passes below. */
   classify(particles: readonly Particle[], view: FxView) {
-    // One classification pass. Particles live in document space and the page
-    // can be far taller than the screen, so anything outside the fx band is
-    // dropped here instead of being submitted and clipped by the canvas.
+    // Particles live in document space and the page can be far taller than
+    // the screen, so anything outside the fx band is dropped here instead of
+    // being submitted and clipped by the canvas.
     const { wet, puff, bit, hot } = this;
     wet.length = puff.length = bit.length = hot.length = 0;
     for (const p of particles) {
@@ -366,8 +367,6 @@ export class FxPainter {
       const bucket = buckets[q];
       ctx.globalAlpha = q / 128;
       if (cluster) {
-        // The whole three-lobe cluster scales rigidly with swell, so one
-        // uniform-scale stamp of the baked cluster replaces three appends.
         for (const p of bucket) {
           const t = p.life / p.maxLife;
           const swell = Math.min(10, p.size * (0.72 + t * 0.48));
@@ -588,7 +587,6 @@ export class FxPainter {
           break;
         }
         case "spark":
-          // Fast sparks smear into a streak; slow ones stay points.
           if (Math.abs(p.vx) + Math.abs(p.vy) > 260) {
             blitStreak(
               ctx,
@@ -642,7 +640,7 @@ export class FxPainter {
           const speed = Math.hypot(p.vx, p.vy);
           blitStreak(
             ctx,
-            p.color === "#c98bff" ? sprite.streakWater : sprite.streakHot,
+            p.color === SPAGHETTI_COOL ? sprite.streakWater : sprite.streakHot,
             p.x,
             p.y,
             Math.atan2(p.vy, p.vx),
