@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { DEFAULT_STRINGS, formatString, resolveStrings, toolStrings } from "../src/strings.ts";
 import { ToolbarModel } from "../src/toolbar.ts";
-import { rovingFocusTarget } from "../src/toolbar-session.ts";
+import { openToolbarSession, rovingFocusTarget } from "../src/toolbar-session.ts";
 import { baseTools, broom, hammer } from "../src/tools.ts";
 import { createTestEngine, disposeTestEngines } from "./support/engine.mjs";
 
@@ -285,5 +285,31 @@ describe("roving focus", () => {
     expect(rovingFocusTarget("End", 0, 4)).toBe(3);
     expect(rovingFocusTarget("a", 1, 4)).toBeNull();
     expect(rovingFocusTarget("ArrowRight", 0, 0)).toBeNull();
+  });
+});
+
+describe("toolbar session", () => {
+  test("closing stops shortcuts, disposes the engine, and returns focus", () => {
+    const origin = document.createElement("button");
+    document.body.append(origin);
+    origin.focus();
+    const session = openToolbarSession({
+      engineOptions: { captureContent: false, postFX: false, harvestElements: false },
+      tools: baseTools,
+    });
+    expect(session.engine.tool).toBeNull();
+
+    window.dispatchEvent(keyEvent("1"));
+    expect(session.engine.tool?.id).toBe(baseTools[0].id);
+
+    document.body.append(document.createElement("input"));
+    document.body.lastElementChild.focus();
+    session.close();
+
+    expect(session.engine.container.isConnected).toBe(false);
+    expect(document.activeElement).toBe(origin);
+    const stillHeard = keyEvent("2");
+    window.dispatchEvent(stillHeard);
+    expect(stillHeard.defaultPrevented).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ export interface ToolbarSessionOptions {
   engineOptions: RageLayerEngineOptions;
   tools: readonly Tool[];
   strings?: Partial<RageLayerStrings>;
-  onClose(): void;
+  onClose?(): void;
 }
 
 /**

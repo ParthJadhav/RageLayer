@@ -115,7 +115,7 @@ export function RageLayer({
       engineOptions: { soundEnabled: soundDefault, ...engineOptions, toolStyle: resolvedToolStyle },
       tools: toolset,
       strings,
-      onClose: () => onClose?.(),
+      onClose,
     });
     const { engine, model } = session;
     engineRef.current = engine;
