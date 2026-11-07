@@ -314,6 +314,13 @@ export class Overlay {
     return copy;
   }
 
+  /** Copy the decals in a document rect onto `ctx` at (0, 0), if any were drawn. */
+  drawDamageInto(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+    if (!this.damaged) return;
+    const d = this.dpr;
+    ctx.drawImage(this.damageCanvas, x * d, y * d, w * d, h * d, 0, 0, w, h);
+  }
+
   /** Replace the decals with a `snapshotDamage` copy, or clear them for null. */
   restoreDamage(snapshot: HTMLCanvasElement | null) {
     if (!snapshot) {

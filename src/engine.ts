@@ -832,10 +832,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
       const d = layer.dpr;
       ctx.drawImage(layer.canvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
     }
-    if (this.overlay.damageReady) {
-      const d = this.overlay.dpr;
-      ctx.drawImage(this.overlay.damageCanvas, sx * d, sy * d, w * d, h * d, 0, 0, w, h);
-    }
+    this.overlay.drawDamageInto(ctx, sx, sy, w, h);
     // The effects layer is viewport-parked, so its source rect is relative to
     // wherever `positionFx` last left it.
     const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
