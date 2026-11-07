@@ -535,6 +535,7 @@ export class ContentLayer {
    * wounds (live mode only).
    */
   private recompose(y0: number, y1: number) {
+    // Recorded tee decals land first, so the rebuild sees every mark.
     this.flushDecalLog();
     const ctx = this.ctx;
     const w = this.surface.width;
@@ -733,6 +734,7 @@ export class ContentLayer {
           // already happened (see ctx-proxy).
         }
       }
+      // Drop references (sprite canvases, gradients) as soon as they land.
       op.args.length = 0;
       op.value = null;
     }

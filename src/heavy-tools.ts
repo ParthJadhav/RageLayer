@@ -241,7 +241,8 @@ export const rocketLauncher: Tool = {
       if ((armed && d < 26) || r.life > 2.6) {
         rockets.splice(i, 1);
         // The page may have opened up under the target while the rocket was in
-        // flight.
+        // flight. Aimed at a hole, it doesn't detonate — it flies straight
+        // through and is swallowed, motor note trailing off into the void.
         if (engine.onPage(r.tx, r.ty)) {
           engine.explode(r.tx, r.ty, 96, { power: 720 });
         } else {
