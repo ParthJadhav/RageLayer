@@ -197,5 +197,6 @@ const KEYFRAMES = `
 
 export const { acquire: acquireStyles, release: releaseStyles } = sharedStyle(
   "data-ragelayer-toolbar-styles",
+  "",
   KEYFRAMES,
 );

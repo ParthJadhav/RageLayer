@@ -3,7 +3,7 @@
  * `acquire` adds it to `<head>`, the last `release` removes it, so mounting
  * several toolbars never stacks copies.
  */
-export function sharedStyle(attribute: string, css: string) {
+export function sharedStyle(attribute: string, value: string, css: string) {
   let uses = 0;
   let element: HTMLStyleElement | null = null;
   return {
@@ -11,9 +11,9 @@ export function sharedStyle(attribute: string, css: string) {
       if (typeof document === "undefined") return;
       uses += 1;
       // Another copy of this module may already have installed the sheet.
-      if (element || document.head.querySelector(`style[${attribute}]`)) return;
+      if (element || document.head.querySelector(`style[${attribute}="${value}"]`)) return;
       element = document.createElement("style");
-      element.setAttribute(attribute, "");
+      element.setAttribute(attribute, value);
       element.textContent = css;
       document.head.appendChild(element);
     },

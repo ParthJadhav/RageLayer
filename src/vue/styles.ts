@@ -173,6 +173,7 @@ const TOOLBAR_CSS = `
 `;
 
 export const { acquire: acquireToolbarStyles, release: releaseToolbarStyles } = sharedStyle(
-  "data-ragelayer-vue-toolbar-styles",
+  "data-rage-layer",
+  "toolbar",
   TOOLBAR_CSS,
 );
