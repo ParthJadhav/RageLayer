@@ -3,9 +3,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { defaultTools } from "../default-tools";
-import { RageLayerEngine } from "../engine";
+import type { RageLayerEngine } from "../engine";
 import type { RageLayerStrings } from "../strings";
-import { type ToolbarButton as ButtonState, ToolbarModel, type ToolbarState } from "../toolbar";
+import type { ToolbarButton as ButtonState, ToolbarModel, ToolbarState } from "../toolbar";
+import { openToolbarSession, rovingFocusTarget } from "../toolbar-session";
 import type { RageLayerEngineOptions, Tool, ToolStyle } from "../types";
 import {
   acquireStyles,
@@ -110,37 +111,25 @@ export function RageLayer({
   const resolvedToolStyle = engineOptions?.toolStyle ?? toolStyle;
 
   useEffect(() => {
-    const engine = new RageLayerEngine({
-      soundEnabled: soundDefault,
-      ...engineOptions,
-      toolStyle: resolvedToolStyle,
-    });
-    for (const tool of toolset) engine.registerTool(tool);
-
-    const model = new ToolbarModel(engine, {
+    const session = openToolbarSession({
+      engineOptions: { soundEnabled: soundDefault, ...engineOptions, toolStyle: resolvedToolStyle },
       tools: toolset,
       strings,
-      toolStyle: resolvedToolStyle,
-      onClose,
+      onClose: () => onClose?.(),
     });
+    const { engine, model } = session;
     engineRef.current = engine;
     modelRef.current = model;
     acquireStyles();
 
     const unsubscribe = model.subscribe(setState);
-    const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (model.handleKeyDown(event)) event.preventDefault();
-    };
-    window.addEventListener("keydown", onWindowKeyDown);
 
     const debugWindow = window as unknown as { __rageLayer?: RageLayerEngine };
     if (debugGlobal) debugWindow.__rageLayer = engine;
 
     return () => {
-      window.removeEventListener("keydown", onWindowKeyDown);
       unsubscribe();
-      model.destroy();
-      engine.dispose();
+      session.close();
       if (debugWindow.__rageLayer === engine) delete debugWindow.__rageLayer;
       releaseStyles();
       modelRef.current = null;
@@ -153,12 +142,7 @@ export function RageLayer({
 
   const ready = state !== null;
   useEffect(() => {
-    if (!ready) return;
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    toolbarRef.current?.querySelector<HTMLButtonElement>("button.rl-tool")?.focus();
-    return () => {
-      if (previous?.isConnected) previous.focus();
-    };
+    if (ready) toolbarRef.current?.querySelector<HTMLButtonElement>("button.rl-tool")?.focus();
   }, [ready]);
 
   if (!state) return null;
@@ -167,21 +151,15 @@ export function RageLayer({
     Array.from(toolbarRef.current?.querySelectorAll<HTMLButtonElement>("button.rl-tool") ?? []);
 
   const onToolbarKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const count = state.buttons.length;
-    let next: number | null = null;
-    if (event.key === "ArrowLeft") next = state.focusIndex - 1;
-    else if (event.key === "ArrowRight") next = state.focusIndex + 1;
-    else if (event.key === "Home") next = 0;
-    else if (event.key === "End") next = count - 1;
-    if (next === null || count === 0) return;
+    const next = rovingFocusTarget(event.key, state.focusIndex, state.buttons.length);
+    if (next === null) return;
 
     event.preventDefault();
     // Arrows inside the toolbar navigate the toolbar; they must not reach
     // the document-level shortcut handler.
     event.stopPropagation();
-    const normalized = ((next % count) + count) % count;
-    modelRef.current?.setFocusIndex(normalized);
-    buttons()[normalized]?.focus();
+    modelRef.current?.setFocusIndex(next);
+    buttons()[next]?.focus();
   };
 
   const chip = state.status;

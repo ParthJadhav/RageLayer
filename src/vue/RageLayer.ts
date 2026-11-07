@@ -22,9 +22,9 @@ import {
 
 import { RAGELAYER_IGNORE_ATTR } from "../capture";
 import { defaultTools } from "../default-tools";
-import { RageLayerEngine } from "../engine";
 import type { RageLayerStrings } from "../strings";
-import { type ToolbarButton, ToolbarModel, type ToolbarState } from "../toolbar";
+import type { ToolbarButton, ToolbarModel, ToolbarState } from "../toolbar";
+import { openToolbarSession, rovingFocusTarget, type ToolbarSession } from "../toolbar-session";
 import type { RageLayerEngineOptions, Tool } from "../types";
 import { acquireToolbarStyles, BAR_CLASS, releaseToolbarStyles } from "./styles";
 
@@ -38,7 +38,6 @@ export const RageLayer = defineComponent({
   },
   emits: ["close", "ready"],
   setup(props, { emit }) {
-    const engine = shallowRef<RageLayerEngine | null>(null);
     const model = shallowRef<ToolbarModel | null>(null);
     const state = ref<ToolbarState | null>(null);
     // SSR guard: nothing renders until the component is mounted in a browser,
@@ -46,52 +45,33 @@ export const RageLayer = defineComponent({
     const mounted = ref(false);
     const bar = ref<HTMLElement | null>(null);
     let unsubscribe: (() => void) | null = null;
-    let previousFocus: HTMLElement | null = null;
+    let session: ToolbarSession | null = null;
 
     const toolset = computed<readonly Tool[]>(() => props.tools ?? defaultTools);
 
-    const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (model.value?.handleKeyDown(event)) event.preventDefault();
-    };
-
     onMounted(() => {
       acquireToolbarStyles();
-      const created = new RageLayerEngine({
-        soundEnabled: props.soundDefault,
-        history: true,
-        ...props.engineOptions,
-      });
-      for (const tool of toolset.value) created.registerTool(tool);
-      engine.value = created;
-
-      const created_model = new ToolbarModel(created, {
+      session = openToolbarSession({
+        engineOptions: { soundEnabled: props.soundDefault, history: true, ...props.engineOptions },
         tools: toolset.value,
         strings: props.strings,
-        toolStyle: props.engineOptions?.toolStyle,
         onClose: () => emit("close"),
       });
-      model.value = created_model;
-      unsubscribe = created_model.subscribe((next) => {
+      model.value = session.model;
+      unsubscribe = session.model.subscribe((next) => {
         state.value = next;
       });
-
-      previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-      window.addEventListener("keydown", onWindowKeyDown);
       mounted.value = true;
-      emit("ready", created);
+      emit("ready", session.engine);
     });
 
     onBeforeUnmount(() => {
-      window.removeEventListener("keydown", onWindowKeyDown);
       unsubscribe?.();
       unsubscribe = null;
-      model.value?.destroy();
       model.value = null;
-      engine.value?.dispose();
-      engine.value = null;
       releaseToolbarStyles();
-      if (previousFocus?.isConnected) previousFocus.focus();
-      previousFocus = null;
+      session?.close();
+      session = null;
     });
 
     /** Arrow keys move focus inside the bar and never leave it. */
@@ -99,18 +79,12 @@ export const RageLayer = defineComponent({
       const current = state.value;
       const controller = model.value;
       if (!current || !controller) return;
-      const count = current.buttons.length;
-      let next: number | null = null;
-      if (event.key === "ArrowLeft") next = current.focusIndex - 1;
-      else if (event.key === "ArrowRight") next = current.focusIndex + 1;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = count - 1;
+      const next = rovingFocusTarget(event.key, current.focusIndex, current.buttons.length);
       if (next === null) return;
       event.preventDefault();
       event.stopPropagation();
       controller.setFocusIndex(next);
-      const index = ((next % count) + count) % count;
-      bar.value?.querySelectorAll<HTMLButtonElement>("button")[index]?.focus();
+      bar.value?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
     };
 
     const renderButton = (button: ToolbarButton, index: number, current: ToolbarState): VNode =>

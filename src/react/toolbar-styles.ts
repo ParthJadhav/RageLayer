@@ -1,4 +1,5 @@
 import type React from "react";
+import { sharedStyle } from "../shared-style";
 
 /**
  * Every static style the toolbar uses.
@@ -115,8 +116,6 @@ export const dividerStyle: React.CSSProperties = {
   flexShrink: 0,
 };
 
-const STYLE_ATTR = "data-ragelayer-toolbar-styles";
-
 const KEYFRAMES = `
 @keyframes rl-rise {
   from { opacity: 0; transform: translateY(24px) scale(0.92); }
@@ -196,24 +195,7 @@ const KEYFRAMES = `
 }
 `;
 
-// The <style> block is shared by every mounted instance and injected at most
-// once: a module-level refcount adds it with the first toolbar and removes it
-// with the last, instead of stacking one copy per mount.
-let styleUses = 0;
-let styleElement: HTMLStyleElement | null = null;
-
-export function acquireStyles() {
-  styleUses += 1;
-  if (styleElement || document.head.querySelector(`style[${STYLE_ATTR}]`)) return;
-  styleElement = document.createElement("style");
-  styleElement.setAttribute(STYLE_ATTR, "");
-  styleElement.textContent = KEYFRAMES;
-  document.head.appendChild(styleElement);
-}
-
-export function releaseStyles() {
-  styleUses = Math.max(0, styleUses - 1);
-  if (styleUses > 0 || !styleElement) return;
-  styleElement.remove();
-  styleElement = null;
-}
+export const { acquire: acquireStyles, release: releaseStyles } = sharedStyle(
+  "data-ragelayer-toolbar-styles",
+  KEYFRAMES,
+);
