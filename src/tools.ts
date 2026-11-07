@@ -1,6 +1,6 @@
 import { emojiCursor } from "./cursors";
 import { drawBulletHole, drawCrack, drawGash, drawSplat, randomPaint } from "./decals";
-import { emit, TAU } from "./math";
+import { emit, isParked, TAU } from "./math";
 import { scratchParticle } from "./particles";
 import { createEngineState, debris, dustPuff } from "./tool-kit";
 import {
@@ -519,7 +519,7 @@ export const waterHose: Tool = {
   tick(engine, dt, held, pointer) {
     const state = waterState.get(engine);
     engine.sound.loop("water", held ? 0.3 : 0);
-    if (!held || pointer.x < -100) {
+    if (!held || isParked(pointer)) {
       state.spawnDebt = state.streamDebt = state.mistDebt = 0;
       return;
     }

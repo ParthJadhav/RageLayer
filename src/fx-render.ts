@@ -13,6 +13,7 @@
  */
 
 import { TAU } from "./math";
+import type { FxView } from "./overlay";
 import { blit, blitRect, blitStreak, sprites } from "./sprites";
 import type { Flame, Particle, Singularity } from "./types";
 
@@ -71,13 +72,13 @@ function dustClusterPath(): Path2D | null {
   return dustCluster;
 }
 
-/** The document band the fx canvas currently covers. */
-export interface FxView {
-  left: number;
-  top: number;
-  right: number;
-  bottom: number;
-}
+/**
+ * The two tints of accretion-disc "spaghetti". The cool one draws with the
+ * water streak and the warm one with the hot streak, so the disc reads as
+ * having temperature structure rather than one glowing smear.
+ */
+export const SPAGHETTI_COOL = "#c98bff";
+export const SPAGHETTI_WARM = "#ffb066";
 
 export class FxPainter {
   /** Per-frame render buckets, reused to keep the render path allocation-free. */
@@ -642,7 +643,7 @@ export class FxPainter {
           const speed = Math.hypot(p.vx, p.vy);
           blitStreak(
             ctx,
-            p.color === "#c98bff" ? sprite.streakWater : sprite.streakHot,
+            p.color === SPAGHETTI_COOL ? sprite.streakWater : sprite.streakHot,
             p.x,
             p.y,
             Math.atan2(p.vy, p.vx),

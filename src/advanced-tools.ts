@@ -1,5 +1,5 @@
 import { acidSprayerArt, gravityGunArt, laserCutterArt, stickyBombArt } from "./advanced-toolart";
-import { TAU } from "./math";
+import { PARKED_POINTER, TAU } from "./math";
 import { createEngineState } from "./tool-kit";
 import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
 import type { RageLayerEngineApi, Tool } from "./types";
@@ -445,7 +445,7 @@ export const stickyBombs: Tool = {
     }
   },
   backgroundTick(engine, dt) {
-    stickyBombs.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+    stickyBombs.tick?.(engine, dt, false, { x: PARKED_POINTER, y: PARKED_POINTER });
   },
 };
 

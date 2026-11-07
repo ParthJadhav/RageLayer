@@ -29,6 +29,21 @@ import { pickPixelRatio, RAGELAYER_IGNORE_ATTR } from "./capture";
 export const FX_MARGIN = 120;
 
 /** The document band the fx canvas currently covers. */
+/** The void behind the page, so holes read as holes and not as transparency. */
+const VOID_STOPS = [
+  [0, "#17130f"],
+  [55, "#0c0a08"],
+  [100, "#060504"],
+] as const;
+
+/** Paint the void onto a 2D canvas the same way the void layer shows it on screen. */
+export function paintVoid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
+  for (const [percent, color] of VOID_STOPS) bg.addColorStop(percent / 100, color);
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, w, h);
+}
+
 export interface FxView {
   left: number;
   top: number;
@@ -117,8 +132,9 @@ export class Overlay {
       position: "absolute",
       inset: "0",
       display: "none",
-      background:
-        "radial-gradient(ellipse 120% 60% at 50% 0%, #17130f 0%, #0c0a08 55%, #060504 100%)",
+      background: `radial-gradient(ellipse 120% 60% at 50% 0%, ${VOID_STOPS.map(
+        ([percent, color]) => `${color} ${percent}%`,
+      ).join(", ")})`,
     } satisfies Partial<CSSStyleDeclaration>);
     this.container.appendChild(this.voidLayer);
 

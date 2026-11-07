@@ -1,6 +1,6 @@
 import { SoundEngine } from "./audio";
 import { BugSwarm } from "./bugs-sim";
-import { defaultCaptureFilter } from "./capture";
+import { defaultCaptureFilter, MAX_CAPTURE_HEIGHT } from "./capture";
 import { CaptureController, type CaptureHost } from "./capture-controller";
 import { type ComboEvent, ComboTracker, type InteractionKind } from "./combos";
 import type { ContentCheckpoint, ContentLayer } from "./content";
@@ -18,11 +18,18 @@ import {
   shardBudget,
   voronoiCells,
 } from "./fracture";
-import { drawAccretionDisc, drawEventHorizon, drawFlame, FxPainter } from "./fx-render";
-import { measuredUploadCostMs, SLOW_UPLOAD_THRESHOLD_MS } from "./gl";
+import {
+  drawAccretionDisc,
+  drawEventHorizon,
+  drawFlame,
+  FxPainter,
+  SPAGHETTI_COOL,
+  SPAGHETTI_WARM,
+} from "./fx-render";
+import { uploadsProbedFast } from "./gl";
 import { DestructionHistory, type DestructionHistoryEntry, type HistoryState } from "./history";
-import { REST_AIM_X, REST_AIM_Y, TAU } from "./math";
-import { Overlay } from "./overlay";
+import { isParked, PARKED_POINTER, REST_AIM_X, REST_AIM_Y, TAU } from "./math";
+import { Overlay, paintVoid } from "./overlay";
 import { ParticleSystem, type ParticleWorld, scratchParticle } from "./particles";
 import {
   detectInitialQuality,
@@ -61,7 +68,6 @@ import { WOOD } from "./wood";
 /** Engines currently alive in this document — refcount for the sprite cache. */
 let liveEngines = 0;
 
-const MAX_CAPTURE_HEIGHT = 12000;
 /** The heat field feeding the shimmer shader, as a fraction of the fx canvas. */
 const HEAT_SCALE = 8;
 /**
@@ -180,7 +186,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private artVY = 0;
   private readonly artAimX = REST_AIM_X;
   private readonly artAimY = REST_AIM_Y;
-  private artPrev: Vec2 = { x: -1000, y: -1000 };
+  private artPrev: Vec2 = { x: PARKED_POINTER, y: PARKED_POINTER };
   private raf = 0;
   /** True after the loop deliberately stopped, so its next wake starts from a fresh clock. */
   private frameClockSleeping = true;
@@ -843,13 +849,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const sx = this.scrollX;
     const sy = Math.max(0, Math.min(this.scrollY, this.overlay.height - h));
 
-    // The void behind the page, so holes read as holes and not as transparency.
-    const bg = ctx.createRadialGradient(w / 2, 0, 0, w / 2, 0, Math.max(w, h) * 1.2);
-    bg.addColorStop(0, "#17130f");
-    bg.addColorStop(0.55, "#0c0a08");
-    bg.addColorStop(1, "#060504");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+    paintVoid(ctx, w, h);
 
     const layer = this.contentLayer;
     if (layer?.ready) {
@@ -1972,12 +1972,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   private stepToolArt(dt: number) {
     const p = this.pointer;
-    if (p.x <= -999) {
+    if (isParked(p)) {
       this.artVX = this.artVY = 0;
-      this.artPrev.x = this.artPrev.y = -1000;
+      this.artPrev.x = this.artPrev.y = PARKED_POINTER;
       return;
     }
-    if (this.artPrev.x > -999 && dt > 0) {
+    if (!isParked(this.artPrev) && dt > 0) {
       const k = Math.min(1, dt * 14);
       this.artVX += ((p.x - this.artPrev.x) / dt - this.artVX) * k;
       this.artVY += ((p.y - this.artPrev.y) / dt - this.artVY) * k;
@@ -2157,7 +2157,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
         maxLife: 0.5 + Math.random() * 0.7,
         size: 1.4 + Math.random() * 2.6,
         gravity: 0,
-        color: Math.random() < 0.4 ? "#c98bff" : "#ffb066",
+        color: Math.random() < 0.4 ? SPAGHETTI_COOL : SPAGHETTI_WARM,
       });
     }
     this.heat(s.x, s.y, r * 2.4, 0.55 * s.charge);
@@ -2193,7 +2193,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // can stay as the last retained canvas image without keeping rAF alive.
     // Held gestures and live effects still animate through `hasActiveWork`.
     const artVisible =
-      this.opts.toolStyle === "3d" && !!this.activeTool?.art && this.pointer.x > -999;
+      this.opts.toolStyle === "3d" && !!this.activeTool?.art && !isParked(this.pointer);
     const idle =
       this.particles.count === 0 &&
       this.fire.count === 0 &&
@@ -2362,8 +2362,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // optimal and the hole cache below is pure overhead; a slow probe marks
     // the browsers whose canvas the `destination-in` family deopts. An
     // unprobed environment (no WebGL at all) is treated as slow.
-    const uploadCost = measuredUploadCostMs();
-    if (uploadCost !== null && uploadCost <= SLOW_UPLOAD_THRESHOLD_MS) {
+    if (uploadsProbedFast()) {
       ctx.globalCompositeOperation = "destination-in";
       ctx.drawImage(
         layer.surface,

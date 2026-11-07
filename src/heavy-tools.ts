@@ -12,7 +12,7 @@
 
 import { emojiCursor } from "./cursors";
 import { drawBurnChannel } from "./decals";
-import { emit, rand, TAU } from "./math";
+import { emit, PARKED_POINTER, rand, TAU } from "./math";
 import { createEngineState } from "./tool-kit";
 import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart";
 import type { RageLayerEngineApi, Tool, Vec2 } from "./types";
@@ -256,7 +256,7 @@ export const rocketLauncher: Tool = {
     }
   },
   backgroundTick(engine, dt) {
-    rocketLauncher.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+    rocketLauncher.tick?.(engine, dt, false, { x: PARKED_POINTER, y: PARKED_POINTER });
   },
 };
 
@@ -485,7 +485,7 @@ export const lightning: Tool = {
     }
   },
   backgroundTick(engine, dt) {
-    lightning.tick?.(engine, dt, false, { x: -1000, y: -1000 });
+    lightning.tick?.(engine, dt, false, { x: PARKED_POINTER, y: PARKED_POINTER });
   },
 };
 
