@@ -837,7 +837,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // wherever `positionFx` last left it.
     const presented = this.postfxActive ? this.postfx!.canvas : this.overlay.fxCanvas;
     if (this.fxPainted && presented.width > 0) {
-      const d = this.overlay.dpr;
+      const d = this.overlay.fxDpr;
       ctx.drawImage(
         presented,
         (sx - this.overlay.fxOffsetX) * d,
