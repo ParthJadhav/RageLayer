@@ -54,7 +54,6 @@ import type {
   Flame,
   FractureOptions,
   Particle,
-  PerformanceQuality,
   PerformanceQualityTier,
   PerformanceSnapshot,
   RageLayerEngineApi,
@@ -193,7 +192,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private lastTime = 0;
   private lastRenderedAt = 0;
   private monitor: PerformanceMonitor;
-  private qualityMode: PerformanceQuality;
   private qualityTier: PerformanceQualityTier;
   private qualityProfile: QualityProfile;
   /** Resolved once at mount from the explicit option or the OS preference. */
@@ -279,13 +277,13 @@ export class RageLayerEngine implements RageLayerEngineApi {
       options.reducedMotion === true ||
       (options.reducedMotion !== false &&
         (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false));
-    this.qualityMode = options.quality ?? "auto";
-    this.qualityTier = detectInitialQuality(this.qualityMode);
+    const qualityMode = options.quality ?? "auto";
+    this.qualityTier = detectInitialQuality(qualityMode);
     this.qualityProfile = QUALITY_PROFILES[this.qualityTier];
     this.monitor = new PerformanceMonitor(
       options.performance,
       this.qualityTier,
-      this.qualityMode === "auto",
+      qualityMode === "auto",
     );
     this.opts = resolveEngineOptions(options);
     this.physics = new PhysicsWorld({
@@ -1718,12 +1716,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.raf = 0;
     this.frameClockSleeping = false;
     this.monitor.observeRaf(now);
-    // The 60 fps rate cap borrows the balanced tier's frame-skip interval:
-    // full visual quality, half the cadence on >90 Hz displays.
-    const minFrameInterval =
-      this.qualityTier === "high" && this.monitor.rateCap60
-        ? QUALITY_PROFILES.balanced.minFrameIntervalMs
-        : this.qualityProfile.minFrameIntervalMs;
+    const minFrameInterval = this.monitor.minFrameIntervalMs(this.qualityTier);
     if (minFrameInterval > 0 && now - this.lastRenderedAt < minFrameInterval) {
       this.requestFrame();
       return;
@@ -1799,11 +1792,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.updateLoops();
 
     const frameMs = performance.now() - frameStartedAt;
-    const nativeTarget = this.monitor.nativeTargetFps;
-    const targetFps =
-      this.qualityTier === "high" && !this.monitor.rateCap60
-        ? nativeTarget
-        : Math.min(60, nativeTarget);
     const recommendation = this.monitor.record({
       cadenceMs: dt * 1_000,
       frameMs,
@@ -1827,9 +1815,9 @@ export class RageLayerEngine implements RageLayerEngineApi {
       quality: this.qualityTier,
       pixelRatio: this.overlay.dpr,
       effectsPixelRatio: this.overlay.fxDpr,
-      targetFps,
+      targetFps: this.monitor.targetFps(this.qualityTier),
     });
-    if (recommendation && this.qualityMode === "auto") this.applyQuality(recommendation);
+    if (recommendation) this.applyQuality(recommendation);
 
     if (this.hasActiveWork(toolWorkPending)) this.requestFrame();
     else this.frameClockSleeping = true;

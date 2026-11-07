@@ -278,6 +278,23 @@ export class PerformanceMonitor implements PerfCounterSink {
     return this.rateCapped;
   }
 
+  /**
+   * The shortest gap between rendered frames at a tier. The 60 fps rate cap
+   * borrows the balanced tier's frame skip: full visual quality, half the
+   * cadence on >90 Hz displays.
+   */
+  minFrameIntervalMs(tier: PerformanceQualityTier): number {
+    return tier === "high" && this.rateCapped
+      ? QUALITY_PROFILES.balanced.minFrameIntervalMs
+      : QUALITY_PROFILES[tier].minFrameIntervalMs;
+  }
+
+  /** The frame rate a tier is judged against: native only for uncapped high. */
+  targetFps(tier: PerformanceQualityTier): number {
+    const native = this.nativeTargetFps;
+    return tier === "high" && !this.rateCapped ? native : Math.min(60, native);
+  }
+
   onSample(callback: (snapshot: PerformanceSnapshot) => void): () => void {
     if (this.disposed) return () => {};
     this.callbacks.add(callback);
