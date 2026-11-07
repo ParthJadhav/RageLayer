@@ -691,13 +691,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
   private createHistoryEntry(label?: string): EngineHistoryEntry {
     const content = this.contentLayer?.createCheckpoint() ?? null;
-    let damage: HTMLCanvasElement | null = null;
-    if (this.overlay.damageReady) {
-      damage = document.createElement("canvas");
-      damage.width = this.overlay.damageCanvas.width;
-      damage.height = this.overlay.damageCanvas.height;
-      damage.getContext("2d")?.drawImage(this.overlay.damageCanvas, 0, 0);
-    }
+    const damage = this.overlay.snapshotDamage();
     const fuel = this.fire.snapshotFuel();
     const pixelCost =
       (content?.pixelCost ?? 0) +
@@ -725,9 +719,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private estimateHistoryPixelCost(): number {
     return (
       (this.contentLayer?.checkpointPixelCost ?? 0) +
-      (this.overlay.damageReady
-        ? this.overlay.damageCanvas.width * this.overlay.damageCanvas.height
-        : 0) +
+      this.overlay.damagePixelCost +
       this.fieldPixelCost()
     );
   }
@@ -742,21 +734,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     try {
       if (entry.content) this.contentLayer?.restoreCheckpoint(entry.content);
       else this.contentLayer?.restoreAll();
-      if (entry.damage) {
-        this.overlay.ensureDamage();
-        this.overlay.damageCtx.save();
-        this.overlay.damageCtx.setTransform(1, 0, 0, 1, 0, 0);
-        this.overlay.damageCtx.clearRect(
-          0,
-          0,
-          this.overlay.damageCanvas.width,
-          this.overlay.damageCanvas.height,
-        );
-        this.overlay.damageCtx.drawImage(entry.damage, 0, 0);
-        this.overlay.damageCtx.restore();
-      } else if (this.overlay.damageReady) {
-        this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
-      }
+      this.overlay.restoreDamage(entry.damage);
       this.fire.restoreFuel(entry.fuel);
       this.destruction = entry.destruction;
       for (let i = 0; i < this.pageElements.length; i++) {
@@ -780,8 +758,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // page, without synthesizing an onUp action such as a singularity collapse.
     this.pointerInput.cancel();
     if (!this.restoringHistory) this.checkpoint("clear");
-    if (this.overlay.damageReady)
-      this.overlay.damageCtx.clearRect(0, 0, this.overlay.width, this.overlay.height);
+    this.overlay.clearDamage();
     this.contentLayer?.restoreAll();
     this.fire.clear();
     this.particles.clear();
@@ -991,14 +968,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     this.destruction = Math.max(0, this.destruction - 0.004);
     // Repair the real content from the pristine snapshot...
     this.contentLayer?.restore(x, y, radius);
-    // ...and sweep any overlay decals (also the fallback path). Nothing to
-    // sweep if the damage canvas was never painted on.
-    if (!this.overlay.damageReady) return;
-    const ctx = this.overlay.damageCtx;
-    ctx.globalCompositeOperation = "destination-out";
-    blit(ctx, sprites().erase, x, y, radius, 1);
-    ctx.globalAlpha = 1;
-    ctx.globalCompositeOperation = "source-over";
+    // ...and sweep any overlay decals (also the fallback path).
+    this.overlay.eraseDamage(x, y, radius, 1);
   }
 
   /**
@@ -1008,13 +979,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   washSurface(x: number, y: number, radius: number, strength = 1) {
     this.contentLayer?.wash(x, y, radius, strength);
-    if (this.overlay.damageReady) {
-      const ctx = this.overlay.damageCtx;
-      ctx.globalCompositeOperation = "destination-out";
-      blit(ctx, sprites().erase, x, y, radius, Math.min(1, strength));
-      ctx.globalAlpha = 1;
-      ctx.globalCompositeOperation = "source-over";
-    }
+    this.overlay.eraseDamage(x, y, radius, Math.min(1, strength));
     this.markSurface(x, y, radius);
     this.signalInteraction("water", x, y);
   }
@@ -1637,16 +1602,24 @@ export class RageLayerEngine implements RageLayerEngineApi {
     postfx.counters = this.monitor;
     this.heatCanvas = document.createElement("canvas");
     this.heatCtx = this.heatCanvas.getContext("2d", { willReadFrequently: false });
-    postfx.resize(
-      this.overlay.fxCanvas.width,
-      this.overlay.fxCanvas.height,
-      this.overlay.fxWidth,
-      this.overlay.fxHeight,
+    this.fitPostFXToOverlay();
+  }
+
+  /** Match the post-FX chain and its heat field to the fx canvas geometry. */
+  private fitPostFXToOverlay() {
+    const overlay = this.overlay;
+    this.postfx?.resize(
+      overlay.fxCanvas.width,
+      overlay.fxCanvas.height,
+      overlay.fxWidth,
+      overlay.fxHeight,
     );
-    this.heatCanvas.width = Math.max(1, Math.round(this.overlay.fxWidth / HEAT_SCALE));
-    this.heatCanvas.height = Math.max(1, Math.round(this.overlay.fxHeight / HEAT_SCALE));
-    // A resized canvas is transparent again; the next `resetHeat` must fill it.
-    this.heatDirty = true;
+    if (this.heatCanvas) {
+      this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
+      this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
+      // A resized canvas is transparent again; the next `resetHeat` must fill it.
+      this.heatDirty = true;
+    }
   }
 
   private setPostFXEnabled(enabled: boolean) {
@@ -1695,20 +1668,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
    */
   private resize() {
     const { width, height } = this.docSize();
-    const overlay = this.overlay;
-    overlay.resize(width, height, this.opts.effectsPixelRatio);
-    this.postfx?.resize(
-      overlay.fxCanvas.width,
-      overlay.fxCanvas.height,
-      overlay.fxWidth,
-      overlay.fxHeight,
-    );
-    if (this.heatCanvas) {
-      this.heatCanvas.width = Math.max(1, Math.round(overlay.fxWidth / HEAT_SCALE));
-      this.heatCanvas.height = Math.max(1, Math.round(overlay.fxHeight / HEAT_SCALE));
-      // A resized canvas is transparent again; the next `resetHeat` must fill it.
-      this.heatDirty = true;
-    }
+    this.overlay.resize(width, height, this.opts.effectsPixelRatio);
+    this.fitPostFXToOverlay();
   }
 
   private onScroll = () => {
@@ -2204,13 +2165,13 @@ export class RageLayerEngine implements RageLayerEngineApi {
       // Nothing to draw: clear once after the last active frame, then leave the
       // canvas (and the compositor) completely alone while idle.
       if (this.fxPainted) {
-        this.clearFxCanvas(ctx);
+        this.overlay.clearFx();
         if (this.postfxActive) this.postfx?.clear();
         this.fxPainted = false;
       }
       return;
     }
-    this.clearFxCanvas(ctx);
+    this.overlay.clearFx();
     this.fxPainted = true;
 
     // Bugs crawl *on* the page, under every particle and piece of debris.
@@ -2284,18 +2245,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     if (artVisible) this.renderToolArt(ctx, time);
 
     this.postFXFrameMs = this.present(time);
-  }
-
-  /** Clear every backing-store pixel regardless of the document-space transform. */
-  private clearFxCanvas(ctx: CanvasRenderingContext2D) {
-    // Re-apply `positionFx`'s document-space transform directly instead of
-    // paying a save/restore state push per frame. Callers only run after
-    // `positionFx`, so the overlay's parked offsets are always current.
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    const overlay = this.overlay;
-    const dpr = overlay.fxDpr;
-    ctx.setTransform(dpr, 0, 0, dpr, -overlay.fxOffsetX * dpr, -overlay.fxOffsetY * dpr);
   }
 
   /** Scratch for `maskFxToPage`'s per-frame hole-run query; reused, never grows hot. */

@@ -24,11 +24,11 @@
  */
 
 import { pickPixelRatio, RAGELAYER_IGNORE_ATTR } from "./capture";
+import { blit, sprites } from "./sprites";
 
 /** Extra margin (CSS px) drawn beyond the viewport so nothing pops at the edge. */
 export const FX_MARGIN = 120;
 
-/** The document band the fx canvas currently covers. */
 /** The void behind the page, so holes read as holes and not as transparency. */
 const VOID_STOPS = [
   [0, "#17130f"],
@@ -44,6 +44,7 @@ export function paintVoid(ctx: CanvasRenderingContext2D, w: number, h: number) {
   ctx.fillRect(0, 0, w, h);
 }
 
+/** The document band the fx canvas currently covers. */
 export interface FxView {
   left: number;
   top: number;
@@ -287,6 +288,58 @@ export class Overlay {
   /** Wipe the overlay decals, if any were ever drawn. */
   clearDamage() {
     if (this.damaged) this.damageCtx.clearRect(0, 0, this.width, this.height);
+  }
+
+  /** Rub decals out under a soft round brush, if any were ever drawn. */
+  eraseDamage(x: number, y: number, radius: number, alpha: number) {
+    if (!this.damaged) return;
+    const ctx = this.damageCtx;
+    ctx.globalCompositeOperation = "destination-out";
+    blit(ctx, sprites().erase, x, y, radius, alpha);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** Backing-store pixels a damage snapshot holds; 0 when nothing was drawn. */
+  get damagePixelCost(): number {
+    return this.damaged ? this.damageCanvas.width * this.damageCanvas.height : 0;
+  }
+
+  /** Copy the decals for a history checkpoint, or null when nothing was drawn. */
+  snapshotDamage(): HTMLCanvasElement | null {
+    if (!this.damaged) return null;
+    const copy = document.createElement("canvas");
+    copy.width = this.damageCanvas.width;
+    copy.height = this.damageCanvas.height;
+    copy.getContext("2d")?.drawImage(this.damageCanvas, 0, 0);
+    return copy;
+  }
+
+  /** Replace the decals with a `snapshotDamage` copy, or clear them for null. */
+  restoreDamage(snapshot: HTMLCanvasElement | null) {
+    if (!snapshot) {
+      this.clearDamage();
+      return;
+    }
+    this.ensureDamage();
+    const ctx = this.damageCtx;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.damageCanvas.width, this.damageCanvas.height);
+    ctx.drawImage(snapshot, 0, 0);
+    ctx.restore();
+  }
+
+  /**
+   * Clear every fx backing-store pixel and re-apply the document transform
+   * the last `positionFx` set, without a per-frame save/restore.
+   */
+  clearFx() {
+    const ctx = this.fxCtx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.fxCanvas.width, this.fxCanvas.height);
+    const dpr = this.fxDpr;
+    ctx.setTransform(dpr, 0, 0, dpr, -this.fxOffsetX * dpr, -this.fxOffsetY * dpr);
   }
 
   /** The next `positionFx` re-applies the transform even if nothing scrolled. */
