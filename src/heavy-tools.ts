@@ -12,7 +12,7 @@
 
 import { emojiCursor } from "./cursors";
 import { drawBurnChannel } from "./decals";
-import { emit, PARKED_POINTER, rand, TAU } from "./math";
+import { emit, isParked, PARKED_POINTER, rand, TAU } from "./math";
 import { createEngineState } from "./tool-kit";
 import { blackHoleArt, bugsArt, demolitionArt, lightningArt, rocketArt } from "./toolart/heavy";
 import type { RageLayerEngineApi, Tool, Vec2 } from "./types";
@@ -49,7 +49,7 @@ export const blackHole: Tool = {
     const state = blackHoleStates.get(engine);
     const s = engine.singularity;
     if (!s) return;
-    if (!held || pointer.x <= -100) {
+    if (!held || isParked(pointer)) {
       collapseSingularity(engine);
       return;
     }

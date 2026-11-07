@@ -347,7 +347,7 @@ export const gun: Tool = {
   tick(engine, dt, held, pointer) {
     const state = gunState.get(engine);
     state.cooldown -= dt;
-    if (!held || pointer.x <= -100) {
+    if (!held || isParked(pointer)) {
       state.heldFor = 0;
       state.smokeDebt = 0;
       return;
@@ -405,7 +405,7 @@ export const flamethrower: Tool = {
     const state = flamethrowerState.get(engine);
     state.cooldown -= dt;
     engine.sound.loop("flamethrower", held ? 0.35 : 0);
-    if (!held || pointer.x <= -100) {
+    if (!held || isParked(pointer)) {
       state.emberDebt = 0;
       state.blobDebt = 0;
       return;
@@ -832,7 +832,7 @@ export const paintball: Tool = {
   },
   tick(engine, dt, held, pointer) {
     const state = paintballState.get(engine);
-    if (!held || pointer.x <= -100) {
+    if (!held || isParked(pointer)) {
       state.cooldown = 0;
       return;
     }
