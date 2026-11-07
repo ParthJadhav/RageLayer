@@ -273,11 +273,6 @@ export class PerformanceMonitor implements PerfCounterSink {
     return Math.max(30, Math.min(120, Math.round(1_000 / this.displayIntervalMs)));
   }
 
-  /** True while the high tier is holding full quality at a 60 fps cap. */
-  get rateCap60(): boolean {
-    return this.rateCapped;
-  }
-
   /**
    * The shortest gap between rendered frames at a tier. The 60 fps rate cap
    * borrows the balanced tier's frame skip: full visual quality, half the
