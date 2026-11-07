@@ -51,16 +51,20 @@ let stampCache: WeakMap<HTMLCanvasElement, Map<number, HTMLCanvasElement>> | nul
  * keep a fixed dpr transform for their lifetime, and `hypot(a, b)` makes the
  * read indifferent to any rotation active at the time.
  */
-let ctxScale: WeakMap<CanvasRenderingContext2D, number> | null = null;
+let ctxScale: WeakMap<
+  CanvasRenderingContext2D,
+  { scale: number; width: number; height: number }
+> | null = null;
 
 function deviceScale(ctx: CanvasRenderingContext2D): number {
-  let scale = (ctxScale ??= new WeakMap()).get(ctx);
-  if (scale === undefined) {
+  const { width, height } = ctx.canvas;
+  let cached = (ctxScale ??= new WeakMap()).get(ctx);
+  if (cached === undefined || cached.width !== width || cached.height !== height) {
     const m = ctx.getTransform();
-    scale = Math.hypot(m.a, m.b) || 1;
-    ctxScale.set(ctx, scale);
+    cached = { scale: Math.hypot(m.a, m.b) || 1, width, height };
+    ctxScale.set(ctx, cached);
   }
-  return scale;
+  return cached.scale;
 }
 
 /**
