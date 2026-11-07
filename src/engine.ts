@@ -193,7 +193,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private lastRenderedAt = 0;
   private monitor: PerformanceMonitor;
   private qualityTier: PerformanceQualityTier;
-  private qualityProfile: QualityProfile;
   /** Resolved once at mount from the explicit option or the OS preference. */
   private reducedMotion = false;
   /**
@@ -253,8 +252,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
    * opaque-black fill; a cold field skips the per-frame `fillRect` entirely.
    */
   private heatDirty = true;
-  private singularityHum = false;
   private _singularity: Singularity | null = null;
+  private singularityHum = false;
   /** Countdown to the singularity's next bite out of the page. */
   private singularityBite = 0;
   /** Countdown to the next page element the singularity rips loose. */
@@ -280,7 +279,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
         (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false));
     const qualityMode = options.quality ?? "auto";
     this.qualityTier = detectInitialQuality(qualityMode);
-    this.qualityProfile = QUALITY_PROFILES[this.qualityTier];
     this.monitor = new PerformanceMonitor(
       options.performance,
       this.qualityTier,
@@ -419,6 +417,10 @@ export class RageLayerEngine implements RageLayerEngineApi {
   get content(): ContentApi | null {
     return this.contentLayer?.ready ? this.contentLayer : null;
   }
+  private get qualityProfile(): QualityProfile {
+    return QUALITY_PROFILES[this.qualityTier];
+  }
+
   get performanceSnapshot(): PerformanceSnapshot {
     return this.monitor.snapshot;
   }
@@ -1564,7 +1566,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   private applyQuality(tier: PerformanceQualityTier) {
     if (tier === this.qualityTier) return;
     this.qualityTier = tier;
-    this.qualityProfile = QUALITY_PROFILES[tier];
 
     this.applyEntityLimits();
     this.setPostFXEnabled(this.opts.postFX && this.qualityProfile.postFX);
@@ -2010,8 +2011,8 @@ export class RageLayerEngine implements RageLayerEngineApi {
     s.charge = Math.min(1, s.charge + dt * 1.8);
     const r = s.radius * s.charge;
     this.sound.loop("void", 0.45 * s.charge);
-
     this.singularityHum = true;
+
     // Spacetime around the hole: gravitational lensing + frame-dragging swirl
     // in the surface shader. Pure re-shading — no texture upload — so driving
     // it every frame costs only the warped rectangle's fill rate.
