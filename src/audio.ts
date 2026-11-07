@@ -328,6 +328,9 @@ export class SoundEngine implements SoundApi {
     }
     const ctx = this.ensure();
     if (!ctx || !this.master || !this.noiseBuffer) return;
+    // `loop` is reachable from untyped custom tools; an unknown name keeps the
+    // generic saw voice it always fell back to instead of throwing mid-frame.
+    const voice = LOOP_VOICES[name] ?? LOOP_VOICES.saw;
     if (!entry) {
       const source = ctx.createBufferSource();
       source.buffer = this.noiseBuffer;
@@ -335,7 +338,6 @@ export class SoundEngine implements SoundApi {
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      const voice = LOOP_VOICES[name];
       filter.type = voice.filter;
       filter.frequency.value = voice.frequency;
       if (voice.q !== undefined) filter.Q.value = voice.q;
@@ -350,7 +352,7 @@ export class SoundEngine implements SoundApi {
       entry.stopTimer = null;
     }
     entry.gain.gain.setTargetAtTime(target, ctx.currentTime, 0.08);
-    const { jitter } = LOOP_VOICES[name];
+    const { jitter } = voice;
     if (jitter) {
       entry.filter.frequency.setTargetAtTime(
         jitter.base + Math.random() * jitter.span,
