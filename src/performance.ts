@@ -366,11 +366,6 @@ export class PerformanceMonitor implements PerfCounterSink {
     this.captureMs = durationMs;
   }
 
-  setQualityReason(reason: string) {
-    if (this.disposed) return;
-    this.qualityReason = reason;
-  }
-
   observeRaf(now: number) {
     if (this.disposed) return;
     if (this.lastRafAt > 0) {

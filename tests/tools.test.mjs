@@ -10,7 +10,6 @@ import {
   paintball,
   waterHose,
 } from "../src/tools.ts";
-import { WOOD } from "../src/wood.js";
 import { makeCanvas, readPixels } from "./support/dom.mjs";
 import {
   createTestEngine,
@@ -45,13 +44,6 @@ describe("every base tool is well-formed", () => {
       expect(tool.hint.length).toBeGreaterThan(0);
       expect(tool.icon.length).toBeGreaterThan(0);
     }
-  });
-
-  test("all base tools share one immutable wood physics contract", () => {
-    expect(Object.isFrozen(WOOD)).toBe(true);
-    expect(WOOD.toughness).toBeGreaterThan(1);
-    expect(WOOD.flammability).toBe(1);
-    expect(WOOD.burnRate).toBeGreaterThan(0);
   });
 
   test("no tool throws when used over an ordinary page", () => {

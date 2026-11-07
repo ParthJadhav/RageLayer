@@ -14,7 +14,7 @@ import {
 } from "./toolart";
 import { includeTopologySegment, surfaceRuns, type TopologyBounds } from "./topology";
 import type { RageLayerEngineApi, Tool, ToolPointerEvent, Vec2 } from "./types";
-import { WOOD } from "./wood.js";
+import { WOOD } from "./wood";
 
 /**
  * A spot the hammer is working on. The page doesn't give way on the first
@@ -224,10 +224,8 @@ function fireShot(engine: RageLayerEngineApi, x: number, y: number, spread = 0) 
 
   // Dress the rim first, then punch clean through the real page content —
   // order matters: punching last keeps the hole genuinely transparent.
-  const penetrates = WOOD.toughness < 2;
-  drawBulletHole(engine.surfaceCtx, sx, sy, penetrates ? 0.9 + Math.random() * 0.4 : 0.65);
-  if (penetrates) engine.content?.punch(sx, sy, 5);
-  else drawCrack(engine.surfaceCtx, sx, sy, 0.45);
+  drawBulletHole(engine.surfaceCtx, sx, sy, 0.9 + Math.random() * 0.4);
+  engine.content?.punch(sx, sy, 5);
   // A round is a perfectly good fly-swatter.
   engine.squashBugs(sx, sy, 12);
 

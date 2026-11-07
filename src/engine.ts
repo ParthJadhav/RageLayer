@@ -1136,7 +1136,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
         cell,
         {
           density: 0.0018 * WOOD.density,
-          restitution: Math.max(0.14, WOOD.restitution),
+          restitution: 0.14,
           friction: 0.62,
           ttl: options.ttl ?? 10 + Math.random() * 8,
         },

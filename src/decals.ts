@@ -46,10 +46,11 @@ const STAMPS_PER_SPRITE = 12;
 const MAX_STAMP_HALF = 160;
 let stampCache: WeakMap<HTMLCanvasElement, Map<number, HTMLCanvasElement>> | null = null;
 /**
- * Device scale (dpr) per context, read once — `getTransform` allocates a
- * DOMMatrix, which the per-frame scorch path cannot afford. Damage targets
- * keep a fixed dpr transform for their lifetime, and `hypot(a, b)` makes the
- * read indifferent to any rotation active at the time.
+ * Device scale (dpr) per context — `getTransform` allocates a DOMMatrix, which
+ * the per-frame scorch path cannot afford. A target only changes its dpr by
+ * resizing its canvas (which also resets the transform), so the cached read is
+ * keyed on the canvas size too. `hypot(a, b)` makes the read indifferent to any
+ * rotation active at the time.
  */
 let ctxScale: WeakMap<
   CanvasRenderingContext2D,
@@ -235,47 +236,6 @@ export function drawCrack(
   ctx.restore();
 }
 
-/**
- * Radial fracture for brittle sheets such as glass and ice.
- *
- * Unlike the wandering plaster faults above, a brittle impact carries straight
- * rays away from the contact point and joins them with uneven circumferential
- * cracks. There is deliberately no opaque dent or powder halo: neither belongs
- * on a transparent pane and both obscure the fracture geometry.
- */
-export function drawBrittleFracture(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  radius = 42,
-) {
-  const reach = Math.max(12, radius);
-  const radial = new Path2D();
-  const ring = new Path2D();
-
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.translate(x, y);
-  ctx.rotate(Math.random() * TAU);
-
-  for (let index = 0; index < 10; index++) {
-    const angle = (index / 10) * TAU + rand(-0.12, 0.12);
-    const length = reach * rand(0.72, 1.08);
-    radial.moveTo(Math.cos(angle) * 3, Math.sin(angle) * 3);
-    radial.lineTo(Math.cos(angle) * length, Math.sin(angle) * length);
-    const ringRadius = reach * rand(0.44, 0.58);
-    const px = Math.cos(angle) * ringRadius;
-    const py = Math.sin(angle) * ringRadius;
-    if (index === 0) ring.moveTo(px, py);
-    else ring.lineTo(px, py);
-  }
-  ring.closePath();
-
-  fractureStroke(ctx, radial, 1.3, 0.72, 0.38);
-  fractureStroke(ctx, ring, 0.75, 0.48, 0.3);
-  ctx.restore();
-}
-
 /** Layered bullet hole: dark core, ragged rim, short plaster cracks around it. */
 export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: number, scale = 1) {
   ctx.save();
@@ -380,59 +340,6 @@ export function drawBurnChannel(ctx: CanvasRenderingContext2D, points: number[])
   ctx.strokeStyle = "rgba(238, 232, 255, 0.75)";
   ctx.lineWidth = 2;
   ctx.stroke(path);
-  ctx.restore();
-}
-
-/**
- * A shallow elastic or metallic depression. Unlike `drawCrack`, this keeps the
- * surface continuous: rubber compresses and sheet metal buckles before either
- * material tears.
- */
-export function drawDent(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.translate(x, y);
-  ctx.scale(1, 0.64);
-  const shade = ctx.createRadialGradient(0, 0, radius * 0.08, 0, 0, radius);
-  shade.addColorStop(0, "rgba(4, 7, 10, 0.34)");
-  shade.addColorStop(0.58, "rgba(12, 15, 18, 0.16)");
-  shade.addColorStop(0.78, "rgba(255, 255, 255, 0.1)");
-  shade.addColorStop(1, "rgba(255, 255, 255, 0)");
-  ctx.fillStyle = shade;
-  ctx.beginPath();
-  ctx.arc(0, 0, radius, 0, TAU);
-  ctx.fill();
-  ctx.strokeStyle = "rgba(5, 7, 9, 0.3)";
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  ctx.arc(0, 0, radius * 0.72, Math.PI * 0.12, Math.PI * 0.88);
-  ctx.stroke();
-  ctx.restore();
-}
-
-/** A continuous abrasion where a cutting edge skids across a surface it cannot sever. */
-export function drawSurfaceScore(
-  ctx: CanvasRenderingContext2D,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-) {
-  ctx.save();
-  ctx.globalCompositeOperation = "source-atop";
-  ctx.lineCap = "round";
-  ctx.strokeStyle = "rgba(18, 20, 22, 0.58)";
-  ctx.lineWidth = 2.4;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1);
-  ctx.lineTo(x2, y2);
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-  ctx.lineWidth = 0.9;
-  ctx.beginPath();
-  ctx.moveTo(x1, y1 + 1.25);
-  ctx.lineTo(x2, y2 + 1.25);
-  ctx.stroke();
   ctx.restore();
 }
 
