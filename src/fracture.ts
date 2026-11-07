@@ -83,7 +83,6 @@ export function bakeChunk(
   const h = maxY - minY;
   const cap = options.maxSize ?? MAX_CHUNK;
   if (!(w > MIN_CHUNK) || !(h > MIN_CHUNK) || w > cap || h > cap) return null;
-  // Fully outside the captured page: there are no pixels to carry.
   if (maxX < 0 || maxY < 0 || minX > source.width || minY > source.height) return null;
 
   const sourceDpr = source.dpr;
@@ -144,7 +143,6 @@ export function bakeChunk(
     sctx.setTransform(d, 0, 0, d, 0, 0);
     sctx.fillStyle = "#4a3826";
     sctx.fill(path);
-    // Horizontal grain streaks, clipped to the silhouette.
     sctx.globalCompositeOperation = "source-atop";
     sctx.strokeStyle = "rgba(24, 17, 10, 0.5)";
     sctx.lineWidth = 1;

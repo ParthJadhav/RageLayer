@@ -193,7 +193,6 @@ export function drawCrack(
 
   for (let i = 0; i < branches; i++) {
     const angle = (i / branches) * TAU + rand(-0.6, 0.6);
-    // Bias lengthens the cracks pointing away from the previous impact.
     const pull = bias === undefined ? 1 : 1 + 0.85 * Math.cos(angle - bias);
     const total = span * rand(0.5, 1) * pull;
     const segs = 6;
@@ -208,11 +207,9 @@ export function drawCrack(
       a += rand(-0.55, 0.55);
       px += Math.cos(a) * segLen;
       py += Math.sin(a) * segLen;
-      // The inner half is the wide fault; the outer half thins into a hairline.
       const path = s < segs / 2 ? trunk : fine;
       path.lineTo(px, py);
       if (s === Math.floor(segs / 2) - 1) fine.moveTo(px, py);
-      // Forks: a crack splits and the fork wanders off on its own.
       if (Math.random() < 0.4) {
         const forkA = a + rand(0.5, 1.1) * (Math.random() < 0.5 ? 1 : -1);
         const forkLen = segLen * rand(0.5, 1.2);
@@ -224,7 +221,6 @@ export function drawCrack(
   fractureStroke(ctx, trunk, rand(1.6, 2.6) * scale, 0.72, 0.16);
   fractureStroke(ctx, fine, rand(0.7, 1.1) * scale, 0.55, 0.1);
 
-  // Pulverized centre: chips of displaced plaster around the point of impact.
   for (let i = 0; i < 9; i++) {
     const a = Math.random() * TAU;
     const d = rand(2, 13) * scale;
@@ -243,7 +239,6 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.translate(x, y);
   ctx.rotate(Math.random() * TAU);
 
-  // Pale impact halo — powdered page around the entry wound.
   stamp(ctx, sprites().dust, 0, 0, 26 * scale, 26 * scale, 0.16);
   ctx.globalAlpha = 1;
 
@@ -262,7 +257,6 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
   }
   fractureStroke(ctx, radial, rand(0.9, 1.7) * scale, 0.6, 0.16);
 
-  // Ragged rim — grey ring of overlapping blobs.
   for (let i = 0; i < 10; i++) {
     const angle = (i / 10) * TAU;
     const r = rand(4.5, 6.5) * scale;
@@ -272,11 +266,9 @@ export function drawBulletHole(ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.fill();
   }
 
-  // Dark core with soft edge.
   stamp(ctx, sprites().bulletCore, 0, 0, 6 * scale, 6 * scale, 0.98);
   ctx.globalAlpha = 1;
 
-  // Glint on the rim.
   ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
   ctx.beginPath();
   ctx.arc(-2 * scale, -3 * scale, 1.2 * scale, 0, TAU);
@@ -394,13 +386,11 @@ export function drawGash(
     );
     ctx.fillStyle = `rgba(228, 222, 212, ${rand(0.3, 0.62)})`;
     ctx.fill();
-    // Shadowed underside of the curl.
     ctx.strokeStyle = `rgba(16, 12, 9, ${rand(0.35, 0.6)})`;
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // Dark torn core.
   ctx.strokeStyle = "rgba(12, 9, 7, 0.9)";
   ctx.lineWidth = rand(5, 9);
   ctx.lineCap = "round";
@@ -409,7 +399,6 @@ export function drawGash(
   ctx.lineTo(x2, y2);
   ctx.stroke();
 
-  // Jagged fibres: short ticks perpendicular to the cut.
   const ticks = Math.max(2, Math.floor(len / 4));
   ctx.strokeStyle = "rgba(214, 206, 194, 0.34)";
   ctx.lineWidth = 1;
@@ -488,7 +477,6 @@ export function drawSplat(
     ctx.fill();
   }
 
-  // Opaque core.
   ctx.fillStyle = base;
   ctx.globalAlpha = 0.94;
   for (let i = 0; i < 7; i++) {
@@ -499,7 +487,6 @@ export function drawSplat(
     ctx.fill();
   }
 
-  // Satellite droplets flung outward, with teardrop tails aimed back at impact.
   const sats = 12 + Math.floor(Math.random() * 10);
   for (let i = 0; i < sats; i++) {
     const a = Math.random() * TAU;
@@ -552,7 +539,6 @@ export function drawPaintStreak(
   ctx.beginPath();
   ctx.ellipse(x, y - length / 2, width * 0.5, length / 2, 0, 0, TAU);
   ctx.fill();
-  // Bead at the bottom, where the run pooled and stopped.
   ctx.beginPath();
   ctx.arc(x, y, width * 0.85, 0, TAU);
   ctx.fill();

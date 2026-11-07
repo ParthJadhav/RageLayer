@@ -233,7 +233,6 @@ export class OpacityMap {
       this.maskCells.set(this.pristineMask);
       const removed = this.removed;
       if (removed) {
-        // Re-flag every cell the surviving (post-restore) wounds still touch.
         for (let my = 0; my < this.mapHeight; my++) {
           const tileRow = Math.min(this.maskRows - 1, Math.floor(my / this.scaleY / 128));
           for (let mx = 0, src = my * this.mapWidth; mx < this.mapWidth; mx++, src++) {
@@ -328,7 +327,6 @@ export class OpacityMap {
     return true;
   }
 
-  /** Flag every 128px cell whose downscaled plane has alpha below `minOpaque`. */
   private seedMaskFromAlpha(target: Uint8Array, alpha: Uint8Array, minOpaque: number) {
     for (let my = 0; my < this.mapHeight; my++) {
       const tileRow = Math.min(this.maskRows - 1, Math.floor(my / this.scaleY / 128));
@@ -441,7 +439,6 @@ export class OpacityMap {
       }
       ctx.restore();
 
-      // Mirror the flattened region into the CPU plane `sample()` reads.
       const mx0 = Math.max(0, Math.floor(cellX * this.scaleX));
       const my0 = Math.max(0, Math.floor(cellY * this.scaleY));
       const mx1 = Math.min(this.mapWidth, Math.ceil((cellX + w) * this.scaleX));
@@ -503,7 +500,6 @@ export class OpacityMap {
     this.topology = topology;
   }
 
-  /** Apply one structural operation to the compact connectivity grid once. */
   private rasterizeTopology(operation: OpacityOperation) {
     if (this.topology.length === 0) return;
     const b = operation.bounds;

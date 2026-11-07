@@ -297,7 +297,6 @@ export class RageLayerElement extends ElementBase {
     this.session = null;
   }
 
-  /** Arrow keys move focus within the bar; they never leave it. */
   private onBarKeyDown = (event: KeyboardEvent) => {
     const model = this.model;
     if (!model) return;

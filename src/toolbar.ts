@@ -104,7 +104,6 @@ export class ToolbarModel {
     this.options = options;
     this.strings = resolveStrings(options.strings);
 
-    // Every engine event that changes something a toolbar renders.
     for (const event of ["toolchange", "statuschange", "historychange", "clear"] as const) {
       this.detachers.push(engine.on(event, () => this.invalidate()));
     }

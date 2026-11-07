@@ -325,11 +325,9 @@ export class SurfaceRenderer {
   private reconcileRow = 0;
   /** Set by `needsRender` when this frame should upload one reconcile band. */
   private reconcileStep = false;
-  /** Scratch rect for the reconcile band of the current frame. */
   private readonly bandRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Active singularity warp, in device px, or null. */
   private warp: { x: number; y: number; r: number; strength: number } | null = null;
-  /** Scratch rect for the region the warp influences this frame. */
   private readonly warpNowRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
   /** Where the warp painted last frame — must be redrawn once after it moves or ends. */
   private readonly prevWarpRect: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
@@ -701,7 +699,6 @@ export class SurfaceRenderer {
     this.timer?.end();
   }
 
-  /** Push one dirty rect from `source` into the content texture. */
   private upload(gl: WebGL2RenderingContext, source: HTMLCanvasElement, rect: Rect) {
     const w = rect.x1 - rect.x0;
     const h = rect.y1 - rect.y0;

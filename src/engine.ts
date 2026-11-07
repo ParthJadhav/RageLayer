@@ -291,8 +291,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       iterations: this.qualityProfile.physicsIterations,
     });
     this.applyEntityLimits();
-    // Asked for live on a browser without the flag: record it up front so the
-    // toolbar can say *why* it is in snapshot mode.
     // Registered before the constructor's `captureContent()` call, so a host
     // that passes `onError` sees capture failures — the most likely failure of
     // all, and the one that happens before it could subscribe afterwards.
@@ -964,9 +962,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
     // Sweeping is the one thing that un-wrecks the page, so it walks the
     // vignette back too.
     this.destruction = Math.max(0, this.destruction - 0.004);
-    // Repair the real content from the pristine snapshot...
     this.contentLayer?.restore(x, y, radius);
-    // ...and sweep any overlay decals (also the fallback path).
     this.overlay.eraseDamage(x, y, radius, 1);
   }
 
@@ -1111,7 +1107,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
   }
 
   fracture(x: number, y: number, radius: number, options: FractureOptions = {}): number {
-    // Anything crawling in the struck region is crushed along with it.
     if (this.bugs.count > 0) this.squashBugs(x, y, radius);
     const src = this.chunkSource;
     if (!src) return 0;
@@ -1181,7 +1176,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
     if (options.fracture !== false) {
       this.fracture(x, y, radius * 0.9, { power: power * 0.8, count: shardBudget(radius, 1.7) });
     }
-    // Everything already loose gets thrown, including debris from earlier hits.
     this.physics.blast(x, y, radius * 2.2, power * 1.1);
     this.particles.blast(x, y, radius, power * 2.2);
     this.contentLayer?.char(x, y, radius * 1.7, 0.55);
@@ -2046,7 +2040,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       if (nearest) this.dropElement(nearest, s.x, s.y);
     }
 
-    // Bugs unlucky enough to crawl inside the horizon are simply gone.
     this.bugs.vanish(s.x, s.y, r);
 
     // Eat the page. Throttled because each bite repaints a document-sized
@@ -2057,7 +2050,6 @@ export class RageLayerEngine implements RageLayerEngineApi {
       this.contentLayer.punch(s.x, s.y, r * 0.92);
     }
 
-    // Loose particles spiral in.
     this.particles.attract(s.x, s.y, s.power, r * 0.55, dt);
 
     // A held singularity is a vacuum for wreckage: everything the page has
@@ -2222,14 +2214,12 @@ export class RageLayerEngine implements RageLayerEngineApi {
     const sing = this._singularity;
     if (sing) drawEventHorizon(ctx, sing);
 
-    // Additive pass: the accretion disc, then every glowing particle.
     ctx.globalCompositeOperation = "lighter";
     if (sing) drawAccretionDisc(ctx, sing, time);
     this.fx.drawHot(ctx, time);
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
 
-    // The tool in hand, over everything it just did.
     if (artVisible) this.renderToolArt(ctx, time);
 
     this.postFXFrameMs = this.present(time);

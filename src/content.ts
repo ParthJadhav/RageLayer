@@ -435,10 +435,9 @@ export class ContentLayer {
       return;
     }
 
-    // Inset roots still need composition: backdrop across the whole layer,
-    // then the raster at the root's document offset. Anything outside the
-    // root's box (body margins, a reserved scrollbar gutter) keeps the page
-    // backdrop instead of falling through to the void.
+    // Inset roots: anything outside the root's box (body margins, a reserved
+    // scrollbar gutter) keeps the page backdrop instead of falling through to
+    // the void.
     const snap = document.createElement("canvas");
     snap.width = pixelWidth;
     snap.height = pixelHeight;
@@ -536,7 +535,6 @@ export class ContentLayer {
    * wounds (live mode only).
    */
   private recompose(y0: number, y1: number) {
-    // Recorded tee decals land first, so the rebuild sees every mark.
     this.flushDecalLog();
     const ctx = this.ctx;
     const w = this.surface.width;
@@ -571,7 +569,6 @@ export class ContentLayer {
       ctx.globalCompositeOperation = "source-over";
     }
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    // Every pixel in the band was replaced; upload exactly that band.
     this.renderer.markDirty(0, y0, w, y1);
   }
 
@@ -650,7 +647,6 @@ export class ContentLayer {
     rect.h = h;
   }
 
-  /** Drop the live buffers, releasing their backing stores immediately. */
   private releaseLayers() {
     for (const canvas of [this.wounds, this.decals]) {
       if (!canvas) continue;
@@ -737,7 +733,6 @@ export class ContentLayer {
           // already happened (see ctx-proxy).
         }
       }
-      // Drop references (sprite canvases, gradients) as soon as they land.
       op.args.length = 0;
       op.value = null;
     }
@@ -898,8 +893,6 @@ export class ContentLayer {
   }
 
   /**
-   * Remove `path` from the content.
-   *
    * The randomised geometry is built into a `Path2D` once and replayed against
    * both targets, so the visible canvas (immediate feedback) and the wound mask
    * (which survives a live refresh) can never drift apart.
@@ -926,7 +919,6 @@ export class ContentLayer {
     if (!this.ready) return;
     const path = new Path2D();
     path.arc(x, y, r, 0, TAU);
-    // Ragged rim bites, batched into the same path as the core.
     for (let i = 0; i < 7; i++) {
       const a = Math.random() * TAU;
       const d = r * rand(0.7, 1.1);

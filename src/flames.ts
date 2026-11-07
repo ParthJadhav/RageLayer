@@ -154,8 +154,6 @@ export class FlameField {
     // ground barely holds a flame's footprint, and the render mask would clip
     // most of it away anyway.
     if (host.content?.ready && host.pageOpacityAt(x, y) < 0.35) return false;
-    // Merge into a nearby flame instead of stacking duplicates. Same shape as
-    // the dowse scan: axis reject, then squared distance — no square root.
     for (const f of this.list) {
       const reach = f.radius * 0.6;
       const dx = f.x - x;
@@ -354,8 +352,6 @@ export class FlameField {
         let localHeat = f.intensity * (0.55 + fuel * 0.45);
         for (const neighbour of this.list) {
           if (neighbour === f) continue;
-          // Only flames actually in contact contribute, so reject the rest
-          // before the square root: axis test first, then squared distance.
           const reach = f.radius + neighbour.radius * 1.4;
           const dx = neighbour.x - f.x;
           if (dx > reach || dx < -reach) continue;
@@ -472,7 +468,6 @@ export class FlameField {
       }
 
       if (f.intensity <= 0.02) {
-        // Died — final char + a puff of smoke.
         if (host.content?.ready) {
           host.content.char(f.x, f.y, f.radius, 0.35);
         } else {

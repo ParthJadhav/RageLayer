@@ -131,9 +131,9 @@ export class FxPainter {
 
   /** Sort the visible particles into the four passes below. */
   classify(particles: readonly Particle[], view: FxView) {
-    // One classification pass. Particles live in document space and the page
-    // can be far taller than the screen, so anything outside the fx band is
-    // dropped here instead of being submitted and clipped by the canvas.
+    // Particles live in document space and the page can be far taller than
+    // the screen, so anything outside the fx band is dropped here instead of
+    // being submitted and clipped by the canvas.
     const { wet, puff, bit, hot } = this;
     wet.length = puff.length = bit.length = hot.length = 0;
     for (const p of particles) {
@@ -367,8 +367,6 @@ export class FxPainter {
       const bucket = buckets[q];
       ctx.globalAlpha = q / 128;
       if (cluster) {
-        // The whole three-lobe cluster scales rigidly with swell, so one
-        // uniform-scale stamp of the baked cluster replaces three appends.
         for (const p of bucket) {
           const t = p.life / p.maxLife;
           const swell = Math.min(10, p.size * (0.72 + t * 0.48));
@@ -589,7 +587,6 @@ export class FxPainter {
           break;
         }
         case "spark":
-          // Fast sparks smear into a streak; slow ones stay points.
           if (Math.abs(p.vx) + Math.abs(p.vy) > 260) {
             blitStreak(
               ctx,

@@ -120,7 +120,6 @@ export class ParticleSystem {
     this.list.push(fill(this.free.pop() ?? createParticle(), p));
   }
 
-  /** Return a dead particle object to the free list for the next spawn. */
   private recycle(p: Particle) {
     // Drop snapshot handles so an idle pool never pins a page capture alive.
     p.img = undefined;
@@ -172,8 +171,6 @@ export class ParticleSystem {
         this.recycle(p);
         continue;
       }
-      // Runs trail behind whatever is sliding down the page — water rivulets
-      // and paint drips both leave a tail as long as the distance they covered.
       if (p.kind === "rivulet" || p.kind === "paint" || p.kind === "acid")
         p.len = (p.len ?? 0) + Math.max(0, p.vy) * dt;
 
@@ -198,7 +195,6 @@ export class ParticleSystem {
         }
       }
 
-      // Water droplets extinguish flames they touch.
       if (p.kind === "water") {
         if (world.flameCount() > 0 && world.dowse(p.x, p.y, 10, 0.12) > 0) {
           this.recycle(p);
@@ -273,11 +269,9 @@ export class ParticleSystem {
       p.drag = 0.6;
       this.spawn(p);
     }
-    // Lingering wet mark.
     const wet = scratchParticle("wet", x, y, 0, 12, 2.5 + Math.random() * 2, 5 + Math.random() * 9);
     wet.gravity = 0;
     this.spawn(wet);
-    // Every few splashes, one gathers into a run that streaks down the page.
     if (Math.random() < 0.22) {
       const p = scratchParticle(
         "rivulet",

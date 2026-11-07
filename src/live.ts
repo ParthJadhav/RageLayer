@@ -367,19 +367,6 @@ export class LiveContentSource {
     if (supportsPaintEvents()) syncAnimationClocks(root, clone);
 
     // Everything below is in *device* pixels, under an identity transform.
-    //
-    // `drawElementImage` does its own device-scaling: it rasterizes the element
-    // at the host canvas's backing-store-to-CSS-size ratio, which is already
-    // `dpr` here, and only then applies the CTM. Measured in Chrome 149 — a
-    // 100x50 CSS element in a 300x200 CSS / 600x400 backing canvas comes out
-    // 200x100 device px under an identity transform, and 400x200 under
-    // `setTransform(2,…)`. So a dpr transform doesn't scale the raster to the
-    // backing store, it double-scales it: exactly `dpr`x too big, which is
-    // invisible on a 1x display and a 2x zoom on a retina one.
-    //
-    // The destination coordinates are in the current user space, so with the
-    // transform gone they are device pixels too. Rounding them keeps the
-    // raster on the pixel grid, matching the snapshot path's blit.
     this.last = {
       dx: Math.round(options.source.x * dpr),
       dy: Math.round(options.source.y * dpr),

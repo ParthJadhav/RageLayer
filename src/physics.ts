@@ -109,9 +109,6 @@ export class Body {
   constructor(init: BodyInit) {
     const pts = init.points;
     const n = pts.length >> 1;
-    // Shoelace: area and centroid in one pass. A degenerate sliver gets a
-    // fallback centroid so it still behaves like a (tiny) body rather than
-    // dividing by zero.
     let area2 = 0;
     let cx = 0;
     let cy = 0;
@@ -301,7 +298,6 @@ export class PhysicsWorld {
   bodies: Body[] = [];
   gravity: number;
   private maxBodies = MAX_BODIES;
-  /** Velocity/position solver passes per step (see `WorldOptions.iterations`). */
   private iterations: number;
   /** Contact storage is pooled so a tumbling heap does not allocate every frame. */
   private manifolds: Manifold<Body>[] = [];
@@ -385,7 +381,6 @@ export class PhysicsWorld {
       });
       this.statics = [this.floor, this.leftWall, this.rightWall];
     }
-    // Statics are repositioned by moving the centroid; the local shape is fixed.
     this.floor.x = width / 2;
     this.floor.y = floorY + 1500;
     this.leftWall!.x = -1500;
@@ -575,7 +570,6 @@ export class PhysicsWorld {
     const bodies = this.bodies;
     this.impacts.length = 0;
 
-    // Retire finished bodies (faded out, eaten, or fallen far past the floor).
     let write = 0;
     for (let i = 0; i < bodies.length; i++) {
       const b = bodies[i];
@@ -658,7 +652,6 @@ export class PhysicsWorld {
         const m = manifolds[manifoldCount] ?? (manifolds[manifoldCount] = createManifold(a, b));
         if (collide(a, b, m)) {
           manifoldCount++;
-          // Anything touching a moving body joins the simulation again.
           a.wake();
           b.wake();
         }

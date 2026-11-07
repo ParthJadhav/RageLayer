@@ -265,7 +265,6 @@ export class Overlay {
     this.fxCanvas.height = Math.round(height * dpr);
     this.fxCanvas.style.width = `${width}px`;
     this.fxCanvas.style.height = `${height}px`;
-    // Force the transform to be re-applied against the new size.
     this.invalidateFxTransform();
     return true;
   }

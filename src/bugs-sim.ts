@@ -14,7 +14,6 @@
 import { TAU } from "./math";
 import type { ContentApi, Flame, Particle, SoundApi } from "./types";
 
-/** Population cap. */
 const MAX_BUGS = 36;
 
 /** One crawling bug: position, heading, and an appetite timer. */
@@ -91,7 +90,6 @@ export class BugSwarm {
         seed: Math.random() * TAU,
       });
     }
-    // At the population cap nothing was released — so nothing chirps either.
     if (this.bugs.length === before) return false;
     host.sound.pop();
     return true;
@@ -107,8 +105,6 @@ export class BugSwarm {
       if (dx * dx + dy * dy > r2) continue;
       this.bugs.splice(i, 1);
       squashed++;
-      // The smear a squashed bug leaves. Drawn through surfaceCtx so it
-      // persists like any other decal.
       const ctx = host.surfaceCtx;
       ctx.save();
       // The smear is on the page, so it clips to the page — a bug squashed at
@@ -152,7 +148,6 @@ export class BugSwarm {
       if (dx * dx + dy * dy > r2) continue;
       this.bugs.splice(i, 1);
       flushed++;
-      // The bug itself, tumbling downstream and off the heap...
       host.spawnParticle({
         kind: "debris",
         x: b.x,
@@ -168,7 +163,6 @@ export class BugSwarm {
         bounce: 0.2,
         restY: b.y + 180 + Math.random() * 220,
       });
-      // ...in a burst of the water that took it.
       for (let s = 0; s < 5; s++) {
         const a = Math.random() * TAU;
         host.spawnParticle({
@@ -242,7 +236,6 @@ export class BugSwarm {
         this.bugs.splice(i, 1);
         continue;
       }
-      // Skittering: constant jitter plus an occasional decisive turn.
       b.turn -= dt;
       if (b.turn <= 0) {
         b.turn = 0.5 + Math.random() * 1.6;
@@ -251,7 +244,6 @@ export class BugSwarm {
       b.a += (Math.random() - 0.5) * 3.4 * dt;
       b.x += Math.cos(b.a) * b.speed * dt;
       b.y += Math.sin(b.a) * b.speed * dt;
-      // Turn back at the page edge instead of wandering into the void.
       if (b.x < 4 || b.x > host.width - 4 || b.y < 4 || b.y > host.height - 4) {
         b.a += Math.PI;
         b.x = Math.max(4, Math.min(host.width - 4, b.x));
@@ -284,7 +276,6 @@ export class BugSwarm {
       ctx.save();
       ctx.translate(b.x, b.y);
       ctx.rotate(b.a + wiggle * 0.2);
-      // Legs first, three per side, alternating with the gait.
       ctx.strokeStyle = "rgba(20, 14, 8, 0.9)";
       ctx.lineWidth = 0.8;
       ctx.beginPath();
@@ -297,7 +288,6 @@ export class BugSwarm {
         ctx.lineTo(lx - phase * b.size * 0.4, -b.size * 0.9);
       }
       ctx.stroke();
-      // Two body segments and a head.
       ctx.fillStyle = "rgba(38, 26, 14, 0.95)";
       ctx.beginPath();
       ctx.ellipse(-b.size * 0.35, 0, b.size * 0.62, b.size * 0.45, 0, 0, TAU);
