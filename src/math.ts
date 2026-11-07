@@ -30,7 +30,7 @@ export const PARKED_POINTER = -1000;
 
 /** Whether a pointer position is the parked one rather than a real point. */
 export function isParked(point: { x: number }): boolean {
-  return point.x < -100;
+  return point.x === PARKED_POINTER;
 }
 
 /** Uniform random in `[min, max)`. */
