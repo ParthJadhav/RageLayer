@@ -3,21 +3,25 @@ import { createRateLimiter, createTool, defineTool } from "../src/sdk.ts";
 
 describe("custom tool SDK", () => {
   test("factories isolate state and reset creates fresh state", () => {
+    const seen = [];
     const make = defineTool({
       id: "counter",
       name: "Counter",
       icon: "C",
       hint: "test",
       createState: () => ({ hits: 0 }),
-      onDown: (state) => state.hits++,
+      onDown: (state) => seen.push(++state.hits),
     });
     const first = make();
     const second = make();
-    const fake = {};
-    first.onDown(fake, {});
-    expect(first).not.toBe(second);
-    first.reset();
-    expect(first.id).toBe("counter");
+    const engine = {};
+    first.onDown(engine, {});
+    first.onDown(engine, {});
+    second.onDown(engine, {});
+    expect(seen).toEqual([1, 2, 1]);
+    first.reset(engine);
+    first.onDown(engine, {});
+    expect(seen.at(-1)).toBe(1);
   });
 
   test("single-instance helper validates definitions", () => {

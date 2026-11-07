@@ -33,9 +33,18 @@ describe("toolIconDataUrl", () => {
   test("repeat requests are served from cache", () => {
     // Reopening a toolbar should not re-rasterize and re-encode every icon.
     const first = toolIconDataUrl(hammerArt, 24);
-    const second = toolIconDataUrl(hammerArt, 24);
-
-    expect(second).toBe(first);
+    const create = document.createElement;
+    let canvases = 0;
+    document.createElement = function (tag, ...rest) {
+      if (tag === "canvas") canvases++;
+      return create.call(this, tag, ...rest);
+    };
+    try {
+      expect(toolIconDataUrl(hammerArt, 24)).toBe(first);
+    } finally {
+      document.createElement = create;
+    }
+    expect(canvases).toBe(0);
   });
 
   test("the requested size is clamped to something drawable", () => {
@@ -76,6 +85,8 @@ describe("icon bounds manifest", () => {
   test("built-in art ships measured bounds so icons need no canvas readback", () => {
     // The readback is a 256×256 getImageData per tool; on a 19-tool toolbar
     // that is the difference between an instant open and a visible stall.
-    expect(toolIconBounds(hammerArt)).toBeDefined();
+    for (const tool of [...baseTools, ...heavyTools, ...advancedTools]) {
+      expect(toolIconBounds(tool.art)).toBeDefined();
+    }
   });
 });

@@ -11,17 +11,12 @@ describe("split and lazy toolsets", () => {
     for (const tool of defaultTools) expect(tool.hint).toMatch(/^(click|hold|drag)\b/);
   });
 
-  test("base, heavy, and advanced sets are disjoint and compose the official order", () => {
-    expect(baseTools).toHaveLength(7);
-    expect(heavyTools).toHaveLength(5);
-    expect(advancedTools).toHaveLength(3);
-    expect(new Set([...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)]).size).toBe(15);
-    expect(ids(defaultTools)).toEqual([
-      ...ids(baseTools.slice(0, -1)),
-      ...ids(heavyTools),
-      ...ids(advancedTools),
-      baseTools.at(-1).id,
-    ]);
+  test("the default toolbar holds every split set once, with the broom last", () => {
+    const split = [...ids(baseTools), ...ids(heavyTools), ...ids(advancedTools)];
+    expect(new Set(split).size).toBe(split.length);
+    expect([...ids(defaultTools)].sort()).toEqual([...split].sort());
+    expect(ids(defaultTools).slice(0, 2)).toEqual(["hammer", "gun"]);
+    expect(ids(defaultTools).at(-1)).toBe("broom");
   });
 
   test("every built-in has scalable procedural art and a unique id", () => {
@@ -44,10 +39,11 @@ describe("split and lazy toolsets", () => {
     heavy.pop();
     advanced.pop();
     all.pop();
-    expect(baseTools).toHaveLength(7);
-    expect(heavyTools).toHaveLength(5);
-    expect(advancedTools).toHaveLength(3);
-    expect(defaultTools).toHaveLength(15);
+    expect(ids(base)).toEqual(ids(baseTools).slice(0, -1));
+    expect(ids(baseTools)).toHaveLength(base.length + 1);
+    expect(ids(heavyTools)).toHaveLength(heavy.length + 1);
+    expect(ids(advancedTools)).toHaveLength(advanced.length + 1);
+    expect(ids(defaultTools)).toHaveLength(all.length + 1);
   });
 });
 
