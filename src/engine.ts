@@ -1,4 +1,4 @@
-import { SoundEngine } from "./audio";
+import { HELD_TOOL_LOOPS, SoundEngine } from "./audio";
 import { BugSwarm } from "./bugs-sim";
 import { defaultCaptureFilter, MAX_CAPTURE_HEIGHT } from "./capture";
 import { CaptureController, type CaptureHost } from "./capture-controller";
@@ -1599,10 +1599,7 @@ export class RageLayerEngine implements RageLayerEngineApi {
 
   /** Loops driven by a held tool, distinct from persistent ambient fire. */
   private silenceToolLoops() {
-    this.sound.loop("water", 0);
-    this.sound.loop("saw", 0);
-    this.sound.loop("flamethrower", 0);
-    this.sound.loop("void", 0);
+    for (const name of HELD_TOOL_LOOPS) this.sound.loop(name, 0);
   }
 
   private emit(event: EngineEvent) {
